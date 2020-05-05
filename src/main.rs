@@ -1,3 +1,5 @@
+#![allow(clippy::many_single_char_names)]
+
 use libloading::Symbol;
 use image::{ImageBuffer, Rgb};
 use retro_rs::{Emulator, Buttons};
@@ -10,6 +12,12 @@ mod sprites;
 enum ScrollLatch {
     V,
     H
+}
+
+impl Default for ScrollLatch {
+    fn default() -> Self {
+        Self::V
+    }
 }
 
 impl ScrollLatch {
@@ -44,11 +52,6 @@ struct ScrollChange {
     reason:ScrollChangeReason,
     scanline:u8,
     value:u8
-}
-
-unsafe fn get_changes(emu:&mut Emulator, changes:*mut ScrollChange, max:u32) -> u32 {
-    let get_changes_fn:Symbol<unsafe extern fn(*mut ScrollChange, u32) -> u32> = emu .get_symbol(b"retro_count_scroll_changes").unwrap();
-    get_changes_fn(changes, max)
 }
 
 use std::hash::{Hash, Hasher};
@@ -137,6 +140,53 @@ fn find_tiling(lo:u8, hi:u8, (last_sx,last_sy):(u8,u8), fb:&Framebuffer, sprites
     (sx,sy)
 }
 
+#[derive(Default, Clone)]
+struct MappyState {
+    latch : ScrollLatch,
+    tiles : HashSet<Tile>,
+    scroll : (u8,u8),
+}
+
+fn get_changes(emu:&mut emu, changes:&mut Vec<ScrollChange>, change_count:&mut u32) {
+    let get_changes_fn:Symbol<unsafe extern fn(*mut ScrollChange, u32) -> u32> = emu.get_symbol(b"retro_count_scroll_changes").unwrap();
+    unsafe {
+        *change_count = get_changes_fn(changes.as_mut_ptr(), 0);
+        changes.resize_with(*change_count as usize, Default::default);
+        get_changes_fn(changes.as_mut_ptr(), *change_count);
+    }
+}
+
+fn get_splits(mappy:&mut MappyState, changes:&Vec<ScrollChange>) -> Vec<u8> {
+    let mut splits:Vec<u8> = vec![];
+    splits.push(0);
+    for &ScrollChange { reason, scanline, .. } in changes.iter() {
+        let scanline = if scanline < 240 {scanline} else {0};
+        // let old_latch = latch;
+        let maybe_change = match reason {
+            ScrollChangeReason::Read2002 => {
+                mappy.latch = ScrollLatch::clear();
+                false
+            },
+            ScrollChangeReason::Write2005 => {
+                mappy.latch = mappy.latch.flip();
+                true
+            },
+            ScrollChangeReason::Write2006 => {
+                mappy.latch = mappy.latch.flip();
+                true
+            },
+        };
+        if maybe_change && splits[splits.len()-1] < scanline {
+            // Don't want to use the line where scrolling changed
+            splits.push(scanline+1);
+        }
+    }
+    if splits[splits.len()-1] < 240 {
+        splits.push(240);
+    }
+    splits
+}
+
 fn main() {
     let mut emu = Emulator::create(
         Path::new("../cores/fceumm_libretro"),
@@ -146,9 +196,7 @@ fn main() {
 
     let mut changes:Vec<ScrollChange> = Vec::with_capacity(32000);
     let mut change_count:u32;
-    let mut latch = ScrollLatch::clear();
-    let mut tiles:HashSet<Tile> = HashSet::with_capacity(1024);
-    let mut last_scroll = (0,0);
+    let mut mappy = MappyState { tiles:HashSet::with_capacity(1024), ..Default::default()};
     emu.run([Buttons::new(), Buttons::new()]);
     let (w,h) = emu.framebuffer_size();
     let mut fb = Framebuffer{fb:vec![0;w*h], w};
@@ -164,41 +212,8 @@ fn main() {
             assert!(b <= 3);
             fb.fb[y*fb.w+x] = (r << 5) + (g << 2) + b;
         }).expect("Couldn't get FB");
-        unsafe {
-            change_count = get_changes(&mut emu, changes.as_mut_ptr(), 0);
-            changes.resize_with(change_count as usize, Default::default);
-            get_changes(&mut emu, changes.as_mut_ptr(), change_count);
-        }
-        // dbg!(change_count, changes.len());
-        let mut splits:Vec<u8> = vec![];
-        splits.push(0);
-        for &ScrollChange { reason, scanline, .. } in changes.iter() {
-            let scanline = if scanline < 240 {scanline} else {0};
-            // let old_latch = latch;
-            let maybe_change = match reason {
-                ScrollChangeReason::Read2002 => {
-                    latch = ScrollLatch::clear();
-                    false
-                },
-                ScrollChangeReason::Write2005 => {
-                    latch = latch.flip();
-                    // println!("{:?} {:?} : {:?} -> {:?}", scanline, reason, old_latch, latch);
-                    true
-                },
-                ScrollChangeReason::Write2006 => {
-                    latch = latch.flip();
-                    // println!("{:?} {:?} : {:?} -> {:?}", scanline, reason, old_latch, latch);
-                    true
-                },
-            };
-            if maybe_change && splits[splits.len()-1] < scanline {
-                // Don't want to use the line where scrolling changed
-                splits.push(scanline+1);
-            }
-        }
-        if splits[splits.len()-1] < 240 {
-            splits.push(240);
-        }
+        get_changes(&mut emu, &mut changes, &mut change_count);
+        let splits = get_splits(&mut mappy, &changes);
         sprites::get_sprites(&emu, &mut sprites);
         dbg!(sprites.iter().filter(|s| s.is_valid()).count());
         // We are trying to find a tiling that reuses existing tiles, or
@@ -211,15 +226,15 @@ fn main() {
         }) {
             match *win {
                 [lo,hi] => {
-                    last_scroll = find_tiling(lo, hi, last_scroll, &fb, &sprites, &mut tiles);
-                    println!("Scroll: {:?}--{:?} : {:?}",lo,hi,last_scroll);
-                    println!("Known tiles: {:?}", tiles.len());
+                    mappy.scroll = find_tiling(lo, hi, mappy.scroll, &fb, &sprites, &mut mappy.tiles);
+                    println!("Scroll: {:?}--{:?} : {:?}",lo,hi,mappy.scroll);
+                    println!("Known tiles: {:?}", mappy.tiles.len());
                 },
                 _ => panic!("Misshapen windows")
             }
         }
     }
-    for (ti,tile) in tiles.iter().enumerate() {
+    for (ti,tile) in mappy.tiles.iter().enumerate() {
         let mut buf = vec![0_u8;8*8*3];
         for yi in 0..8 {
             for xi in 0..8 {
