@@ -1,0 +1,16 @@
+[package]
+name = "mappy"
+version = "0.1.0"
+authors = ["Joseph C. Osborn <jcoa2018@pomona.edu>"]
+edition = "2018"
+
+[dependencies]
+retro-rs = { path = "../../retro-rs" }
+image = "0.21.0"
+libc = "0.2.69"
+libloading = "0.6.1"
+itertools = "0.8.0"
+
+[profile.dev]
+opt-level = 3
+lto = "thin"
