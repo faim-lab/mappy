@@ -68,7 +68,8 @@ impl MappyState {
                 }
             }
             if candidates.len() < least_candidate_count {
-                println!("Found {:?} has {:?} candidates after {:?} checks", (xo,yo), candidates.len(), checks);
+                // TODO flag to do this in batch mode?
+                // println!("Found {:?} has {:?} candidates after {:?} checks", (xo,yo), candidates.len(), checks);
                 least_candidate_count = candidates.len();
                 least_candidates = candidates.clone();
                 sx = xo as u8;
