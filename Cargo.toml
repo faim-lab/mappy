@@ -11,6 +11,7 @@ libc = "0.2.69"
 libloading = "0.6.1"
 itertools = "0.8.0"
 minifb = "0.16"
+uuid = { version="0.8.1", features=["v4"] }
 
 [profile.dev]
 opt-level = 3

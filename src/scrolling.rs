@@ -1,9 +1,7 @@
-
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScrollLatch {
     V,
-    H
+    H,
 }
 
 impl Default for ScrollLatch {
@@ -13,13 +11,13 @@ impl Default for ScrollLatch {
 }
 
 impl ScrollLatch {
-    pub fn clear()->Self {
+    pub fn clear() -> Self {
         Self::V
     }
-    pub fn flip(self)->Self {
+    pub fn flip(self) -> Self {
         match self {
             Self::V => Self::H,
-            Self::H => Self::V
+            Self::H => Self::V,
         }
     }
 }
@@ -29,7 +27,9 @@ impl ScrollLatch {
 #[non_exhaustive]
 #[allow(dead_code)]
 pub enum ScrollChangeReason {
-    Write2005, Write2006, Read2002
+    Write2005,
+    Write2006,
+    Read2002,
 }
 
 impl Default for ScrollChangeReason {
@@ -41,7 +41,7 @@ impl Default for ScrollChangeReason {
 #[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct ScrollChange {
-    pub reason:ScrollChangeReason,
-    pub scanline:u8,
-    pub value:u8
+    pub reason: ScrollChangeReason,
+    pub scanline: u8,
+    pub value: u8,
 }
