@@ -1,9 +1,13 @@
+use std::collections::HashSet;
 use mappy::MappyState;
-use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
-use retro_rs::{Buttons, Emulator};
+use sdl2::rect::Rect;
+use sdl2::pixels::Color;
+use sdl2::event::Event;
+use sdl2::keyboard::{Keycode, Scancode};
+use sdl2;
+use retro_rs::{Emulator,Buttons};
 use std::path::Path;
 use std::time::{Duration, Instant};
-const SCALE: usize = 1;
 
 #[derive(PartialEq, Eq, Debug)]
 enum PlayState {
@@ -11,22 +15,11 @@ enum PlayState {
     Playing,
 }
 
-fn display_into(emu: &mut Emulator, buffer: &mut [u32]) {
-    let (w, _h) = emu.framebuffer_size();
-    emu.for_each_pixel(|x, y, r, g, b| {
-        let col = 0xFF00_0000 | (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b);
-        for oy in 0..SCALE {
-            let target = (y * SCALE + oy) * w * SCALE + (x * SCALE);
-            for ox in 0..SCALE {
-                buffer[target + ox] = col;
-            }
-        }
-    })
-        .expect("Couldn't copy out of emulator framebuffer!")
-}
+const SCALE:u32=3;
 
 fn main() {
     use std::env;
+
     let mut emu = Emulator::create(
         Path::new("../../cores/fceumm_libretro"),
         Path::new("../../roms/mario.nes"),
@@ -37,27 +30,34 @@ fn main() {
     // So reset it afterwards
     emu.reset();
 
-    let mut buffer: Vec<u32> = vec![0xFF00_0000; w * SCALE * h * SCALE];
-    let mut window = Window::new(
-        &"MPC Mario",
-        w,
-        h,
-        WindowOptions {
-            scale: Scale::X4,
-            ..WindowOptions::default()
-        },
-    )
-        .expect("Couldn't create window");
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+    let (ww,wh) = (w as u32*SCALE,h as u32*SCALE);
+    let window = video_subsystem.window("Mappy", ww, wh)
+        .build()
+        .unwrap();
+
+    let mut canvas = window.into_canvas().build().unwrap();
+
+    canvas.set_draw_color(Color::RGB(0, 0, 0));
+    canvas.clear();
+    canvas.present();
+
+    let mut event_pump = sdl_context.event_pump().unwrap();
+
+    let tex_creator = canvas.texture_creator();
+
+    let mut game_tex = tex_creator.create_texture(
+        sdl2::pixels::PixelFormatEnum::ARGB8888,
+        sdl2::render::TextureAccess::Streaming,
+        w as u32,
+        h as u32
+    ).expect("Couldn't make game render texture");
+
+
     let mut play_state = PlayState::Playing;
-    let redraw_max_interval: f64 = 1.0 / 60.0;
-    let mut draw_t = Instant::now();
-    let mut elapsed_time = Duration::from_secs(0);
-    let mut total_elapsed_time = Duration::from_secs(0);
+    let mut draw_grid = false;
     let mut frame_counter: u64 = 0;
-    let mut last_time = Instant::now();
-    let fps_window = 2.0;
-    let mut last_fps_update_counter = 0;
-    let mut fps_update_t = Instant::now();
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(32000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
     let mut replay_index = 0;
@@ -65,23 +65,36 @@ fn main() {
     if args.len() > 1 {
         mappy::read_fm2(&mut replay_inputs, &Path::new(&args[1]));
     }
-
     let mut mappy = MappyState::new(w, h);
     let start = Instant::now();
     println!(
         "Instructions
 Space bar toggles play/pause
-wasd for directional movement (mostly left/right, but can go down into some pipes or up vines
+wasd for directional movement
 gh for select/start
 j for run/throw fireball (when fiery)
 k for jump
 # for load inputs #
 shift-# for dump inputs #
 
-Feel free to hack this code to print out memory addresses, VRAM information, etc."
+zxcvbnm,./ for debug displays"
     );
+    let mut fb = vec![0_u32;w*h];
+    let mut last_pressed:HashSet<_> = event_pump.keyboard_state().pressed_scancodes().collect();
+    'running: loop {
+        let frame_start = Instant::now();
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit {..} |
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                    break 'running
+                },
+                _ => {}
+            }
+        }
+        let now_pressed:HashSet<_> = event_pump.keyboard_state().pressed_scancodes().collect();
+        let just_pressed:HashSet<_> = now_pressed.difference(&last_pressed).collect();
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
         //space: pause/play
 
         //wasd: directional movement
@@ -90,34 +103,37 @@ Feel free to hack this code to print out memory addresses, VRAM information, etc
         //j: b (run)
         //k: a (jump)
 
-        if window.is_key_pressed(Key::Space, KeyRepeat::No) {
+        if just_pressed.contains(&Scancode::Space) {
             play_state = match play_state {
                 PlayState::Paused => PlayState::Playing,
                 PlayState::Playing => PlayState::Paused,
             };
             println!("Toggle playing to: {:?}", play_state);
         }
-        let shifted = window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift);
+        if just_pressed.contains(&Scancode::Z) {
+            draw_grid = !draw_grid;
+        }
+        let shifted = now_pressed.contains(&Scancode::LShift) || now_pressed.contains(&Scancode::RShift);
         let numkey = {
-            if window.is_key_pressed(Key::Key0, KeyRepeat::No) {
+            if just_pressed.contains(&Scancode::Num0) {
                 Some(0)
-            } else if window.is_key_pressed(Key::Key1, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num1) {
                 Some(1)
-            } else if window.is_key_pressed(Key::Key2, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num2) {
                 Some(2)
-            } else if window.is_key_pressed(Key::Key3, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num3) {
                 Some(3)
-            } else if window.is_key_pressed(Key::Key4, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num4) {
                 Some(4)
-            } else if window.is_key_pressed(Key::Key5, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num5) {
                 Some(5)
-            } else if window.is_key_pressed(Key::Key6, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num6) {
                 Some(6)
-            } else if window.is_key_pressed(Key::Key7, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num7) {
                 Some(7)
-            } else if window.is_key_pressed(Key::Key8, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num8) {
                 Some(8)
-            } else if window.is_key_pressed(Key::Key9, KeyRepeat::No) {
+            } else if just_pressed.contains(&Scancode::Num9) {
                 Some(9)
             } else {
                 None
@@ -132,7 +148,6 @@ Feel free to hack this code to print out memory addresses, VRAM information, etc
                 // TODO clear mappy too?
                 emu.reset();
                 frame_counter = 0;
-                last_fps_update_counter = 0;
                 inputs.clear();
                 replay_inputs.clear();
                 mappy::read_fm2(&mut replay_inputs, &path);
@@ -140,28 +155,26 @@ Feel free to hack this code to print out memory addresses, VRAM information, etc
             }
         }
         if play_state == PlayState::Playing {
-            elapsed_time += last_time.elapsed();
-            total_elapsed_time += last_time.elapsed();
-        }
-        last_time = Instant::now();
-        while elapsed_time.as_secs_f64() >= 1.0 / 60.0 {
-            elapsed_time -= Duration::from_secs_f64(1.0 / 60.0);
             let buttons = if replay_index >= replay_inputs.len() {
                 Buttons::new()
-                    .up(window.is_key_down(Key::W))
-                    .down(window.is_key_down(Key::S))
-                    .left(window.is_key_down(Key::A))
-                    .right(window.is_key_down(Key::D))
-                    .select(window.is_key_down(Key::G))
-                    .start(window.is_key_down(Key::H))
-                    .b(window.is_key_down(Key::J))
-                    .a(window.is_key_down(Key::K))
+                    .up(now_pressed.contains(&Scancode::W))
+                    .down(now_pressed.contains(&Scancode::S))
+                    .left(now_pressed.contains(&Scancode::A))
+                    .right(now_pressed.contains(&Scancode::D))
+                    .select(now_pressed.contains(&Scancode::G))
+                    .start(now_pressed.contains(&Scancode::H))
+                    .b(now_pressed.contains(&Scancode::J))
+                    .a(now_pressed.contains(&Scancode::K))
             } else {
                 replay_index += 1;
                 replay_inputs[replay_index-1][0]
             };
             inputs.push([buttons, Buttons::new()]);
             emu.run(inputs[inputs.len() - 1]);
+            emu.copy_framebuffer_argb32(&mut fb).expect("Couldn't copy emulator framebuffer");
+            game_tex.update(Rect::new(0,0,w as u32,h as u32),
+                            unsafe { &fb.align_to().1 },
+                            4*w).expect("Couldn't copy emulator fb to texture");
             mappy.process_screen(&emu);
             frame_counter += 1;
             if frame_counter % 60 == 0 {
@@ -174,23 +187,33 @@ Feel free to hack this code to print out memory addresses, VRAM information, etc
                     start.elapsed().as_secs_f64() / (frame_counter as f64)
                 );
             }
+            canvas.copy_ex(&game_tex,
+                           Rect::new(0,0,w as u32,h as u32),
+                           Rect::new(0,0,ww,wh),
+                           0.0,
+                           None,
+                           false,
+                           false).expect("Couldn't blit game tex");
+
+            // draw mappy split
+            if draw_grid {
+                canvas.set_draw_color(Color::RGB(255,0,0));
+                for x in ((mappy.grid_align.0 as usize)..w).step_by(8) {
+                    for y in ((mappy.splits[0].0+mappy.grid_align.1)..mappy.splits[0].1).step_by(8) {
+                        canvas.draw_rect(Rect::new((x as u32*SCALE) as i32,
+                                                   (y as u32*SCALE) as i32,
+8*SCALE,
+                                               8*SCALE)).unwrap();
+                    }
+                }
+            }
         }
-        // every K seconds update avg fps counter
-        if play_state == PlayState::Playing && fps_update_t.elapsed().as_secs_f64() >= fps_window {
-            let avg_fps = (frame_counter - last_fps_update_counter) as f64
-                / fps_update_t.elapsed().as_secs_f64();
-            println!("Avg FPS: {}", avg_fps);
-            last_fps_update_counter = frame_counter;
-            fps_update_t = Instant::now();
+        last_pressed = now_pressed;
+        canvas.present();
+        let one_sixtieth = Duration::new(0, 1_000_000_000u32 / 60);
+        if one_sixtieth > frame_start.elapsed() {
+            ::std::thread::sleep(one_sixtieth - frame_start.elapsed());
         }
-        if draw_t.elapsed().as_secs_f64() >= redraw_max_interval && frame_counter > 0 {
-            display_into(&mut emu, &mut buffer);
-            window
-                .update_with_buffer(&buffer, w * SCALE, h * SCALE)
-                .expect("Couldn't update window framebuffer!");
-            draw_t = Instant::now();
-        }
-        window.update()
     }
     mappy.dump_tiles(Path::new("../../out/"));
 }

@@ -5,7 +5,7 @@ use crate::tile::Tile;
 use image::{ImageBuffer, Rgb};
 use itertools::Itertools;
 use libloading::Symbol;
-use retro_rs::{Buttons, Emulator};
+use retro_rs::Emulator;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -54,14 +54,14 @@ impl MappyState {
         let lo = lo.max(8) as usize;
         let hi = hi.min(240 - 8) as usize;
         'offset: for (xo, yo) in offsets {
-            let mut checks = 0;
+            // let mut checks = 0;
             for y in ((lo + yo)..hi).step_by(8) {
                 // bring in both sides by 8 to avoid junk pixels
                 for x in ((xo + 8)..(w - 8)).step_by(8) {
                     if sprites::overlapping_sprite(x, y, sprites) {
                         continue;
                     }
-                    checks += 1;
+                    // checks += 1;
                     let tile = Tile::read(&self.fb, x as usize, y as usize);
                     if tiles.contains(&tile) {
                         continue;
@@ -185,5 +185,5 @@ fn find_offset(old:u8, new:u8) -> i8 {
         (new+8)-old
     };
 
-    *[decrease, increase].into_iter().min_by_key(|n| n.abs()).unwrap()
+    *[decrease, increase].iter().min_by_key(|n| n.abs()).unwrap()
 }
