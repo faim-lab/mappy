@@ -1,9 +1,16 @@
 use crate::framebuffer::Framebuffer;
 use crate::pixels;
 use std::hash::{Hash, Hasher};
-#[derive(Clone)]
-pub struct Tile([u8; 8 * 8]);
-impl Tile {
+
+pub trait Tile : PartialEq + Eq + Hash + Clone {
+    fn empty() -> Self;
+}
+
+
+#[derive(Clone, Copy)]
+pub struct TileGfx([u8; 8 * 8]);
+
+impl TileGfx {
     pub fn read(fb: &Framebuffer, x: usize, y: usize) -> Self {
         let mut tile_data = [0_u8; 64];
         for yi in y..y + 8 {
@@ -12,7 +19,7 @@ impl Tile {
                     fb.fb[fb.w * yi + xi];
             }
         }
-        Tile(tile_data)
+        Self(tile_data)
     }
     pub fn write_rgb888(&self, buf: &mut [u8]) {
         assert!(buf.len() == self.0.len() * 3);
@@ -26,8 +33,11 @@ impl Tile {
             }
         }
     }
+    pub fn perceptual_hash(&self) -> u128 {
+        self.0.iter().fold(0_u128, |x,&y| x.wrapping_add(y as u128))
+    }
 }
-impl PartialEq for Tile {
+impl PartialEq for TileGfx {
     fn eq(&self, other: &Self) -> bool {
         for (a, b) in self.0.iter().zip(other.0.iter()) {
             if a != b {
@@ -37,9 +47,14 @@ impl PartialEq for Tile {
         true
     }
 }
-impl Eq for Tile {}
-impl Hash for Tile {
+impl Eq for TileGfx {}
+impl Hash for TileGfx {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state);
+    }
+}
+impl Tile for TileGfx {
+    fn empty() -> Self {
+        TileGfx([0;8*8])
     }
 }

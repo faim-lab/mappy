@@ -43,20 +43,36 @@ fn main() {
     canvas.clear();
     canvas.present();
 
+    let window2 = video_subsystem.window("Current Room", 512, 480)
+        .build()
+        .unwrap();
+
+    let mut canvas2 = window2.into_canvas().build().unwrap();
+
+    canvas2.set_draw_color(Color::RGB(0, 0, 0));
+    canvas2.clear();
+    canvas2.present();
+
     let mut event_pump = sdl_context.event_pump().unwrap();
 
     let tex_creator = canvas.texture_creator();
-
     let mut game_tex = tex_creator.create_texture(
         sdl2::pixels::PixelFormatEnum::ARGB8888,
         sdl2::render::TextureAccess::Streaming,
         w as u32,
         h as u32
     ).expect("Couldn't make game render texture");
-
+    let mut cur_screen_tex_size = (1,1);
+    let mut cur_screen_tex = tex_creator.create_texture(
+        sdl2::pixels::PixelFormatEnum::ARGB32,
+        sdl2::render::TextureAccess::Streaming,
+        cur_screen_tex_size.0,
+        cur_screen_tex_size.1
+    );
 
     let mut play_state = PlayState::Playing;
     let mut draw_grid = false;
+    let mut draw_tile_standins = false;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(32000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
@@ -113,6 +129,10 @@ zxcvbnm,./ for debug displays"
         if just_pressed.contains(&Scancode::Z) {
             draw_grid = !draw_grid;
         }
+        if just_pressed.contains(&Scancode::X) {
+            draw_tile_standins = !draw_tile_standins;
+        }
+
         let shifted = now_pressed.contains(&Scancode::LShift) || now_pressed.contains(&Scancode::RShift);
         let numkey = {
             if just_pressed.contains(&Scancode::Num0) {
@@ -176,6 +196,7 @@ zxcvbnm,./ for debug displays"
                             unsafe { &fb.align_to().1 },
                             4*w).expect("Couldn't copy emulator fb to texture");
             mappy.process_screen(&emu);
+
             frame_counter += 1;
             if frame_counter % 60 == 0 {
                 println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
@@ -198,12 +219,30 @@ zxcvbnm,./ for debug displays"
             // draw mappy split
             if draw_grid {
                 canvas.set_draw_color(Color::RGB(255,0,0));
-                for x in ((mappy.grid_align.0 as usize)..w).step_by(8) {
-                    for y in ((mappy.splits[0].0+mappy.grid_align.1)..mappy.splits[0].1).step_by(8) {
+                let region = mappy.split_region();
+                for x in ((region.x as u32)..(region.x as u32+region.w)).step_by(8) {
+                    for y in ((region.y as u32)..(region.y as u32+region.h)).step_by(8) {
                         canvas.draw_rect(Rect::new((x as u32*SCALE) as i32,
                                                    (y as u32*SCALE) as i32,
-8*SCALE,
-                                               8*SCALE)).unwrap();
+                                                   8*SCALE,
+                                                   8*SCALE)).unwrap()
+                    }
+                }
+            }
+            if draw_tile_standins {
+                let region = mappy.split_region();
+                for x in ((region.x as u32)..(region.x as u32+region.w)).step_by(8) {
+                    for y in ((region.y as u32)..(region.y as u32+region.h)).step_by(8) {
+                        // Use tile hash and convert to a 24-bit color
+                        let tile = mappy.current_screen.get((x-region.x as u32)/8,(y-region.y as u32)/8);
+                        let hash = tile.perceptual_hash();
+                        if hash != 0 {
+                            canvas.set_draw_color(Color::RGB((hash ^ 525_093_581_257) as u8, (hash ^ 12_895_091_245) as u8, (hash ^ 120_912_459_011) as u8));
+                            canvas.fill_rect(Rect::new((x as u32*SCALE) as i32,
+                                                       (y as u32*SCALE) as i32,
+                                                       8*SCALE,
+                                                       8*SCALE)).unwrap()
+                        }
                     }
                 }
             }
@@ -211,8 +250,9 @@ zxcvbnm,./ for debug displays"
         last_pressed = now_pressed;
         canvas.present();
         let one_sixtieth = Duration::new(0, 1_000_000_000u32 / 60);
-        if one_sixtieth > frame_start.elapsed() {
-            ::std::thread::sleep(one_sixtieth - frame_start.elapsed());
+        let elapsed = frame_start.elapsed();
+        if one_sixtieth > elapsed {
+            ::std::thread::sleep(one_sixtieth - elapsed);
         }
     }
     mappy.dump_tiles(Path::new("../../out/"));

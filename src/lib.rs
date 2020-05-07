@@ -5,10 +5,24 @@ mod pixels;
 mod scrolling;
 mod sprites;
 mod tile;
+mod screen;
 pub use mappy::*;
 use std::fs::File;
 use std::path::Path;
 use retro_rs::Buttons;
+
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct Rect {
+    pub x:i32,
+    pub y:i32,
+    pub w:u32,
+    pub h:u32
+}
+impl Rect {
+    pub fn new(x:i32, y:i32, w:u32, h:u32) -> Self {
+        Self {x,y,w,h}
+    }
+}
 
 fn to_bitstring(b:Buttons) -> String {
     format!("{}{}{}{}{}{}{}{}",

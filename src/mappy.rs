@@ -1,7 +1,9 @@
 use crate::framebuffer::Framebuffer;
 use crate::scrolling::*;
 use crate::sprites;
-use crate::tile::Tile;
+use crate::Rect;
+use crate::tile::TileGfx;
+use crate::screen::Screen;
 use image::{ImageBuffer, Rgb};
 use itertools::Itertools;
 use libloading::Symbol;
@@ -11,11 +13,12 @@ use std::path::Path;
 
 pub struct MappyState {
     latch: ScrollLatch,
-    pub tiles: HashSet<Tile>,
+    pub tiles: HashSet<TileGfx>,
     pub grid_align: (u8, u8),
     pub scroll: (i16,i16),
     pub splits: [(u8, u8); 1],
     pub live_sprites: [sprites::SpriteData; sprites::SPRITE_COUNT],
+    pub current_screen: Screen<TileGfx>,
     fb: Framebuffer,
     changes: Vec<ScrollChange>,
     change_count: u32,
@@ -33,36 +36,36 @@ impl MappyState {
             fb: Framebuffer::new(w, h),
             changes: Vec::with_capacity(32000),
             change_count: 0,
+            current_screen: Screen::new(Rect::new(0,0,0,0))
         }
     }
     fn find_tiling(&mut self, lo: u8, hi: u8) {
         let (last_sx, last_sy) = self.grid_align;
-        let sprites = &self.live_sprites;
-        let tiles = &mut self.tiles;
         let w = self.fb.w;
         let mut sx = 0;
         let mut sy = 0;
-        let mut least_candidates: HashSet<Tile> = HashSet::new();
+        let mut least_candidates: HashSet<TileGfx> = HashSet::new();
         let mut least_candidate_count = (w as usize * ((hi - lo) as usize)) / 64;
-        let mut candidates: HashSet<Tile> =
+        let mut candidates: HashSet<TileGfx> =
             HashSet::with_capacity((w as usize * ((hi - lo) as usize)) / 64);
-        let mut offsets: Vec<_> = (0..8_usize).cartesian_product(0..8_usize).collect();
+        let mut offsets: Vec<_> = (0..8_u8).cartesian_product(0..8_u8).collect();
         offsets.sort_by_key(|&(x, y)| {
             (x as i32 - last_sx as i32).abs() + (y as i32 - last_sy as i32).abs()
         });
-        // remove possible junk lines
-        let lo = lo.max(8) as usize;
-        let hi = hi.min(240 - 8) as usize;
         'offset: for (xo, yo) in offsets {
+            //let mut checks = 0
+            let fb = &self.fb;
+            let region = self.split_region_for(lo as u32, hi as u32, xo, yo);
+            let tiles = &mut self.tiles;
+
             // let mut checks = 0;
-            for y in ((lo + yo)..hi).step_by(8) {
-                // bring in both sides by 8 to avoid junk pixels
-                for x in ((xo + 8)..(w - 8)).step_by(8) {
-                    if sprites::overlapping_sprite(x, y, sprites) {
+            for y in (region.y as u32..(region.y as u32+region.h)).step_by(8) {
+                for x in (region.x as u32..(region.x as u32+region.w)).step_by(8) {
+                    if sprites::overlapping_sprite(x as usize, y as usize, &self.live_sprites) {
                         continue;
                     }
                     // checks += 1;
-                    let tile = Tile::read(&self.fb, x as usize, y as usize);
+                    let tile = TileGfx::read(fb, x as usize, y as usize);
                     if tiles.contains(&tile) {
                         continue;
                     }
@@ -79,11 +82,12 @@ impl MappyState {
                 // println!("Found {:?} has {:?} candidates after {:?} checks", (xo,yo), candidates.len(), checks);
                 least_candidate_count = candidates.len();
                 least_candidates = candidates.clone();
-                sx = xo as u8;
-                sy = yo as u8;
+                sx = xo;
+                sy = yo;
                 candidates.clear();
             }
         }
+        let tiles = &mut self.tiles;
         tiles.extend(least_candidates);
         self.grid_align = (sx, sy);
     }
@@ -145,6 +149,44 @@ impl MappyState {
             self.scroll.0 + find_offset(old_align.0, self.grid_align.0) as i16,
             self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i16
         );
+        let region = self.split_region();
+        self.current_screen = Screen::new(Rect::new(0, 0, region.w/8, region.h/8));
+        for y in (region.y..(region.y+region.h as i32)).step_by(8) {
+            for x in (region.x..(region.x+region.w as i32)).step_by(8) {
+                if sprites::overlapping_sprite(x as usize, y as usize, &self.live_sprites) {
+                    // Just leave the empty one there
+                    continue;
+                }
+                let tile = TileGfx::read(&self.fb, x as usize, y as usize);
+                if !(self.tiles.contains(&tile)) {
+                    println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/8, (y-region.y)/8, tile.perceptual_hash());
+                }
+                self.current_screen.set(tile, (x-region.x) as u32/8, (y-region.y) as u32/8);
+            }
+        }
+    }
+
+    pub fn split_region_for(&self, lo:u32, hi:u32, xo:u8, yo:u8) -> Rect {
+        let lo = lo.max(8);
+        let hi = hi.min(self.fb.h as u32-8);
+        let dy = hi - (lo+yo as u32);
+        let dy = (dy/8)*8;
+        let dx = (self.fb.w as u32 - 8) - (xo as u32+8);
+        let dx = (dx/8)*8;
+        Rect::new(
+            8+xo as i32,
+            lo as i32+yo as i32,
+            dx,
+            dy
+        )
+    }
+
+    pub fn split_region(&self) -> Rect {
+        // [src/mappy.rs:65] lo + yo = 32
+        // [src/mappy.rs:65] hi = 232
+        // [src/mappy.rs:65] xo + 8 = 8
+        // [src/mappy.rs:65] w - 8 = 248
+        self.split_region_for(self.splits[0].0 as u32, self.splits[0].1 as u32, self.grid_align.0, self.grid_align.1)
     }
 
     fn get_changes(&mut self, emu: &Emulator) {
