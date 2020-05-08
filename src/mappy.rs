@@ -150,7 +150,7 @@ impl MappyState {
             self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i16
         );
         let region = self.split_region();
-        self.current_screen = Screen::new(Rect::new(0, 0, region.w/8, region.h/8));
+        self.current_screen = Screen::new(Rect::new(region.x/8, region.y/8, region.w/8, region.h/8));
         for y in (region.y..(region.y+region.h as i32)).step_by(8) {
             for x in (region.x..(region.x+region.w as i32)).step_by(8) {
                 if sprites::overlapping_sprite(x as usize, y as usize, &self.live_sprites) {
@@ -161,7 +161,7 @@ impl MappyState {
                 if !(self.tiles.contains(&tile)) {
                     println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/8, (y-region.y)/8, tile.perceptual_hash());
                 }
-                self.current_screen.set(tile, (x-region.x) as u32/8, (y-region.y) as u32/8);
+                self.current_screen.set(tile, x/8, y/8);
             }
         }
     }

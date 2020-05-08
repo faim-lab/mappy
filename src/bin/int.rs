@@ -231,13 +231,13 @@ zxcvbnm,./ for debug displays"
             }
             if draw_tile_standins {
                 let region = mappy.split_region();
-                for x in ((region.x as u32)..(region.x as u32+region.w)).step_by(8) {
-                    for y in ((region.y as u32)..(region.y as u32+region.h)).step_by(8) {
+                for x in ((region.x)..(region.x+region.w as i32)).step_by(8) {
+                    for y in ((region.y)..(region.y+region.h as i32)).step_by(8) {
                         // Use tile hash and convert to a 24-bit color
-                        let tile = mappy.current_screen.get((x-region.x as u32)/8,(y-region.y as u32)/8);
+                        let tile = mappy.current_screen.get(x/8,y/8);
                         let hash = tile.perceptual_hash();
                         if hash != 0 {
-                            canvas.set_draw_color(Color::RGB((hash ^ 525_093_581_257) as u8, (hash ^ 12_895_091_245) as u8, (hash ^ 120_912_459_011) as u8));
+                            canvas.set_draw_color(Color::RGB(((hash ^ 525_093_581_257) % 256) as u8, ((hash ^ 12_895_091_245) % 256) as u8, ((hash ^ 120_912_459_011) % 256) as u8));
                             canvas.fill_rect(Rect::new((x as u32*SCALE) as i32,
                                                        (y as u32*SCALE) as i32,
                                                        8*SCALE,

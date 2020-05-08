@@ -6,7 +6,8 @@ mod scrolling;
 mod sprites;
 mod tile;
 mod screen;
-pub use mappy::*;
+mod room;
+pub use crate::mappy::*;
 use std::fs::File;
 use std::path::Path;
 use retro_rs::Buttons;
@@ -21,6 +22,10 @@ pub struct Rect {
 impl Rect {
     pub fn new(x:i32, y:i32, w:u32, h:u32) -> Self {
         Self {x,y,w,h}
+    }
+    pub fn contains(&self, x:i32, y:i32) -> bool {
+        self.x <= x && x < self.x+self.w as i32 &&
+            self.y <= y && y < self.y+self.h as i32
     }
 }
 
