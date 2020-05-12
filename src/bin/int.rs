@@ -200,7 +200,7 @@ zxcvbnm,./ for debug displays"
             frame_counter += 1;
             if frame_counter % 60 == 0 {
                 println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-                println!("Known tiles: {:?}", mappy.tiles.len());
+                println!("Known tiles: {:?}", mappy.tiles.gfx_count());
                 println!(
                     "Net: {:} for {:} inputs, avg {:}",
                     start.elapsed().as_secs_f64(),
@@ -235,9 +235,10 @@ zxcvbnm,./ for debug displays"
                     for y in ((region.y)..(region.y+region.h as i32)).step_by(8) {
                         // Use tile hash and convert to a 24-bit color
                         let tile = mappy.current_screen.get(x/8,y/8);
-                        let hash = tile.perceptual_hash();
-                        if hash != 0 {
-                            canvas.set_draw_color(Color::RGB(((hash ^ 525_093_581_257) % 256) as u8, ((hash ^ 12_895_091_245) % 256) as u8, ((hash ^ 120_912_459_011) % 256) as u8));
+                        let idx = tile.index();
+                        if idx != 0 {
+                            // TODO this but better
+                            canvas.set_draw_color(Color::RGB(((idx ^ 525_093_581_257) % 256) as u8, ((idx ^ 12_895_091_245) % 256) as u8, ((idx ^ 120_912_459_011) % 256) as u8));
                             canvas.fill_rect(Rect::new((x as u32*SCALE) as i32,
                                                        (y as u32*SCALE) as i32,
                                                        8*SCALE,

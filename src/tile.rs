@@ -2,10 +2,11 @@ use crate::framebuffer::Framebuffer;
 use crate::pixels;
 use std::hash::{Hash, Hasher};
 use std::fmt;
-use std::rc::Rc;
+use std::collections::HashMap;
+use id_arena::{Arena, Id};
 
 pub trait Tile : PartialEq + Eq + Hash + Clone {
-    fn empty() -> Self;
+
 }
 
 
@@ -38,6 +39,9 @@ impl TileGfx {
     pub fn perceptual_hash(&self) -> u128 {
         self.0.iter().fold(0_u128, |x,&y| x.wrapping_add(y as u128))
     }
+    pub fn new() -> Self {
+        Self([0;8*8])
+    }
 }
 impl PartialEq for TileGfx {
     fn eq(&self, other: &Self) -> bool {
@@ -55,11 +59,6 @@ impl Hash for TileGfx {
         self.0.hash(state);
     }
 }
-impl Tile for TileGfx {
-    fn empty() -> Self {
-        TileGfx([0;8*8])
-    }
-}
 impl fmt::Debug for TileGfx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TileGfx")
@@ -68,110 +67,118 @@ impl fmt::Debug for TileGfx {
     }
 }
 
+pub type TileGfxId = Id<TileGfx>;
+impl Tile for TileGfxId {}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct TileAnim {
-    pub frames:Vec<TileGfx>
+pub struct TileChange {
+    pub from:TileGfxId,
+    pub to:TileGfxId
 }
-impl TileAnim {
-    pub fn new(gfx:TileGfx) -> Self {
-        TileAnim {
-            frames:vec![gfx]
-        }
-    }
-    pub fn extend(&self, gfx:TileGfx) -> Self {
-        TileAnim {
-            frames:self.frames.iter().cloned().chain(vec![gfx]).collect()
-        }
+impl TileChange {
+    pub fn new(from:TileGfxId, to:TileGfxId) -> Self {
+        TileChange { from, to }
     }
 }
-impl fmt::Debug for TileAnim {
+impl fmt::Debug for TileChange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TileAnim")
-            .field("phashes", &self.frames.iter().map(|f| f.perceptual_hash()).collect::<Vec<_>>())
+        f.debug_struct("TileChange")
+            .field("from", &self.from)
+            .field("to", &self.to)
             .finish()
     }
 }
-impl Tile for TileAnim {
-    fn empty() -> Self {
-        TileAnim{
-            frames:vec![]
+impl Tile for TileChange {}
+
+#[derive(Default)]
+struct TileChangeData {
+    successors:Vec<(TileGfxId, usize)>,
+    count: usize
+}
+
+pub struct TileDB {
+    gfx_arena: Arena<TileGfx>,
+    initial: TileGfxId,
+
+    // TODO consider trie based on pixel runs?
+    gfx: HashMap<TileGfx, TileGfxId>,
+
+    changes: HashMap<TileChange, TileChangeData>
+}
+
+impl TileDB {
+    pub fn new() -> Self {
+        let mut gfx_arena = Arena::new();
+        let init_tile = TileGfx::new();
+        let initial = gfx_arena.alloc(init_tile);
+        let gfx = HashMap::new();
+        let mut changes = HashMap::new();
+        changes.insert(TileChange::new(initial,initial), TileChangeData::default());
+        TileDB {
+            gfx_arena,
+            initial,
+            gfx,
+            changes
+        }
+    }
+    pub fn get_initial_change(&self) -> TileChange {
+        TileChange{from:self.initial, to:self.initial}
+    }
+    pub fn get_initial_tile(&self) -> TileGfxId {
+        self.initial
+    }
+    pub fn get_tile(&mut self, tg:TileGfx) -> TileGfxId {
+        let arena = &mut self.gfx_arena;
+        *self.gfx.entry(tg).or_insert_with(|| {
+            arena.alloc(tg)
+        })
+    }
+    pub fn contains(&self, tg:&TileGfx) -> bool {
+        self.gfx.contains_key(tg)
+    }
+    pub fn extend<I>(&mut self, tgs:I) where
+        I:IntoIterator<Item=TileGfx> {
+        tgs.into_iter().for_each(|tg| { self.get_tile(tg); });
+    }
+    pub fn get_tile_by_id(&self, tg:TileGfxId) -> Option<&TileGfx> {
+        self.gfx_arena.get(tg)
+    }
+    pub fn gfx_iter(&self) -> impl Iterator<Item=&TileGfx> {
+        self.gfx.keys()
+    }
+    pub fn gfx_count(&self) -> usize {
+        self.gfx.len()
+    }
+    pub fn change_from_to(&mut self, tc:&TileChange, gfx:&TileGfxId) -> TileChange {
+        if gfx == &tc.to { tc.clone() }
+        else {
+            // Note! Could change from not-initial to initial under some circumstances (sprites?)
+            // Or if we go from a large region screen to a small region screen?
+            // For now, just ignore
+            if gfx == &self.get_initial_tile() {
+                return tc.clone()
+            }
+            let init = self.get_initial_change();
+            let old_change = self.changes.get_mut(&tc).unwrap();
+            if *tc != init {
+                (*old_change).count -= 1;
+            }
+            let mut found = false;
+            for (change_to, count) in (*old_change).successors.iter_mut() {
+                if change_to == gfx {
+                    found = true;
+                    *count += 1;
+                    break;
+                }
+            }
+            if !found {
+                (*old_change).successors.push((*gfx, 1));
+            }
+
+            let tc2 = TileChange::new(tc.to, *gfx);
+            let change = self.changes.entry(tc2.clone()).or_insert(TileChangeData::default());
+            change.count += 1;
+            tc2
         }
     }
 }
-impl<T> Tile for Rc<T> where T:Tile {
-    fn empty() -> Self {
-        Rc::new(T::empty())
-    }
-}
-
-// use std::collections::HashMap;
-
-// // TODO find a lighter weight alternative to TileGfx
-// pub struct AnimTrie {
-//     nodes:HashMap<TileGfx, AnimTrieNode>
-// }
-
-// impl AnimTrie {
-//     pub fn new() -> Self {
-//         Self { nodes:HashMap::new()}
-//     }
-//     pub fn lookup_ext(&self, ta:&TileAnim, gfx:&TileGfx) -> Option<Rc<TileAnim>> {
-//         if let Some(n) = self.nodes.get(&ta.frames[0]) {
-//             return n.lookup_ext(ta, 1, gfx);
-//         }
-//         None
-//     }
-//     pub fn insert(&mut self, ta:Rc<TileAnim>) {
-//         let gfx = ta.frames[0];
-//         use std::collections::hash_map::Entry;
-//         match self.nodes.entry(ta.frames[0]) {
-//             Entry::Occupied(o) => {
-//                 o.get().insert(ta, 1);
-//             }
-//             Entry::Vacant(v) => {
-//                 assert!(ta.frames.len() == 1);
-//                 v.insert(AnimTrieNode {
-//                     value:ta,
-//                     nodes:HashMap::new()
-//                 });
-//             }
-//         };
-//     }
-// }
-
-// struct AnimTrieNode {
-//     value:Rc<TileAnim>,
-//     nodes:HashMap<TileGfx, AnimTrieNode>
-// }
-
-// impl AnimTrieNode {
-//     pub fn insert(&mut self, ta:Rc<TileAnim>, idx:usize) {
-//         if idx > ta.frames.len() {
-//             panic!("Bug in AnimTrieNode");
-//         } else if idx == ta.frames.len() {
-//             assert_eq!(ta, self.value);
-//         } else if idx == ta.frames.len() - 1 {
-//             let gfx = ta.frames[idx];
-//             self.nodes.entry(gfx).or_insert_with(|| {
-//                 AnimTrieNode {value:ta.clone(), nodes:HashMap::new()}
-//             });
-//         } else {
-//             let gfx = &ta.frames[idx];
-//             let next = self.nodes.get(gfx).expect("Inserted a bigger animation before its smaller component!");
-//             next.insert(ta, idx+1);
-//         }
-//     }
-//     pub fn lookup_ext(&self, ta:&TileAnim, idx:usize, ext_gfx:&TileGfx) -> Option<Rc<TileAnim>> {
-//         if idx == ta.frames.len() + 1 {
-//             Some(self.value)
-//         } else if idx > ta.frames.len() {
-//             panic!("Bad tileanim lookup in AnimTrieNode");
-//         } else {
-//             let gfx = if idx < ta.frames.len() { &ta.frames[idx] } else { ext_gfx };
-//             match self.nodes.get(gfx) {
-//                 Some(n) => n.lookup_ext(ta, idx+1, ext_gfx),
-//                 None => None
-//             }
-//         }
-//     }
-// }

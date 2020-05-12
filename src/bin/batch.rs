@@ -25,7 +25,7 @@ fn main() {
         mappy.process_screen(&emu);
         if i > 280 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-            println!("Known tiles: {:?}", mappy.tiles.len());
+            println!("Known tiles: {:?}", mappy.tiles.gfx_count());
         }
     }
     println!("Emulation only: 0.110773661 for 360 inputs, avg 0.00030770523055555557 per frame");

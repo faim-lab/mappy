@@ -2,8 +2,9 @@ use crate::framebuffer::Framebuffer;
 use crate::scrolling::*;
 use crate::sprites;
 use crate::Rect;
-use crate::tile::TileGfx;
+use crate::tile::{TileGfxId, TileDB, TileGfx};
 use crate::screen::Screen;
+use crate::room::Room;
 use image::{ImageBuffer, Rgb};
 use itertools::Itertools;
 use libloading::Symbol;
@@ -13,22 +14,27 @@ use std::path::Path;
 
 pub struct MappyState {
     latch: ScrollLatch,
-    pub tiles: HashSet<TileGfx>,
+    pub tiles: TileDB,
     pub grid_align: (u8, u8),
-    pub scroll: (i16,i16),
+    pub scroll: (i32,i32),
     pub splits: [(u8, u8); 1],
     pub live_sprites: [sprites::SpriteData; sprites::SPRITE_COUNT],
-    pub current_screen: Screen<TileGfx>,
+    pub current_screen: Screen<TileGfxId>,
     fb: Framebuffer,
     changes: Vec<ScrollChange>,
     change_count: u32,
+    pub current_room: Room
 }
 
 impl MappyState {
     pub fn new(w: usize, h: usize) -> Self {
+        let mut db = TileDB::new();
+        let t0 = db.get_initial_tile();
+        let s0 = Screen::new(Rect::new(0,0,0,0),&t0);
+        let room = Room::new(0,&s0,&mut db);
         MappyState {
             latch: ScrollLatch::default(),
-            tiles: HashSet::with_capacity(1024),
+            tiles:db,
             grid_align: (0, 0),
             scroll: (0,0),
             splits: [(0, 240)],
@@ -36,7 +42,8 @@ impl MappyState {
             fb: Framebuffer::new(w, h),
             changes: Vec::with_capacity(32000),
             change_count: 0,
-            current_screen: Screen::new(Rect::new(0,0,0,0))
+            current_screen: s0,
+            current_room: room
         }
     }
     fn find_tiling(&mut self, lo: u8, hi: u8) {
@@ -146,23 +153,29 @@ impl MappyState {
         self.find_tiling(lo, hi);
         // update scroll based on grid align change.
         self.scroll = (
-            self.scroll.0 + find_offset(old_align.0, self.grid_align.0) as i16,
-            self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i16
+            self.scroll.0 + find_offset(old_align.0, self.grid_align.0) as i32,
+            self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i32
         );
         let region = self.split_region();
-        self.current_screen = Screen::new(Rect::new(region.x/8, region.y/8, region.w/8, region.h/8));
+        self.current_screen = Screen::new(Rect::new((self.scroll.0+region.x)/8, (self.scroll.1+region.y)/8, region.w/8, region.h/8), &self.tiles.get_initial_tile());
         for y in (region.y..(region.y+region.h as i32)).step_by(8) {
             for x in (region.x..(region.x+region.w as i32)).step_by(8) {
                 if sprites::overlapping_sprite(x as usize, y as usize, &self.live_sprites) {
                     // Just leave the empty one there
                     continue;
                 }
+                // TODO could we avoid double-reading the framebuffer? We already did it to align the grid...
                 let tile = TileGfx::read(&self.fb, x as usize, y as usize);
                 if !(self.tiles.contains(&tile)) {
                     println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/8, (y-region.y)/8, tile.perceptual_hash());
                 }
-                self.current_screen.set(tile, x/8, y/8);
+                self.current_screen.set(self.tiles.get_tile(tile), (self.scroll.0+x)/8, (self.scroll.1+y)/8);
             }
+        }
+        if self.current_room.id == 0 {
+            self.current_room = Room::new(1, &self.current_screen, &mut self.tiles);
+        } else {
+            self.current_room.register_screen(&self.current_screen, &mut self.tiles);
         }
     }
 
@@ -201,7 +214,7 @@ impl MappyState {
     }
     pub fn dump_tiles(&self, root: &Path) {
         let mut buf = vec![0_u8; 8 * 8 * 3];
-        for (ti, tile) in self.tiles.iter().enumerate() {
+        for (ti, tile) in self.tiles.gfx_iter().enumerate() {
             tile.write_rgb888(&mut buf);
             let img = ImageBuffer::<Rgb<u8>, _>::from_raw(8, 8, &buf[..])
                 .expect("Couldn't create image buffer");

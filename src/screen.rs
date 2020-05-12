@@ -3,12 +3,16 @@ use crate::Rect;
 
 pub struct Screen<T:Tile> {
     pub region: Rect,
-    tiles: Vec<T>
+    tiles: Box<[T]>
 }
 
 impl<T : Tile> Screen<T> {
-    pub fn new(region:Rect) -> Self {
-        Self { region, tiles:vec![T::empty(); region.w as usize*region.h as usize] }
+    pub fn new(region:Rect, tile:&T) -> Self {
+        Self {
+            region,
+            tiles:
+            vec![tile.clone();region.w as usize*region.h as usize].into_boxed_slice()
+        }
     }
     #[inline(always)]
     pub fn get(&self, x:i32, y:i32) -> &T {
