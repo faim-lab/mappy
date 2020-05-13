@@ -1,16 +1,18 @@
 use crate::framebuffer::Framebuffer;
 use crate::scrolling::*;
-use crate::sprites;
-use crate::Rect;
+use crate::sprites::{SpriteData, SpriteTrack, SPRITE_COUNT, self};
+use crate::{Rect,Time};
 use crate::tile::{TileGfxId, TileDB, TileGfx};
 use crate::screen::Screen;
 use crate::room::Room;
 use image::{ImageBuffer, Rgb};
 use itertools::Itertools;
 use libloading::Symbol;
-use retro_rs::Emulator;
+use retro_rs::{Emulator,Buttons};
 use std::collections::HashSet;
 use std::path::Path;
+
+const INPUT_MEM:usize = 10;
 
 pub struct MappyState {
     latch: ScrollLatch,
@@ -18,27 +20,36 @@ pub struct MappyState {
     pub grid_align: (u8, u8),
     pub scroll: (i32,i32),
     pub splits: [(u8, u8); 1],
-    pub live_sprites: [sprites::SpriteData; sprites::SPRITE_COUNT],
+    pub live_sprites: [SpriteData; SPRITE_COUNT],
+    pub live_tracks: Vec<SpriteTrack>,
+    dead_tracks: Vec<SpriteTrack>,
+    // last_inputs: [Buttons; INPUT_MEM],
     pub current_screen: Screen<TileGfxId>,
     fb: Framebuffer,
     changes: Vec<ScrollChange>,
     change_count: u32,
-    pub current_room: Room
+    pub current_room: Room,
+    now: Time
 }
 
 impl MappyState {
     pub fn new(w: usize, h: usize) -> Self {
-        let mut db = TileDB::new();
-        let t0 = db.get_initial_tile();
-        let s0 = Screen::new(Rect::new(0,0,0,0),&t0);
-        let room = Room::new(0,&s0,&mut db);
+                       let mut db = TileDB::new();
+                       let t0 = db.get_initial_tile();
+                       let s0 = Screen::new(Rect::new(0,0,0,0),&t0);
+                       let room = Room::new(0,&s0,&mut db);
         MappyState {
             latch: ScrollLatch::default(),
             tiles:db,
             grid_align: (0, 0),
             scroll: (0,0),
             splits: [(0, 240)],
-            live_sprites: [sprites::SpriteData::default(); sprites::SPRITE_COUNT],
+            now:Time(0),
+            live_sprites: [SpriteData::default(); SPRITE_COUNT],
+            live_tracks: Vec::with_capacity(SPRITE_COUNT),
+            // just for the current room
+            dead_tracks: Vec::with_capacity(128),
+            // last_inputs: [Buttons::new(); INPUT_MEM],
             fb: Framebuffer::new(w, h),
             changes: Vec::with_capacity(32000),
             change_count: 0,
@@ -177,6 +188,142 @@ impl MappyState {
         } else {
             self.current_room.register_screen(&self.current_screen, &mut self.tiles);
         }
+        self.track_sprites();
+        self.now.0 += 1;
+    }
+
+    const CREATE_COST:u32 = 20;
+    const DELETE_COST:u32 = 20;
+    const DISTANCE_MAX:u32 = 16;
+    // TODO: increase cost if pattern_id or table is not in historical data for track
+    fn sprite_change_cost(sd1:&SpriteData, sd2:&SpriteData) -> u32 {
+        sd1.distance(sd2) as u32 +
+            (if sd1.pattern_id == sd2.pattern_id { 0 } else { 2 }) +
+            (if sd1.table == sd2.table { 0 } else { 2 }) +
+            (if sd1.height() == sd2.height() { 0 } else { 4 }) +
+            (if sd1.attrs == sd2.attrs { 0 } else { 2 })
+    }
+    fn greedy_match(mut candidates:Vec<(usize, Vec<(Option<usize>,u32)>)>, live:&[(usize, &SpriteData)]) -> (Vec<(Option<usize>, Option<usize>)>, u32) {
+        // greedy match:
+        // pick candidate with least cost match
+        // fix it to that match
+        // repeat until done
+        let mut used_old:Vec<bool> = vec![false;candidates.len()];
+        let mut used_new = [false;SPRITE_COUNT];
+        let mut net_cost = 0;
+        let mut matching:Vec<(Option<usize>, Option<usize>)> = Vec::with_capacity(candidates.len()+live.len());
+        candidates.iter_mut().for_each(|(_,opts)| opts.sort_unstable_by_key(|tup| tup.1));
+        candidates.sort_unstable_by_key(|(_,opts)| opts.len());
+        for (oldi, opts) in candidates.into_iter() {
+            let (maybe_newi, cost) = opts.into_iter().find(|(maybe_newi, _cost)| match maybe_newi {
+                Some(newi) => !used_new[*newi],
+                None => true
+            }).expect("Conflict!  Shouldn't be possible!");
+            assert!(!used_old[oldi]);
+            used_old[oldi] = true;
+            match maybe_newi {
+                None => {
+                    net_cost += Self::DELETE_COST;
+                    matching.push((Some(oldi), None));
+                }
+                Some(newi) => {
+                    assert!(!used_new[newi]);
+                    used_new[newi] = true;
+                    net_cost += cost;
+                    matching.push((Some(oldi), Some(newi)));
+                }
+            }
+        }
+        for (newi,_) in live.iter() {
+            if !used_new[*newi] {
+                net_cost += Self::CREATE_COST;
+                matching.push((None, Some(*newi)));
+            }
+        }
+        (matching, net_cost)
+    }
+    fn track_sprites(&mut self) {
+        // find minimal matching of sprites
+        // local search is okay
+        // vec<vec> is worrisome
+        let live:Vec<_> = self.live_sprites
+            .iter()
+            .enumerate()
+            .filter(|(_,s)|s.is_valid())
+            .collect();
+        let mut candidates:Vec<(usize, Vec<(Option<usize>, u32)>)> = (0..self.live_tracks.len()).map(|ti| (ti, Vec::with_capacity(SPRITE_COUNT))).collect();
+        for (oldi,old) in self.live_tracks.iter().enumerate() {
+            //oldi could go to None
+            candidates[oldi].1.push((None, Self::DELETE_COST));
+            let old_s = old.current_data();
+            //or it could go to any close-enough newi
+            candidates[oldi].1.extend(
+                live.iter()
+                    .filter_map(
+                        |(newi,new)|
+                        if (new.distance(old_s) as u32) < Self::DISTANCE_MAX {
+                            Some((Some(*newi), Self::sprite_change_cost(new, old_s)))
+                        } else {
+                            None
+                        }));
+            //sort by key in case I need to do branch and bound?
+            // candidates[oldi].sort_unstable_by_key(|tup| tup.1);
+        }
+        if candidates.is_empty() && live.is_empty() {
+            // no old and no new sprites
+            return;
+        }
+        assert!(candidates.iter().all(|(_,opts)| opts.len() > 0));
+        // println!("{:?}", candidates.iter().map(|(_,opts)| opts.len()).collect::<Vec<_>>());
+        // dbg!(&candidates);
+        //take cartesian product over candidates for each thing, that's a Matching
+        //they should be sorted by local quality
+        //branch and bound should quickly find the global optimum? maybe later
+        // TODO just do some greedy matching instead of cartesian products
+        let (matching, cost) = Self::greedy_match(candidates, &live);
+        // println!("Matched with cost {:?}",cost);
+        let mut new_count = 0;
+        let mut matched_count = 0;
+        let mut to_remove = vec![];
+        // println!("Go through {:?}", self.now);
+        for (maybe_oldi, maybe_newi) in matching.into_iter() {
+            match (maybe_oldi, maybe_newi) {
+                (None, Some(newi)) => {
+                    println!("Create new {:?}", newi);
+                    new_count += 1;
+                    self.live_tracks.push(SpriteTrack::new(self.now, self.scroll, self.live_sprites[newi]));
+                }
+                (Some(oldi), None) => {
+                    // end a track
+                    // Can't use remove or swap_remove yet since the later old-indices must stay in the same order
+                    println!("End {:?}", oldi);
+                    to_remove.push(oldi);
+                },
+                (Some(oldi), Some(newi)) => {
+                    // match
+                    // println!("Update {:?} {:?}", oldi, newi);
+                    matched_count += 1;
+                    self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[newi]);
+                },
+                (None, None) => unreachable!("None track goes to None sprite??")
+            }
+        }
+        // println!("Added {}, removed {}, matched {}", new_count, to_remove.len(), matched_count);
+        let mut idx = 0;
+        let dead_tracks = &mut self.dead_tracks;
+        let old_len = self.live_tracks.len();
+        // Got to remove all dead indices at the same time!
+        self.live_tracks.retain(|track| {
+            idx += 1;
+            if to_remove.contains(&(idx-1)) {
+                // TODO remove this clone
+                dead_tracks.push(track.clone());
+                false
+            } else {
+                true
+            }
+        });
+        assert_eq!(self.live_tracks.len(), old_len - to_remove.len());
     }
 
     pub fn split_region_for(&self, lo:u32, hi:u32, xo:u8, yo:u8) -> Rect {

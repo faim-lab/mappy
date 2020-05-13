@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use mappy::MappyState;
-use sdl2::rect::Rect;
+use sdl2::rect::{Rect,Point};
 use sdl2::pixels::Color;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Scancode};
@@ -43,15 +43,15 @@ fn main() {
     canvas.clear();
     canvas.present();
 
-    let window2 = video_subsystem.window("Current Room", 512, 480)
-        .build()
-        .unwrap();
+    // let window2 = video_subsystem.window("Current Room", 512, 480)
+    //     .build()
+    //     .unwrap();
 
-    let mut canvas2 = window2.into_canvas().build().unwrap();
+    // let mut canvas2 = window2.into_canvas().build().unwrap();
 
-    canvas2.set_draw_color(Color::RGB(0, 0, 0));
-    canvas2.clear();
-    canvas2.present();
+    // canvas2.set_draw_color(Color::RGB(0, 0, 0));
+    // canvas2.clear();
+    // canvas2.present();
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
@@ -73,6 +73,7 @@ fn main() {
     let mut play_state = PlayState::Playing;
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
+    let mut draw_live_tracks = false;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(32000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
@@ -131,6 +132,9 @@ zxcvbnm,./ for debug displays"
         }
         if just_pressed.contains(&Scancode::X) {
             draw_tile_standins = !draw_tile_standins;
+        }
+        if just_pressed.contains(&Scancode::C) {
+            draw_live_tracks = !draw_live_tracks;
         }
 
         let shifted = now_pressed.contains(&Scancode::LShift) || now_pressed.contains(&Scancode::RShift);
@@ -221,12 +225,14 @@ zxcvbnm,./ for debug displays"
                 canvas.set_draw_color(Color::RGB(255,0,0));
                 let region = mappy.split_region();
                 for x in ((region.x as u32)..(region.x as u32+region.w)).step_by(8) {
-                    for y in ((region.y as u32)..(region.y as u32+region.h)).step_by(8) {
-                        canvas.draw_rect(Rect::new((x as u32*SCALE) as i32,
-                                                   (y as u32*SCALE) as i32,
-                                                   8*SCALE,
-                                                   8*SCALE)).unwrap()
-                    }
+                    canvas.draw_line(Point::new(x as i32*SCALE as i32,
+                                                SCALE as i32*region.y),
+                                     Point::new(x as i32*SCALE as i32,
+                                                SCALE as i32*(region.y+region.h as i32))).unwrap();
+                }
+                for y in ((region.y as u32)..(region.y as u32+region.h)).step_by(8) {
+                    canvas.draw_line(Point::new(SCALE as i32*region.x,y as i32 * SCALE as i32),
+                                     Point::new((SCALE as i32)*(region.x+region.w as i32), y as i32 * SCALE as i32)).unwrap();
                 }
             }
             if draw_tile_standins {
@@ -238,12 +244,52 @@ zxcvbnm,./ for debug displays"
                         let idx = tile.index();
                         if idx != 0 {
                             // TODO this but better
-                            canvas.set_draw_color(Color::RGB(((idx ^ 525_093_581_257) % 256) as u8, ((idx ^ 12_895_091_245) % 256) as u8, ((idx ^ 120_912_459_011) % 256) as u8));
+                            canvas.set_draw_color(
+                                Color::RGB((idx*127 % 256) as u8,
+                                           (idx*33 % 256) as u8,
+                                           (idx*61 % 256) as u8));
                             canvas.fill_rect(Rect::new((x as u32*SCALE) as i32,
                                                        (y as u32*SCALE) as i32,
                                                        8*SCALE,
                                                        8*SCALE)).unwrap()
                         }
+                    }
+                }
+            }
+            if draw_live_tracks {
+                for track in mappy.live_tracks.iter() {
+                    canvas.set_draw_color(
+                        Color::RGB(((track.positions[0].0).0*31 % 256) as u8,
+                                   ((track.positions[0].0).0*127 % 256) as u8,
+                                   ((track.positions[0].0).0*91 % 256) as u8)
+                    );
+                    let startp = Point::new(
+                        (track.positions[0].1).0 + track.positions[0].2.x as i32 - mappy.scroll.0,
+                        (track.positions[0].1).1 + track.positions[0].2.y as i32 - mappy.scroll.1
+                    );
+                    canvas
+                        .fill_rect(
+                            Rect::new((SCALE*(startp.x.max(0) as u32).max(SCALE*2)-SCALE*2) as i32,
+                                      (SCALE*(startp.y.max(0) as u32).max(SCALE*2)-SCALE*2) as i32,
+                                      SCALE*4, SCALE*4))
+                        .expect("Couldn't draw start for track");
+                    if track.positions.len() > 1 {
+                        canvas.draw_lines(
+                            track
+                                .positions
+                                .iter()
+                                .filter_map(
+                                    |(_,(sx,sy),sd)| {
+                                        let x = sx + (sd.x as i32) - mappy.scroll.0;
+                                        let y = sy + (sd.y as i32) - mappy.scroll.1;
+                                        if 0 <= x && x <= (w as i32) && 0 <= y && y <= (h as i32) {
+                                            Some(Point::new(x*(SCALE as i32), y*(SCALE as i32)))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                .collect::<Vec<Point>>()
+                                .as_slice()).expect("Couldn't draw lines for track");
                     }
                 }
             }

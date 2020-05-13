@@ -12,6 +12,9 @@ use std::fs::File;
 use std::path::Path;
 use retro_rs::Buttons;
 
+#[derive(Debug,Clone,Copy,PartialOrd,Ord,PartialEq,Eq,Hash)]
+pub struct Time(pub usize);
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct Rect {
     pub x:i32,
