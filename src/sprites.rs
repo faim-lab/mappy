@@ -1,6 +1,7 @@
 use retro_rs::Emulator;
 use std::mem;
 use crate::Time;
+use std::collections::HashSet;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -75,7 +76,7 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
             y: bs.y,
             height: sprite_height,
             pattern_id: bs.pattern_id,
-                table: table_bit,
+            table: table_bit,
             attrs: bs.attrs,
         }
     }
@@ -97,12 +98,23 @@ pub fn overlapping_sprite(x: usize, y: usize, sprites: &[SpriteData]) -> bool {
 
 #[derive(Clone)]
 pub struct SpriteTrack {
-    pub positions:Vec<(Time,(i32,i32),SpriteData)>
+    pub positions:Vec<(Time,(i32,i32),SpriteData)>,
+    // TODO measure against vecs or even arrays?
+    pub patterns:HashSet<u8>,
+    pub tables:HashSet<u8>,
+    pub attrs:HashSet<u8>
 }
 
 impl SpriteTrack {
     pub fn new(t:Time, scroll:(i32,i32), sd:SpriteData) -> Self {
-        Self {positions:vec![(t,scroll,sd)]}
+        let mut ret = Self {
+            positions:vec![],
+            patterns:HashSet::new(),
+            tables:HashSet::new(),
+            attrs:HashSet::new()
+        };
+        ret.update(t, scroll, sd);
+        ret
     }
     pub fn current_data(&self) -> &SpriteData {
         &self.positions[self.positions.len()-1].2
@@ -110,9 +122,21 @@ impl SpriteTrack {
     pub fn update(&mut self, t:Time, scroll:(i32,i32), sd:SpriteData) {
         // TODO handle time properly, dedup if no change
         self.positions.push((t,scroll,sd));
+        self.patterns.insert(sd.pattern_id);
+        self.tables.insert(sd.table);
+        self.attrs.insert(sd.attrs);
     }
     pub fn starting_point(&self) -> (i32,i32) {
         let (_, (sx,sy), sd) = &self.positions[0];
         (sx+sd.x as i32, sy+sd.y as i32)
+    }
+    pub fn seen_pattern(&self, pat:u8) -> bool {
+        self.patterns.contains(&pat)
+    }
+    pub fn seen_table(&self, tab:u8) -> bool {
+        self.tables.contains(&tab)
+    }
+    pub fn seen_attrs(&self, attrs:u8) -> bool {
+        self.attrs.contains(&attrs)
     }
 }

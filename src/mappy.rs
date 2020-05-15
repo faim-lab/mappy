@@ -192,16 +192,18 @@ impl MappyState {
         self.now.0 += 1;
     }
 
-    const CREATE_COST:u32 = 20;
-    const DELETE_COST:u32 = 20;
-    const DISTANCE_MAX:u32 = 16;
-    // TODO: increase cost if pattern_id or table is not in historical data for track
-    fn sprite_change_cost(sd1:&SpriteData, sd2:&SpriteData) -> u32 {
-        sd1.distance(sd2) as u32 +
-            (if sd1.pattern_id == sd2.pattern_id { 0 } else { 2 }) +
-            (if sd1.table == sd2.table { 0 } else { 2 }) +
-            (if sd1.height() == sd2.height() { 0 } else { 4 }) +
-            (if sd1.attrs == sd2.attrs { 0 } else { 2 })
+    const CREATE_COST:u32 = 28;
+    const DELETE_COST:u32 = 28;
+    const DISTANCE_MAX:u32 = 14;
+    const DESTROY_COAST:usize = 30;
+    // TODO: increase cost if this would alter blobbing?
+    fn sprite_change_cost(new_s:&SpriteData, old:&SpriteTrack) -> u32 {
+        let sd2 = &old.positions[old.positions.len()-1].2;
+        new_s.distance(sd2) as u32 +
+            (if old.seen_pattern(new_s.pattern_id) { 0 } else { 4 }) +
+            (if old.seen_table(new_s.table) { 0 } else { 4 }) +
+            (if old.seen_attrs(new_s.attrs) { 0 } else { 4 }) +
+            (if new_s.height() == sd2.height() { 0 } else { 8 })
     }
     fn greedy_match(mut candidates:Vec<(usize, Vec<(Option<usize>,u32)>)>, live:&[(usize, &SpriteData)]) -> (Vec<(Option<usize>, Option<usize>)>, u32) {
         // greedy match:
@@ -221,15 +223,14 @@ impl MappyState {
             }).expect("Conflict!  Shouldn't be possible!");
             assert!(!used_old[oldi]);
             used_old[oldi] = true;
+            net_cost += cost;
             match maybe_newi {
                 None => {
-                    net_cost += Self::DELETE_COST;
                     matching.push((Some(oldi), None));
                 }
                 Some(newi) => {
                     assert!(!used_new[newi]);
                     used_new[newi] = true;
-                    net_cost += cost;
                     matching.push((Some(oldi), Some(newi)));
                 }
             }
@@ -255,14 +256,13 @@ impl MappyState {
         for (oldi,old) in self.live_tracks.iter().enumerate() {
             //oldi could go to None
             candidates[oldi].1.push((None, Self::DELETE_COST));
-            let old_s = old.current_data();
             //or it could go to any close-enough newi
             candidates[oldi].1.extend(
                 live.iter()
                     .filter_map(
                         |(newi,new)|
-                        if (new.distance(old_s) as u32) < Self::DISTANCE_MAX {
-                            Some((Some(*newi), Self::sprite_change_cost(new, old_s)))
+                        if (new.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
+                            Some((Some(*newi), Self::sprite_change_cost(new, &old)))
                         } else {
                             None
                         }));
@@ -274,12 +274,7 @@ impl MappyState {
             return;
         }
         assert!(candidates.iter().all(|(_,opts)| opts.len() > 0));
-        // println!("{:?}", candidates.iter().map(|(_,opts)| opts.len()).collect::<Vec<_>>());
-        // dbg!(&candidates);
-        //take cartesian product over candidates for each thing, that's a Matching
-        //they should be sorted by local quality
         //branch and bound should quickly find the global optimum? maybe later
-        // TODO just do some greedy matching instead of cartesian products
         let (matching, cost) = Self::greedy_match(candidates, &live);
         // println!("Matched with cost {:?}",cost);
         let mut new_count = 0;
@@ -296,8 +291,11 @@ impl MappyState {
                 (Some(oldi), None) => {
                     // end a track
                     // Can't use remove or swap_remove yet since the later old-indices must stay in the same order
-                    println!("End {:?}", oldi);
-                    to_remove.push(oldi);
+                    let old = &self.live_tracks[oldi];
+                    if self.now.0 - (old.positions[old.positions.len()-1].0).0 > Self::DESTROY_COAST {
+                        println!("End {:?}", oldi);
+                        to_remove.push(oldi);
+                    }
                 },
                 (Some(oldi), Some(newi)) => {
                     // match
@@ -308,6 +306,8 @@ impl MappyState {
                 (None, None) => unreachable!("None track goes to None sprite??")
             }
         }
+        // TODO change coast/deletion so it happens separately from matching? just delete stale tracks and don't insist every old matches to a new
+        // ALSO, match new against old instead of vice versa
         // println!("Added {}, removed {}, matched {}", new_count, to_remove.len(), matched_count);
         let mut idx = 0;
         let dead_tracks = &mut self.dead_tracks;
