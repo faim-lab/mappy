@@ -34,10 +34,10 @@ pub struct MappyState {
 
 impl MappyState {
     pub fn new(w: usize, h: usize) -> Self {
-                       let mut db = TileDB::new();
-                       let t0 = db.get_initial_tile();
-                       let s0 = Screen::new(Rect::new(0,0,0,0),&t0);
-                       let room = Room::new(0,&s0,&mut db);
+        let mut db = TileDB::new();
+        let t0 = db.get_initial_tile();
+        let s0 = Screen::new(Rect::new(0,0,0,0),&t0);
+        let room = Room::new(0,&s0,&mut db);
         MappyState {
             latch: ScrollLatch::default(),
             tiles:db,
@@ -192,138 +192,115 @@ impl MappyState {
         self.now.0 += 1;
     }
 
-    const CREATE_COST:u32 = 28;
-    const DELETE_COST:u32 = 28;
+    const CREATE_COST:u32 = 20;
+    const COAST_COST:u32 = 15;
     const DISTANCE_MAX:u32 = 14;
-    const DESTROY_COAST:usize = 30;
+    const DESTROY_COAST:usize = 5;
     // TODO: increase cost if this would alter blobbing?
     fn sprite_change_cost(new_s:&SpriteData, old:&SpriteTrack) -> u32 {
         let sd2 = &old.positions[old.positions.len()-1].2;
         new_s.distance(sd2) as u32 +
+            (if sd2.index == new_s.index { 0 } else { 12 }) +
             (if old.seen_pattern(new_s.pattern_id) { 0 } else { 4 }) +
             (if old.seen_table(new_s.table) { 0 } else { 4 }) +
             (if old.seen_attrs(new_s.attrs) { 0 } else { 4 }) +
             (if new_s.height() == sd2.height() { 0 } else { 8 })
     }
-    fn greedy_match(mut candidates:Vec<(usize, Vec<(Option<usize>,u32)>)>, live:&[(usize, &SpriteData)]) -> (Vec<(Option<usize>, Option<usize>)>, u32) {
+    fn greedy_match(mut candidates:Vec<(&SpriteData, Vec<(Option<usize>,u32)>)>, track_count:usize) -> (Vec<(SpriteData, Option<usize>)>, u32) {
         // greedy match:
         // pick candidate with least cost match
         // fix it to that match
         // repeat until done
-        let mut used_old:Vec<bool> = vec![false;candidates.len()];
+        let mut used_old:Vec<bool> = vec![false;track_count];
         let mut used_new = [false;SPRITE_COUNT];
         let mut net_cost = 0;
-        let mut matching:Vec<(Option<usize>, Option<usize>)> = Vec::with_capacity(candidates.len()+live.len());
+        let mut matching:Vec<(SpriteData, Option<usize>)> = Vec::with_capacity(candidates.len());
         candidates.iter_mut().for_each(|(_,opts)| opts.sort_unstable_by_key(|tup| tup.1));
         candidates.sort_unstable_by_key(|(_,opts)| opts.len());
-        for (oldi, opts) in candidates.into_iter() {
-            let (maybe_newi, cost) = opts.into_iter().find(|(maybe_newi, _cost)| match maybe_newi {
-                Some(newi) => !used_new[*newi],
+        for (new, opts) in candidates.into_iter() {
+            let (maybe_oldi, cost) = opts.into_iter().find(|(maybe_oldi, _cost)| match maybe_oldi {
+                Some(oldi) => !used_old[*oldi],
                 None => true
             }).expect("Conflict!  Shouldn't be possible!");
-            assert!(!used_old[oldi]);
-            used_old[oldi] = true;
+            assert!(!used_new[new.index as usize]);
+            used_new[new.index as usize] = true;
             net_cost += cost;
-            match maybe_newi {
+            match maybe_oldi {
+                Some(oldi) => {
+                    used_old[oldi] = true;
+                    matching.push((*new, Some(oldi)));
+                }
                 None => {
-                    matching.push((Some(oldi), None));
-                }
-                Some(newi) => {
-                    assert!(!used_new[newi]);
-                    used_new[newi] = true;
-                    matching.push((Some(oldi), Some(newi)));
+                    matching.push((*new, None));
                 }
             }
         }
-        for (newi,_) in live.iter() {
-            if !used_new[*newi] {
-                net_cost += Self::CREATE_COST;
-                matching.push((None, Some(*newi)));
-            }
-        }
+        // TODO increase net_cost by coast_cost for each old track with no matching new track?
         (matching, net_cost)
     }
     fn track_sprites(&mut self) {
-        // find minimal matching of sprites
-        // local search is okay
-        // vec<vec> is worrisome
-        let live:Vec<_> = self.live_sprites
-            .iter()
-            .enumerate()
-            .filter(|(_,s)|s.is_valid())
-            .collect();
-        let mut candidates:Vec<(usize, Vec<(Option<usize>, u32)>)> = (0..self.live_tracks.len()).map(|ti| (ti, Vec::with_capacity(SPRITE_COUNT))).collect();
-        for (oldi,old) in self.live_tracks.iter().enumerate() {
-            //oldi could go to None
-            candidates[oldi].1.push((None, Self::DELETE_COST));
-            //or it could go to any close-enough newi
-            candidates[oldi].1.extend(
-                live.iter()
-                    .filter_map(
-                        |(newi,new)|
-                        if (new.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
-                            Some((Some(*newi), Self::sprite_change_cost(new, &old)))
-                        } else {
-                            None
-                        }));
-            //sort by key in case I need to do branch and bound?
-            // candidates[oldi].sort_unstable_by_key(|tup| tup.1);
-        }
-        if candidates.is_empty() && live.is_empty() {
-            // no old and no new sprites
-            return;
-        }
-        assert!(candidates.iter().all(|(_,opts)| opts.len() > 0));
-        //branch and bound should quickly find the global optimum? maybe later
-        let (matching, cost) = Self::greedy_match(candidates, &live);
-        // println!("Matched with cost {:?}",cost);
-        let mut new_count = 0;
-        let mut matched_count = 0;
-        let mut to_remove = vec![];
-        // println!("Go through {:?}", self.now);
-        for (maybe_oldi, maybe_newi) in matching.into_iter() {
-            match (maybe_oldi, maybe_newi) {
-                (None, Some(newi)) => {
-                    println!("Create new {:?}", newi);
-                    new_count += 1;
-                    self.live_tracks.push(SpriteTrack::new(self.now, self.scroll, self.live_sprites[newi]));
-                }
-                (Some(oldi), None) => {
-                    // end a track
-                    // Can't use remove or swap_remove yet since the later old-indices must stay in the same order
-                    let old = &self.live_tracks[oldi];
-                    if self.now.0 - (old.positions[old.positions.len()-1].0).0 > Self::DESTROY_COAST {
-                        println!("End {:?}", oldi);
-                        to_remove.push(oldi);
-                    }
-                },
-                (Some(oldi), Some(newi)) => {
-                    // match
-                    // println!("Update {:?} {:?}", oldi, newi);
-                    matched_count += 1;
-                    self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[newi]);
-                },
-                (None, None) => unreachable!("None track goes to None sprite??")
-            }
-        }
-        // TODO change coast/deletion so it happens separately from matching? just delete stale tracks and don't insist every old matches to a new
-        // ALSO, match new against old instead of vice versa
-        // println!("Added {}, removed {}, matched {}", new_count, to_remove.len(), matched_count);
-        let mut idx = 0;
+        let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
-        let old_len = self.live_tracks.len();
-        // Got to remove all dead indices at the same time!
-        self.live_tracks.retain(|track| {
-            idx += 1;
-            if to_remove.contains(&(idx-1)) {
-                // TODO remove this clone
-                dead_tracks.push(track.clone());
+        self.live_tracks.retain(|t| {
+            if now.0 - t.last_observation_time().0 > Self::DESTROY_COAST {
+                dead_tracks.push(t.clone());
                 false
             } else {
                 true
             }
         });
-        assert_eq!(self.live_tracks.len(), old_len - to_remove.len());
+
+        // find minimal matching of sprites
+        // local search is okay
+        // vec<vec> is worrisome
+        let live:Vec<_> = self.live_sprites
+            .iter()
+            .filter(|s| s.is_valid())
+            .collect();
+        // a candidate old track for each new track
+
+        let candidates:Vec<(&SpriteData, Vec<(Option<usize>, u32)>)> =
+            live.iter()
+            .map(
+                |s|
+                (*s,
+                 std::iter::once((None, Self::CREATE_COST)).chain(
+                     self.live_tracks
+                         .iter()
+                         .enumerate()
+                         .filter_map(
+                             |(ti,old)|
+                             if (s.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
+                                 Some((Some(ti), Self::sprite_change_cost(s, &old)))
+                             } else {
+                                 None
+                             })
+                 ).collect())).collect();
+        if candidates.is_empty() && self.live_tracks.is_empty() {
+            // no old and no new sprites
+            return;
+        }
+        //branch and bound should quickly find the global optimum? maybe later
+        let (matching, _cost) = Self::greedy_match(candidates, self.live_tracks.len());
+        // println!("Matched with cost {:?}",cost);
+        let mut _new_count = 0;
+        let mut _matched_count = 0;
+        // println!("Go through {:?}", self.now);
+        for (new, maybe_oldi) in matching.into_iter() {
+            match maybe_oldi {
+                None => {
+                    println!("Create new {:?}", new.index);
+                    _new_count += 1;
+                    self.live_tracks.push(SpriteTrack::new(self.now, self.scroll, new));
+                }
+                Some(oldi) => {
+                    // match
+                    // println!("Update {:?} {:?}", oldi, newi);
+                    _matched_count += 1;
+                    self.live_tracks[oldi].update(self.now, self.scroll, new);
+                }
+            }
+        }
     }
 
     pub fn split_region_for(&self, lo:u32, hi:u32, xo:u8, yo:u8) -> Rect {

@@ -237,10 +237,13 @@ zxcvbnm,./ for debug displays"
             }
             if draw_tile_standins {
                 let region = mappy.split_region();
+                let sr = mappy.current_screen.region;
                 for x in ((region.x)..(region.x+region.w as i32)).step_by(8) {
                     for y in ((region.y)..(region.y+region.h as i32)).step_by(8) {
                         // Use tile hash and convert to a 24-bit color
-                        let tile = mappy.current_screen.get(x/8,y/8);
+                        let tile = mappy.current_screen.get(
+                            sr.x+(x-region.x)/8,
+                            sr.y+(y-region.y)/8);
                         let idx = tile.index();
                         if idx != 0 {
                             // TODO this but better

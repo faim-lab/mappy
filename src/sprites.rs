@@ -13,6 +13,7 @@ pub struct SpriteDataInternal {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct SpriteData {
+    pub index: u8,
     pub x: u8,
     pub y: u8,
     height: u8,
@@ -72,6 +73,7 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
     assert_eq!(buf.len(), sprites.len());
     for (i, bs) in buf.iter().enumerate() {
         sprites[i] = SpriteData {
+            index: i as u8,
             x: bs.x,
             y: bs.y,
             height: sprite_height,
@@ -119,17 +121,20 @@ impl SpriteTrack {
     pub fn current_data(&self) -> &SpriteData {
         &self.positions[self.positions.len()-1].2
     }
+    pub fn last_observation_time(&self) -> Time {
+        self.positions[self.positions.len()-1].0
+    }
     pub fn update(&mut self, t:Time, scroll:(i32,i32), sd:SpriteData) {
         // TODO handle time properly, dedup if no change
-        self.positions.push((t,scroll,sd));
-        self.patterns.insert(sd.pattern_id);
-        self.tables.insert(sd.table);
-        self.attrs.insert(sd.attrs);
-    }
-    pub fn starting_point(&self) -> (i32,i32) {
-        let (_, (sx,sy), sd) = &self.positions[0];
-        (sx+sd.x as i32, sy+sd.y as i32)
-    }
+                                     self.positions.push((t,scroll,sd));
+                                     self.patterns.insert(sd.pattern_id);
+                                     self.tables.insert(sd.table);
+                                     self.attrs.insert(sd.attrs);
+                                 }
+                                 pub fn starting_point(&self) -> (i32,i32) {
+                                     let (_, (sx,sy), sd) = &self.positions[0];
+                                     (sx+sd.x as i32, sy+sd.y as i32)
+                                 }
     pub fn seen_pattern(&self, pat:u8) -> bool {
         self.patterns.contains(&pat)
     }
