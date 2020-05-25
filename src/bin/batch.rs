@@ -23,12 +23,13 @@ fn main() {
     for (i,input_pair) in inputs.iter().enumerate() {
         emu.run(*input_pair);
         mappy.process_screen(&emu);
-        if i > 280 {
-            println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-            println!("Known tiles: {:?}", mappy.tiles.gfx_count());
-        }
+        // if i > 280 && i % 60 == 0 {
+            // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
+            // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
+        // }
     }
-    println!("Emulation only: 0.110773661 for 360 inputs, avg 0.00030770523055555557 per frame");
+    println!("Known tiles: {:?}", mappy.tiles.gfx_count());
+    println!("Emulation only: 0.316842184 for 867 inputs, avg 0.00036544689850057674");
     println!(
         "Net: {:} for {:} inputs, avg {:} per frame",
         start.elapsed().as_secs_f64(),
