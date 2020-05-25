@@ -1,5 +1,5 @@
 use crate::framebuffer::Framebuffer;
-use crate::pixels;
+use retro_rs::pixels;
 use std::hash::{Hash, Hasher};
 use std::fmt;
 use std::collections::HashMap;
@@ -26,14 +26,11 @@ impl TileGfx {
     }
     pub fn write_rgb888(&self, buf: &mut [u8]) {
         assert!(buf.len() == self.0.len() * 3);
-        for yi in 0..8 {
-            for xi in 0..8 {
-                let col = self.0[yi * 8 + xi];
-                let (r, g, b) = pixels::rgb332_to_rgb888(col);
-                buf[(yi * 8 + xi) * 3] = r;
-                buf[(yi * 8 + xi) * 3 + 1] = g;
-                buf[(yi * 8 + xi) * 3 + 2] = b;
-            }
+        for (col, dst) in self.0.iter().zip(buf.chunks_exact_mut(3)) {
+            let (r, g, b) = pixels::rgb332_to_rgb888(*col);
+            dst[0] = r;
+            dst[1] = g;
+            dst[2] = b;
         }
     }
     pub fn perceptual_hash(&self) -> u128 {
