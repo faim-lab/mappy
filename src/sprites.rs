@@ -85,14 +85,14 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
 }
 
 // TODO return list of overlapping sprites
-pub fn overlapping_sprite(x: usize, y: usize, sprites: &[SpriteData]) -> bool {
+pub fn overlapping_sprite(x: usize, y: usize, w:usize, h:usize, sprites: &[SpriteData]) -> bool {
     for s in sprites.iter().filter(|s| s.is_valid()) {
-        if x <= s.x as usize + 8
-            && s.x as usize <= x + 8
+        if x <= s.x as usize + s.width() as usize
+            && s.x as usize <= x + w
             // this is because a sprite is drawn on the scanline -after- its y value? I think?
             && y <= (s.y+1) as usize + s.height() as usize
             // could be s.y+1 but we'll keep it more generous just to be safe
-            && s.y as usize <= y + 8
+            && s.y as usize <= y + h
         {
             return true;
         }
