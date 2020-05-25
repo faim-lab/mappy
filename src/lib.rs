@@ -1,7 +1,6 @@
 #![allow(clippy::many_single_char_names)]
 mod framebuffer;
 mod mappy;
-mod pixels;
 mod scrolling;
 mod sprites;
 mod tile;
