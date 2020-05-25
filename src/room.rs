@@ -60,6 +60,7 @@ impl Room {
         let ul = &mut self.screens[ul];
         let lr_split = xmax.min(ul.region.x+ul.region.w as i32);
         let ud_split = ymax.min(ul.region.y+ul.region.h as i32);
+        // TODO any way to avoid bounds checking within these loops?
         // ul
         for y in s.region.y..ud_split {
             for x in s.region.x..lr_split {
@@ -131,11 +132,11 @@ mod tests {
 
     #[test]
     fn test_register() {
-        use crate::tile::TileGfx;
+        use crate::tile::{TileGfx,TILE_NUM_PX};
         let mut db = TileDB::new();
         let r0 = Rect::new(5, 5, 20, 20);
         let t0 = db.get_initial_tile();
-        let t1 = db.get_tile(TileGfx([1;8*8]));
+        let t1 = db.get_tile(TileGfx([1;TILE_NUM_PX]));
         let s = Screen::new(r0, &t1);
         let mut r = Room::new(0, &s, &mut db);
 
@@ -157,7 +158,7 @@ mod tests {
             }
         }
 
-        let t2 = db.get_tile(TileGfx([2;8*8]));
+        let t2 = db.get_tile(TileGfx([2;TILE_NUM_PX]));
         let s = Screen::new(Rect::new(r0.x-r0.w as i32/2, r0.y+r0.h as i32/2, r0.w, r0.h), &t2);
         r.register_screen(&s, &mut db);
 

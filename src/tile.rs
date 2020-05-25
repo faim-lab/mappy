@@ -9,18 +9,22 @@ pub trait Tile : PartialEq + Eq + Hash + Clone {
 
 }
 
+pub const TILE_SIZE:usize = 8;
+pub const TILE_NUM_PX:usize=TILE_SIZE*TILE_SIZE;
+// TODO consider 16x16 or parameterizable
 
 #[derive(Clone, Copy)]
-pub struct TileGfx(pub [u8; 8 * 8]);
+pub struct TileGfx(pub [u8; TILE_NUM_PX]);
 
 impl TileGfx {
+    // TODO if profiling shows tile creation is hot, replace with a cache friendlier api with read_row(&mut self, x, y, row) so we can read a whole framebuffer row off at a time
     pub fn read(fb: &Framebuffer, x: usize, y: usize) -> Self {
-        let mut tile_data = [0_u8; 64];
-        for yi in y..y + 8 {
-            for xi in x..x + 8 {
-                tile_data[(((yi - y) as u8) * 8 + ((xi - x) as u8)) as usize] =
-                    fb.fb[fb.w * yi + xi];
-            }
+        let mut tile_data = [0_u8; TILE_NUM_PX];
+        assert!(fb.w*(y+TILE_SIZE) <= fb.fb.len());
+        let rows = &fb.fb[fb.w*y..fb.w*(y+TILE_SIZE)];
+        for (yi,row) in rows.chunks_exact(fb.w).enumerate() {
+            let cols = &row[x..x+TILE_SIZE];
+            tile_data[(yi*TILE_SIZE)..((yi+1)*TILE_SIZE)].copy_from_slice(cols);
         }
         Self(tile_data)
     }
@@ -36,8 +40,9 @@ impl TileGfx {
     pub fn perceptual_hash(&self) -> u128 {
         self.0.iter().fold(0_u128, |x,&y| x.wrapping_add(y as u128))
     }
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self([0;8*8])
+        Self([0;TILE_NUM_PX])
     }
 }
 impl PartialEq for TileGfx {
