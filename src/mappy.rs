@@ -2,7 +2,7 @@ use crate::framebuffer::Framebuffer;
 use crate::scrolling::*;
 use crate::sprites::{SpriteData, SpriteTrack, SPRITE_COUNT, self};
 use crate::{Rect,Time};
-use crate::tile::{TileGfxId, TileDB, TileGfx};
+use crate::tile::{TileGfxId, TileDB, TileGfx, TILE_SIZE};
 use crate::screen::Screen;
 use crate::room::Room;
 use image::{ImageBuffer, Rgb};
@@ -19,6 +19,7 @@ pub struct MappyState {
     pub tiles: TileDB,
     pub grid_align: (u8, u8),
     pub scroll: (i32,i32),
+    pub has_control: bool,
     pub splits: [(u8, u8); 1],
     pub live_sprites: [SpriteData; SPRITE_COUNT],
     pub live_tracks: Vec<SpriteTrack>,
@@ -43,6 +44,7 @@ impl MappyState {
             tiles:db,
             grid_align: (0, 0),
             scroll: (0,0),
+            has_control: false,
             splits: [(0, 240)],
             now:Time(0),
             live_sprites: [SpriteData::default(); SPRITE_COUNT],
@@ -77,9 +79,12 @@ impl MappyState {
             let tiles = &mut self.tiles;
 
             // let mut checks = 0;
+            // TODO don't use magic 8, want to support 16x16 tiles
             for y in (region.y as u32..(region.y as u32+region.h)).step_by(8) {
                 for x in (region.x as u32..(region.x as u32+region.w)).step_by(8) {
-                    if sprites::overlapping_sprite(x as usize, y as usize, &self.live_sprites) {
+                    if sprites::overlapping_sprite(x as usize, y as usize,
+                                                   TILE_SIZE, TILE_SIZE,
+                                                   &self.live_sprites) {
                         continue;
                     }
                     // checks += 1;
@@ -96,7 +101,6 @@ impl MappyState {
                 }
             }
             if candidates.len() < least_candidate_count {
-                // TODO flag to do this in batch mode?
                 // println!("Found {:?} has {:?} candidates after {:?} checks", (xo,yo), candidates.len(), checks);
                 least_candidate_count = candidates.len();
                 least_candidates = candidates.clone();
@@ -167,29 +171,74 @@ impl MappyState {
             self.scroll.0 + find_offset(old_align.0, self.grid_align.0) as i32,
             self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i32
         );
-        let region = self.split_region();
-        self.current_screen = Screen::new(Rect::new((self.scroll.0+region.x)/8, (self.scroll.1+region.y)/8, region.w/8, region.h/8), &self.tiles.get_initial_tile());
-        for y in (region.y..(region.y+region.h as i32)).step_by(8) {
-            for x in (region.x..(region.x+region.w as i32)).step_by(8) {
-                if sprites::overlapping_sprite(x as usize, y as usize, &self.live_sprites) {
-                    // Just leave the empty one there
-                    continue;
+
+        self.track_sprites();
+        self.determine_control();
+        if self.has_control {
+            // Just don't map at all if we don't have control
+            let region = self.split_region();
+            // TODO don't use magic 8, want to support 16x16 tiles
+            self.current_screen = Screen::new(Rect::new((self.scroll.0+region.x)/8, (self.scroll.1+region.y)/8, region.w/8, region.h/8), &self.tiles.get_initial_tile());
+            for y in (region.y..(region.y+region.h as i32)).step_by(8) {
+                for x in (region.x..(region.x+region.w as i32)).step_by(8) {
+                    if sprites::overlapping_sprite(x as usize, y as usize,
+                                                   TILE_SIZE, TILE_SIZE,
+                                                   &self.live_sprites) {
+                        // Just leave the empty one there
+                        continue;
+                    }
+                    // TODO could we avoid double-reading the framebuffer? We already did it to align the grid...
+                    let tile = TileGfx::read(&self.fb, x as usize, y as usize);
+                    if !(self.tiles.contains(&tile)) {
+                        println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/8, (y-region.y)/8, tile.perceptual_hash());
+                    }
+                    self.current_screen.set(self.tiles.get_tile(tile), (self.scroll.0+x)/8, (self.scroll.1+y)/8);
                 }
-                // TODO could we avoid double-reading the framebuffer? We already did it to align the grid...
-                let tile = TileGfx::read(&self.fb, x as usize, y as usize);
-                if !(self.tiles.contains(&tile)) {
-                    println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/8, (y-region.y)/8, tile.perceptual_hash());
-                }
-                self.current_screen.set(self.tiles.get_tile(tile), (self.scroll.0+x)/8, (self.scroll.1+y)/8);
+            }
+            if self.current_room.id == 0 {
+                self.current_room = Room::new(1, &self.current_screen, &mut self.tiles);
+            } else {
+                self.current_room.register_screen(&self.current_screen, &mut self.tiles);
             }
         }
-        if self.current_room.id == 0 {
-            self.current_room = Room::new(1, &self.current_screen, &mut self.tiles);
-        } else {
-            self.current_room.register_screen(&self.current_screen, &mut self.tiles);
-        }
-        self.track_sprites();
         self.now.0 += 1;
+    }
+
+    fn determine_control(&mut self) {
+        // every A frames...
+        // We'll start with the expensive version and later try the cheaper version if that's too slow.
+
+        // Expensive version:
+        // Save state S.
+        // Apply down-left input for K frames
+        // Store positions of all sprites P1
+        // Load state S.
+        // Apply up-right input for K frames
+        // Store positions of all sprites P2
+        // If P1 != P2, we have control; otherwise we do not
+        // Load state S.
+
+        // Cheaper version:
+        // Look at the history of sprite movement among live tracks
+        // Compare to the recent input history of the last B frames
+        // Filter out tracks that are moving in the same direction as the inputs
+        //   Store the hardware sprite indices and positions used for these tracks in a vec
+        //   Alternative:  Flag a track as "controlled" if it usually moves in the direction of input, over time
+        // Save state S
+        // Move in one x and one y direction /most different/ from the recent input history for C frames
+        //   Question: do I need to actually track during these frames?
+        // If in this series of new states the sprites of the corresponding indices are mostly moving in one of the directions we picked, we have control
+        //   i.e., for each track, consider the movement of any of the the sprite indices used in that track
+        //   Look for a majority of sprite indices used in controlled tracks to move with the new input?
+        // Otherwise we don't
+        // Load state S
+
+        // Cheapest but tricky version:
+        // We have to do /some/ speculative execution because of the case where player holds right during moving right between screens in zelda
+        // unless we want to say "any sufficiently fast full-frame period of scrolling (i.e. within D frames) OR big sudden change that doesn't revert (within E frames) indicates a transition"
+        // but then we only find out we were scrolling /after/ we're done and have to throw away some stuff we've seen in the room, which is doable if rooms track when they observe tile changes but maybe not the easiest thing, and side effects to the tiledb (especially through room fades) may be annoying
+
+        self.has_control = true;
     }
 
     const CREATE_COST:u32 = 20;
@@ -307,6 +356,7 @@ impl MappyState {
         let lo = lo.max(8);
         let hi = hi.min(self.fb.h as u32-8);
         let dy = hi - (lo+yo as u32);
+        // TODO don't use magic 8, want to support 16x16 tiles
         let dy = (dy/8)*8;
         let dx = (self.fb.w as u32 - 8) - (xo as u32+8);
         let dx = (dx/8)*8;

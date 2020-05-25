@@ -224,6 +224,7 @@ zxcvbnm,./ for debug displays"
             if draw_grid {
                 canvas.set_draw_color(Color::RGB(255,0,0));
                 let region = mappy.split_region();
+                // TODO don't use magic 8, want to support 16x16 tiles
                 for x in ((region.x as u32)..(region.x as u32+region.w)).step_by(8) {
                     canvas.draw_line(Point::new(x as i32*SCALE as i32,
                                                 SCALE as i32*region.y),
@@ -238,6 +239,7 @@ zxcvbnm,./ for debug displays"
             if draw_tile_standins {
                 let region = mappy.split_region();
                 let sr = mappy.current_screen.region;
+                // TODO don't use magic 8, want to support 16x16 tiles
                 for x in ((region.x)..(region.x+region.w as i32)).step_by(8) {
                     for y in ((region.y)..(region.y+region.h as i32)).step_by(8) {
                         // Use tile hash and convert to a 24-bit color
