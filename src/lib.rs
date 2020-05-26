@@ -7,6 +7,7 @@ mod tile;
 mod screen;
 mod room;
 pub use crate::mappy::*;
+pub use tile::TILE_SIZE;
 use std::fs::File;
 use std::path::Path;
 use retro_rs::Buttons;

@@ -1,23 +1,23 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScrollLatch {
-    V,
     H,
+    V,
 }
 
 impl Default for ScrollLatch {
     fn default() -> Self {
-        Self::V
+        Self::H
     }
 }
 
 impl ScrollLatch {
     pub fn clear() -> Self {
-        Self::V
+        Self::H
     }
     pub fn flip(self) -> Self {
         match self {
-            Self::V => Self::H,
             Self::H => Self::V,
+            Self::V => Self::H,
         }
     }
 }

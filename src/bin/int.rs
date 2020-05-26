@@ -8,6 +8,7 @@ use sdl2;
 use retro_rs::{Emulator,Buttons};
 use std::path::Path;
 use std::time::{Duration, Instant};
+use mappy::TILE_SIZE;
 
 #[derive(PartialEq, Eq, Debug)]
 enum PlayState {
@@ -62,13 +63,13 @@ fn main() {
         w as u32,
         h as u32
     ).expect("Couldn't make game render texture");
-    let mut cur_screen_tex_size = (1,1);
-    let mut cur_screen_tex = tex_creator.create_texture(
-        sdl2::pixels::PixelFormatEnum::ARGB32,
-        sdl2::render::TextureAccess::Streaming,
-        cur_screen_tex_size.0,
-        cur_screen_tex_size.1
-    );
+    // let mut cur_screen_tex_size = (1,1);
+    // let mut cur_screen_tex = tex_creator.create_texture(
+    //     sdl2::pixels::PixelFormatEnum::ARGB32,
+    //     sdl2::render::TextureAccess::Streaming,
+    //     cur_screen_tex_size.0,
+    //     cur_screen_tex_size.1
+    // );
 
     let mut play_state = PlayState::Playing;
     let mut draw_grid = false;
@@ -224,14 +225,13 @@ zxcvbnm,./ for debug displays"
             if draw_grid {
                 canvas.set_draw_color(Color::RGB(255,0,0));
                 let region = mappy.split_region();
-                // TODO don't use magic 8, want to support 16x16 tiles
-                for x in ((region.x as u32)..(region.x as u32+region.w)).step_by(8) {
+                for x in ((region.x as u32)..(region.x as u32+region.w)).step_by(TILE_SIZE) {
                     canvas.draw_line(Point::new(x as i32*SCALE as i32,
                                                 SCALE as i32*region.y),
                                      Point::new(x as i32*SCALE as i32,
                                                 SCALE as i32*(region.y+region.h as i32))).unwrap();
                 }
-                for y in ((region.y as u32)..(region.y as u32+region.h)).step_by(8) {
+                for y in ((region.y as u32)..(region.y as u32+region.h)).step_by(TILE_SIZE) {
                     canvas.draw_line(Point::new(SCALE as i32*region.x,y as i32 * SCALE as i32),
                                      Point::new((SCALE as i32)*(region.x+region.w as i32), y as i32 * SCALE as i32)).unwrap();
                 }
@@ -239,13 +239,12 @@ zxcvbnm,./ for debug displays"
             if draw_tile_standins {
                 let region = mappy.split_region();
                 let sr = mappy.current_screen.region;
-                // TODO don't use magic 8, want to support 16x16 tiles
-                for x in ((region.x)..(region.x+region.w as i32)).step_by(8) {
-                    for y in ((region.y)..(region.y+region.h as i32)).step_by(8) {
+                for x in ((region.x)..(region.x+region.w as i32)).step_by(TILE_SIZE) {
+                    for y in ((region.y)..(region.y+region.h as i32)).step_by(TILE_SIZE) {
                         // Use tile hash and convert to a 24-bit color
                         let tile = mappy.current_screen.get(
-                            sr.x+(x-region.x)/8,
-                            sr.y+(y-region.y)/8);
+                            sr.x+(x-region.x)/TILE_SIZE as i32,
+                            sr.y+(y-region.y)/TILE_SIZE as i32);
                         let idx = tile.index();
                         if idx != 0 {
                             // TODO this but better
@@ -255,8 +254,8 @@ zxcvbnm,./ for debug displays"
                                            (idx*61 % 256) as u8));
                             canvas.fill_rect(Rect::new((x as u32*SCALE) as i32,
                                                        (y as u32*SCALE) as i32,
-                                                       8*SCALE,
-                                                       8*SCALE)).unwrap()
+                                                       TILE_SIZE as u32*SCALE,
+                                                       TILE_SIZE as u32*SCALE)).unwrap()
                         }
                     }
                 }

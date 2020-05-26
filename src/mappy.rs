@@ -6,10 +6,8 @@ use crate::tile::{TileGfxId, TileDB, TileGfx, TILE_SIZE};
 use crate::screen::Screen;
 use crate::room::Room;
 use image::{ImageBuffer, Rgb};
-use itertools::Itertools;
 use libloading::Symbol;
 use retro_rs::{Emulator,Buttons};
-use std::collections::HashSet;
 use std::path::Path;
 
 const INPUT_MEM:usize = 10;
@@ -20,7 +18,7 @@ pub struct MappyState {
     pub grid_align: (u8, u8),
     pub scroll: (i32,i32),
     pub has_control: bool,
-    pub splits: [(u8, u8); 1],
+    pub splits: [(Split, Split); 1],
     pub live_sprites: [SpriteData; SPRITE_COUNT],
     pub live_tracks: Vec<SpriteTrack>,
     dead_tracks: Vec<SpriteTrack>,
@@ -45,7 +43,8 @@ impl MappyState {
             grid_align: (0, 0),
             scroll: (0,0),
             has_control: false,
-            splits: [(0, 240)],
+            splits: [(Split{scanline:0,scroll_x:0,scroll_y:0},
+                      Split{scanline:240,scroll_x:0,scroll_y:0})],
             now:Time(0),
             live_sprites: [SpriteData::default(); SPRITE_COUNT],
             live_tracks: Vec::with_capacity(SPRITE_COUNT),
@@ -59,90 +58,126 @@ impl MappyState {
             current_room: room
         }
     }
-    fn find_tiling(&mut self, lo: u8, hi: u8) {
-        let (last_sx, last_sy) = self.grid_align;
-        let w = self.fb.w;
-        let mut sx = 0;
-        let mut sy = 0;
-        let mut least_candidates: HashSet<TileGfx> = HashSet::new();
-        let mut least_candidate_count = (w as usize * ((hi - lo) as usize)) / 64;
-        let mut candidates: HashSet<TileGfx> =
-            HashSet::with_capacity((w as usize * ((hi - lo) as usize)) / 64);
-        let mut offsets: Vec<_> = (0..8_u8).cartesian_product(0..8_u8).collect();
-        offsets.sort_by_key(|&(x, y)| {
-            (x as i32 - last_sx as i32).abs() + (y as i32 - last_sy as i32).abs()
-        });
-        'offset: for (xo, yo) in offsets {
-            //let mut checks = 0
-            let fb = &self.fb;
-            let region = self.split_region_for(lo as u32, hi as u32, xo, yo);
-            let tiles = &mut self.tiles;
+    fn find_tiling(&mut self, lo: Split, hi: Split) {
+        assert_eq!(TILE_SIZE, 8);
+        // Use the scroll for the split between lo and hi to set self.grid_align.
+        // Also record all seen tiles using the inner loops below.
+        // This way, we can avoid the oscillations caused by pure tile gfx matching when sprites occlude tiles.
+        // That seems better motivated than asking the emulator to just draw the background and not the sprites.
+        self.grid_align = (lo.scroll_x,lo.scroll_y);
+        // let fb = &self.fb;
+        // let region = self.split_region_for(lo.scanline as u32, hi.scanline as u32, lo.scroll_x, lo.scroll_y);
+        // let tiles = &mut self.tiles;
+        // for y in (region.y as u32..(region.y as u32+region.h)).step_by(TILE_SIZE) {
+        //     for x in (region.x as u32..(region.x as u32+region.w)).step_by(TILE_SIZE) {
+        //         if sprites::overlapping_sprite(x as usize, y as usize,
+        //                                        TILE_SIZE, TILE_SIZE,
+        //                                            &self.live_sprites) {
+        //                 continue;
+        //             }
+        //         let tile = TileGfx::read(fb, x as usize, y as usize);
+        //         tiles.insert(tile);
+        //     }
+        // }
 
-            // let mut checks = 0;
-            // TODO don't use magic 8, want to support 16x16 tiles
-            for y in (region.y as u32..(region.y as u32+region.h)).step_by(8) {
-                for x in (region.x as u32..(region.x as u32+region.w)).step_by(8) {
-                    if sprites::overlapping_sprite(x as usize, y as usize,
-                                                   TILE_SIZE, TILE_SIZE,
-                                                   &self.live_sprites) {
-                        continue;
-                    }
-                    // checks += 1;
-                    let tile = TileGfx::read(fb, x as usize, y as usize);
-                    if tiles.contains(&tile) {
-                        continue;
-                    }
-                    candidates.insert(tile);
-                    if candidates.len() > least_candidate_count {
-                        // println!("Skip {:?} bc {:?} new candidates, vs {:?}", (xo,yo), candidates.len(), least_candidate_count);
-                        candidates.clear();
-                        continue 'offset;
-                    }
-                }
-            }
-            if candidates.len() < least_candidate_count {
-                // println!("Found {:?} has {:?} candidates after {:?} checks", (xo,yo), candidates.len(), checks);
-                least_candidate_count = candidates.len();
-                least_candidates = candidates.clone();
-                sx = xo;
-                sy = yo;
-                candidates.clear();
-            }
-        }
-        let tiles = &mut self.tiles;
-        tiles.extend(least_candidates);
-        self.grid_align = (sx, sy);
+
+
+        // OR!!! see which tiling has the most distinct tiles in absolute terms, ignoring ones seen already?  Would that even help?  or could we somehow try to avoid specifically the "everything is shifted by one in x or y or both" special case?
+        // let (last_sx, last_sy) = self.grid_align;
+        // let lo = lo.scanline;
+        // let hi = hi.scanline;
+        // let w = self.fb.w;
+        // let mut sx = 0;
+        // let mut sy = 0;
+        // let mut least_candidates: HashSet<TileGfx> = HashSet::new();
+        // let mut least_candidate_count = (w as usize * ((hi - lo) as usize)) / 64;
+        // let mut candidates: HashSet<TileGfx> =
+        //     HashSet::with_capacity((w as usize * ((hi - lo) as usize)) / 64);
+        // let mut offsets: Vec<_> = (0..TILE_SIZE as u8).cartesian_product(0..TILE_SIZE as u8).collect();
+        // offsets.sort_by_key(|&(x, y)| {
+        //     find_offset(x,last_sx).abs() + find_offset(y,last_sy).abs()
+        // });
+        // 'offset: for (xo, yo) in offsets {
+        //     // let mut checks = 0;
+        //     let fb = &self.fb;
+        //     let region = self.split_region_for(lo as u32, hi as u32, xo, yo);
+        //     let tiles = &mut self.tiles;
+
+        //     for y in (region.y as u32..(region.y as u32+region.h)).step_by(TILE_SIZE) {
+        //         for x in (region.x as u32..(region.x as u32+region.w)).step_by(TILE_SIZE) {
+        //             // checks += 1;
+        //             if sprites::overlapping_sprite(x as usize, y as usize,
+        //                                            TILE_SIZE, TILE_SIZE,
+        //                                            &self.live_sprites) {
+        //                 continue;
+        //             }
+        //             let tile = TileGfx::read(fb, x as usize, y as usize);
+        //             if tiles.contains(&tile) {
+        //                 continue;
+        //             }
+        //             candidates.insert(tile);
+        //             if candidates.len() > least_candidate_count {
+        //                 // println!("Skip {:?} bc {:?} new candidates, vs {:?}", (xo,yo), candidates.len(), least_candidate_count);
+        //                 candidates.clear();
+        //                 continue 'offset;
+        //             }
+        //         }
+        //     }
+        //     if candidates.len() < least_candidate_count {
+        //         // println!("Found {:?} has {:?} candidates after {:?} checks", (xo,yo), candidates.len(), checks);
+        //         // assert_eq!(yo,0);
+        //         least_candidate_count = candidates.len();
+        //         least_candidates = candidates.clone();
+        //         sx = xo;
+        //         sy = yo;
+        //         candidates.clear();
+        //     }
+        //     if least_candidate_count == 0 {
+        //         break;
+        //     }
+        // }
+        // let tiles = &mut self.tiles;
+        // tiles.extend(least_candidates);
+        // self.grid_align = (sx, sy);
     }
-    fn get_splits(&mut self) -> Vec<u8> {
-        let mut splits: Vec<u8> = vec![];
-        splits.push(0);
+    fn get_splits(&mut self) -> Vec<Split> {
+        let mut splits = vec![Split{scanline:0,scroll_x:0,scroll_y:0}];
         for &ScrollChange {
-            reason, scanline, ..
+            reason, scanline, value
         } in self.changes.iter()
         {
             let scanline = if scanline < 240 { scanline } else { 0 };
             // let old_latch = latch;
-            let maybe_change = match reason {
+            match reason {
                 ScrollChangeReason::Read2002 => {
                     self.latch = ScrollLatch::clear();
-                    false
                 }
                 ScrollChangeReason::Write2005 => {
+                    register_split(&mut splits, scanline+1);
+                    let last = splits.len()-1;
+                    match self.latch {
+                        ScrollLatch::H => {
+                            splits[last].scroll_x = (8 - (value & 0b0000_0111)) % 8;
+                        }
+                            ScrollLatch::V => {
+                                splits[last].scroll_y = (8 - (value & 0b0000_0111)) % 8;
+                        }
+                    };
                     self.latch = self.latch.flip();
-                    true
                 }
                 ScrollChangeReason::Write2006 => {
+                    register_split(&mut splits, scanline+1);
+                    let last = splits.len()-1;
+                    if let ScrollLatch::V = self.latch {
+                        // note, just the bottom two bits of scroll y
+                        splits[last].scroll_y = (8 - ((value & 0b0011_0000) >> 4)) % 8;
+                    }
                     self.latch = self.latch.flip();
-                    true
                 }
             };
-            if maybe_change && splits[splits.len() - 1] < scanline {
-                // Don't want to use the line where scrolling changed
-                splits.push(scanline + 1);
-            }
         }
-        if splits[splits.len() - 1] < 240 {
-            splits.push(240);
+        if splits[splits.len() - 1].scanline < 240 {
+            splits.push(Split{scanline:240,scroll_x:0,scroll_y:0});
         }
         splits
     }
@@ -156,7 +191,7 @@ impl MappyState {
         let splits = self.get_splits();
         let (lo, hi) = {
             match splits.windows(2).max_by_key(|&win| match win {
-                [lo, hi] => hi - lo,
+                [lo, hi] => hi.scanline - lo.scanline,
                 _ => panic!("Misshapen windows"),
             }) {
                 Some(&[lo, hi]) => (lo, hi),
@@ -177,10 +212,13 @@ impl MappyState {
         if self.has_control {
             // Just don't map at all if we don't have control
             let region = self.split_region();
-            // TODO don't use magic 8, want to support 16x16 tiles
-            self.current_screen = Screen::new(Rect::new((self.scroll.0+region.x)/8, (self.scroll.1+region.y)/8, region.w/8, region.h/8), &self.tiles.get_initial_tile());
-            for y in (region.y..(region.y+region.h as i32)).step_by(8) {
-                for x in (region.x..(region.x+region.w as i32)).step_by(8) {
+            self.current_screen = Screen::new(Rect::new((self.scroll.0+region.x)/(TILE_SIZE as i32),
+                                                        (self.scroll.1+region.y)/(TILE_SIZE as i32),
+                                                        region.w/(TILE_SIZE as u32),
+                                                        region.h/(TILE_SIZE as u32)),
+                                              &self.tiles.get_initial_tile());
+            for y in (region.y..(region.y+region.h as i32)).step_by(TILE_SIZE) {
+                for x in (region.x..(region.x+region.w as i32)).step_by(TILE_SIZE) {
                     if sprites::overlapping_sprite(x as usize, y as usize,
                                                    TILE_SIZE, TILE_SIZE,
                                                    &self.live_sprites) {
@@ -189,10 +227,11 @@ impl MappyState {
                     }
                     // TODO could we avoid double-reading the framebuffer? We already did it to align the grid...
                     let tile = TileGfx::read(&self.fb, x as usize, y as usize);
-                    if !(self.tiles.contains(&tile)) {
-                        println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/8, (y-region.y)/8, tile.perceptual_hash());
-                    }
-                    self.current_screen.set(self.tiles.get_tile(tile), (self.scroll.0+x)/8, (self.scroll.1+y)/8);
+                    self.tiles.insert(tile);
+                    // if !(self.tiles.contains(&tile)) {
+                        // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
+                    // }
+                    self.current_screen.set(self.tiles.get_tile(tile), (self.scroll.0+x)/(TILE_SIZE as i32), (self.scroll.1+y)/(TILE_SIZE as i32));
                 }
             }
             if self.current_room.id == 0 {
@@ -242,7 +281,6 @@ impl MappyState {
     }
 
     const CREATE_COST:u32 = 20;
-    const COAST_COST:u32 = 15;
     const DISTANCE_MAX:u32 = 14;
     const DESTROY_COAST:usize = 5;
     // TODO: increase cost if this would alter blobbing?
@@ -351,17 +389,19 @@ impl MappyState {
             }
         }
     }
-
+    const SCREEN_SAFE_LEFT:u32=8;
+    const SCREEN_SAFE_RIGHT:u32=8;
+    const SCREEN_SAFE_TOP:u32=8;
+    const SCREEN_SAFE_BOTTOM:u32=8;
     pub fn split_region_for(&self, lo:u32, hi:u32, xo:u8, yo:u8) -> Rect {
-        let lo = lo.max(8);
-        let hi = hi.min(self.fb.h as u32-8);
+        let lo = lo.max(Self::SCREEN_SAFE_TOP);
+        let hi = hi.min(self.fb.h as u32-Self::SCREEN_SAFE_BOTTOM);
         let dy = hi - (lo+yo as u32);
-        // TODO don't use magic 8, want to support 16x16 tiles
-        let dy = (dy/8)*8;
-        let dx = (self.fb.w as u32 - 8) - (xo as u32+8);
-        let dx = (dx/8)*8;
+        let dy = (dy/(TILE_SIZE as u32))*(TILE_SIZE as u32);
+        let dx = (self.fb.w as u32 - Self::SCREEN_SAFE_RIGHT) - (xo as u32+Self::SCREEN_SAFE_LEFT);
+        let dx = (dx/(TILE_SIZE as u32))*(TILE_SIZE as u32);
         Rect::new(
-            8+xo as i32,
+            Self::SCREEN_SAFE_LEFT as i32+xo as i32,
             lo as i32+yo as i32,
             dx,
             dy
@@ -373,7 +413,8 @@ impl MappyState {
         // [src/mappy.rs:65] hi = 232
         // [src/mappy.rs:65] xo + 8 = 8
         // [src/mappy.rs:65] w - 8 = 248
-        self.split_region_for(self.splits[0].0 as u32, self.splits[0].1 as u32, self.grid_align.0, self.grid_align.1)
+        self.split_region_for(self.splits[0].0.scanline as u32, self.splits[0].1.scanline as u32,
+                              self.grid_align.0, self.grid_align.1)
     }
 
     fn get_changes(&mut self, emu: &Emulator) {
@@ -387,10 +428,10 @@ impl MappyState {
         }
     }
     pub fn dump_tiles(&self, root: &Path) {
-        let mut buf = vec![0_u8; 8 * 8 * 3];
+        let mut buf = vec![0_u8; TILE_SIZE * TILE_SIZE * 3];
         for (ti, tile) in self.tiles.gfx_iter().enumerate() {
             tile.write_rgb888(&mut buf);
-            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(8, 8, &buf[..])
+            let img = ImageBuffer::<Rgb<u8>, _>::from_raw(TILE_SIZE as u32, TILE_SIZE as u32, &buf[..])
                 .expect("Couldn't create image buffer");
             img.save(root.join(format!("t{:}.png", ti))).unwrap();
         }
@@ -401,18 +442,38 @@ fn find_offset(old:u8, new:u8) -> i8 {
     // each coordinate either increased and possibly wrapped or decreased and possibly wrapped or stayed the same
     // in the former case calculate new+8 and subtract old if new < old, otherwise new - old
     // in the middle case calculate old+8 - new if new > old, otherwise old - new
-    let old = 7-(old as i8);
-    let new = 7-(new as i8);
+    let old = ((TILE_SIZE-1) as i8)-(old as i8);
+    let new = ((TILE_SIZE-1) as i8)-(new as i8);
     let decrease = if new <= old {
         new-old
     } else {
-        new-(old+8)
+        new-(old+(TILE_SIZE as i8))
     };
     let increase = if new >= old {
         new-old
     } else {
-        (new+8)-old
+        (new+(TILE_SIZE as i8))-old
     };
 
     *[decrease, increase].iter().min_by_key(|n| n.abs()).unwrap()
+}
+
+#[derive(Clone,Copy,PartialEq,Eq,Hash,Debug)]
+pub struct Split {
+    pub scanline:u8,
+    pub scroll_x:u8,
+    pub scroll_y:u8
+}
+
+fn register_split(splits:&mut Vec<Split>, scanline:u8) {
+    let last = &splits[splits.len()-1];
+    if last.scanline < scanline {
+        let scroll_x = last.scroll_x;
+        let scroll_y = last.scroll_y;
+        splits.push(Split{
+            scanline,
+            scroll_x,
+            scroll_y
+        });
+    }
 }
