@@ -212,11 +212,12 @@ impl MappyState {
         if self.has_control {
             // Just don't map at all if we don't have control
             let region = self.split_region();
-            self.current_screen = Screen::new(Rect::new((self.scroll.0+region.x)/(TILE_SIZE as i32),
-                                                        (self.scroll.1+region.y)/(TILE_SIZE as i32),
-                                                        region.w/(TILE_SIZE as u32),
-                                                        region.h/(TILE_SIZE as u32)),
-                                              &self.tiles.get_initial_tile());
+            self.current_screen = Screen::new(
+                Rect::new((self.scroll.0+region.x)/(TILE_SIZE as i32),
+                          (self.scroll.1+region.y)/(TILE_SIZE as i32),
+                          region.w/(TILE_SIZE as u32),
+                          region.h/(TILE_SIZE as u32)),
+                &self.tiles.get_initial_tile());
             for y in (region.y..(region.y+region.h as i32)).step_by(TILE_SIZE) {
                 for x in (region.x..(region.x+region.w as i32)).step_by(TILE_SIZE) {
                     if sprites::overlapping_sprite(x as usize, y as usize,
@@ -225,9 +226,7 @@ impl MappyState {
                         // Just leave the empty one there
                         continue;
                     }
-                    // TODO could we avoid double-reading the framebuffer? We already did it to align the grid...
                     let tile = TileGfx::read(&self.fb, x as usize, y as usize);
-                    self.tiles.insert(tile);
                     // if !(self.tiles.contains(&tile)) {
                         // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
                     // }

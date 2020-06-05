@@ -3,14 +3,6 @@ use std::mem;
 use crate::Time;
 use std::collections::HashSet;
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct SpriteDataInternal {
-    pub y: u8,
-    pub pattern_id: u8,
-    pub attrs: u8,
-    pub x: u8,
-}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct SpriteData {
     pub index: u8,
@@ -56,30 +48,29 @@ impl SpriteData {
 const SPRITE_SIZE: usize = 4;
 pub const SPRITE_COUNT: usize = 0x100 / SPRITE_SIZE;
 pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
-    assert_eq!(mem::size_of::<SpriteDataInternal>(), SPRITE_SIZE);
-    let mut buf = [0; SPRITE_COUNT * SPRITE_SIZE];
-    emu.get_system_ram(0x0200, SPRITE_COUNT * SPRITE_SIZE, &mut buf)
-        .expect("Couldn't read RAM!");
-    let ppuctrl = 0;
+    let buf = &emu.system_ram_ref()[0x0200..0x0200+SPRITE_COUNT*SPRITE_SIZE];
+    // let ppuctrl = 0;
     // TODO put me back when the fceumm build goes up to buildbot
-    // let ppuctrl = get_byte(emu, 0x2000);
+    let ppuctrl = emu.memory_ref(0x2000).expect("Couldn't get PPU CTRL bit")[0];
     let sprite_height: u8 = if ((ppuctrl & 0b0010_0000) >> 5) == 1 {
         16
     } else {
         8
     };
     let table_bit = (ppuctrl & 0b0000_1000) >> 3;
-    let buf: [SpriteDataInternal; SPRITE_COUNT] = unsafe { std::mem::transmute(buf) };
-    assert_eq!(buf.len(), sprites.len());
-    for (i, bs) in buf.iter().enumerate() {
+    for (i, bs) in buf.chunks_exact(SPRITE_SIZE).enumerate() {
+        let [y,pattern_id,attrs,x] = match *bs {
+            [y,pattern_id,attrs,x] => [y,pattern_id,attrs,x],
+            _ => unreachable!()
+        };
         sprites[i] = SpriteData {
             index: i as u8,
-            x: bs.x,
-            y: bs.y,
+            x,
+            y,
             height: sprite_height,
-            pattern_id: bs.pattern_id,
+            pattern_id,
             table: table_bit,
-            attrs: bs.attrs,
+            attrs,
         }
     }
 }
