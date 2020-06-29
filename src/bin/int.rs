@@ -22,8 +22,8 @@ fn main() {
     use std::env;
 
     let mut emu = Emulator::create(
-        Path::new("../../cores/fceumm_libretro"),
-        Path::new("../../roms/mario.nes"),
+        Path::new("cores/fceumm_libretro"),
+        Path::new("roms/mario.nes"),
     );
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -165,7 +165,7 @@ zxcvbnm,./ for debug displays"
             }
         };
         if let Some(n) = numkey {
-            let path = Path::new("../../inputs/").join(format!("mario_{}.fm2", n));
+            let path = Path::new("inputs/").join(format!("mario_{}.fm2", n));
             if shifted {
                 mappy::write_fm2(&inputs, &path);
                 println!("Dumped {}",n);
@@ -306,5 +306,5 @@ zxcvbnm,./ for debug displays"
             ::std::thread::sleep(one_sixtieth - elapsed);
         }
     }
-    mappy.dump_tiles(Path::new("../../out/"));
+    mappy.dump_tiles(Path::new("out/"));
 }

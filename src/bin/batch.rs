@@ -5,8 +5,8 @@ use std::time::Instant;
 fn main() {
     use std::env;
     let mut emu = Emulator::create(
-        Path::new("../../cores/fceumm_libretro"),
-        Path::new("../../roms/mario.nes"),
+        Path::new("cores/fceumm_libretro"),
+        Path::new("roms/mario.nes"),
     );
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -36,5 +36,5 @@ fn main() {
         inputs.len(),
         start.elapsed().as_secs_f64() / (inputs.len() as f64)
     );
-    mappy.dump_tiles(Path::new("../../out/"));
+    mappy.dump_tiles(Path::new("out/"));
 }
