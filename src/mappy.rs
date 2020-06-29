@@ -58,87 +58,8 @@ impl MappyState {
             current_room: room
         }
     }
-    fn find_tiling(&mut self, lo: Split, hi: Split) {
-        assert_eq!(TILE_SIZE, 8);
-        // Use the scroll for the split between lo and hi to set self.grid_align.
-        // Also record all seen tiles using the inner loops below.
-        // This way, we can avoid the oscillations caused by pure tile gfx matching when sprites occlude tiles.
-        // That seems better motivated than asking the emulator to just draw the background and not the sprites.
-        self.grid_align = (lo.scroll_x,lo.scroll_y);
-        // let fb = &self.fb;
-        // let region = self.split_region_for(lo.scanline as u32, hi.scanline as u32, lo.scroll_x, lo.scroll_y);
-        // let tiles = &mut self.tiles;
-        // for y in (region.y as u32..(region.y as u32+region.h)).step_by(TILE_SIZE) {
-        //     for x in (region.x as u32..(region.x as u32+region.w)).step_by(TILE_SIZE) {
-        //         if sprites::overlapping_sprite(x as usize, y as usize,
-        //                                        TILE_SIZE, TILE_SIZE,
-        //                                            &self.live_sprites) {
-        //                 continue;
-        //             }
-        //         let tile = TileGfx::read(fb, x as usize, y as usize);
-        //         tiles.insert(tile);
-        //     }
-        // }
-
-
-
-        // OR!!! see which tiling has the most distinct tiles in absolute terms, ignoring ones seen already?  Would that even help?  or could we somehow try to avoid specifically the "everything is shifted by one in x or y or both" special case?
-        // let (last_sx, last_sy) = self.grid_align;
-        // let lo = lo.scanline;
-        // let hi = hi.scanline;
-        // let w = self.fb.w;
-        // let mut sx = 0;
-        // let mut sy = 0;
-        // let mut least_candidates: HashSet<TileGfx> = HashSet::new();
-        // let mut least_candidate_count = (w as usize * ((hi - lo) as usize)) / 64;
-        // let mut candidates: HashSet<TileGfx> =
-        //     HashSet::with_capacity((w as usize * ((hi - lo) as usize)) / 64);
-        // let mut offsets: Vec<_> = (0..TILE_SIZE as u8).cartesian_product(0..TILE_SIZE as u8).collect();
-        // offsets.sort_by_key(|&(x, y)| {
-        //     find_offset(x,last_sx).abs() + find_offset(y,last_sy).abs()
-        // });
-        // 'offset: for (xo, yo) in offsets {
-        //     // let mut checks = 0;
-        //     let fb = &self.fb;
-        //     let region = self.split_region_for(lo as u32, hi as u32, xo, yo);
-        //     let tiles = &mut self.tiles;
-
-        //     for y in (region.y as u32..(region.y as u32+region.h)).step_by(TILE_SIZE) {
-        //         for x in (region.x as u32..(region.x as u32+region.w)).step_by(TILE_SIZE) {
-        //             // checks += 1;
-        //             if sprites::overlapping_sprite(x as usize, y as usize,
-        //                                            TILE_SIZE, TILE_SIZE,
-        //                                            &self.live_sprites) {
-        //                 continue;
-        //             }
-        //             let tile = TileGfx::read(fb, x as usize, y as usize);
-        //             if tiles.contains(&tile) {
-        //                 continue;
-        //             }
-        //             candidates.insert(tile);
-        //             if candidates.len() > least_candidate_count {
-        //                 // println!("Skip {:?} bc {:?} new candidates, vs {:?}", (xo,yo), candidates.len(), least_candidate_count);
-        //                 candidates.clear();
-        //                 continue 'offset;
-        //             }
-        //         }
-        //     }
-        //     if candidates.len() < least_candidate_count {
-        //         // println!("Found {:?} has {:?} candidates after {:?} checks", (xo,yo), candidates.len(), checks);
-        //         // assert_eq!(yo,0);
-        //         least_candidate_count = candidates.len();
-        //         least_candidates = candidates.clone();
-        //         sx = xo;
-        //         sy = yo;
-        //         candidates.clear();
-        //     }
-        //     if least_candidate_count == 0 {
-        //         break;
-        //     }
-        // }
-        // let tiles = &mut self.tiles;
-        // tiles.extend(least_candidates);
-        // self.grid_align = (sx, sy);
+    fn find_tiling(&mut self, lo: Split, _hi: Split) {
+        self.grid_align = (lo.scroll_x, lo.scroll_y);
     }
     fn get_splits(&mut self) -> Vec<Split> {
         let mut splits = vec![Split{scanline:0,scroll_x:0,scroll_y:0}];
@@ -157,10 +78,10 @@ impl MappyState {
                     let last = splits.len()-1;
                     match self.latch {
                         ScrollLatch::H => {
-                            splits[last].scroll_x = (8 - (value & 0b0000_0111)) % 8;
+                            splits[last].scroll_x = value;
                         }
-                            ScrollLatch::V => {
-                                splits[last].scroll_y = (8 - (value & 0b0000_0111)) % 8;
+                        ScrollLatch::V => {
+                            splits[last].scroll_y = value;
                         }
                     };
                     self.latch = self.latch.flip();
@@ -168,10 +89,34 @@ impl MappyState {
                 ScrollChangeReason::Write2006 => {
                     register_split(&mut splits, scanline+1);
                     let last = splits.len()-1;
-                    if let ScrollLatch::V = self.latch {
-                        // note, just the bottom two bits of scroll y
-                        splits[last].scroll_y = (8 - ((value & 0b0011_0000) >> 4)) % 8;
-                    }
+                    match self.latch {
+                        ScrollLatch::H => {
+                            // First byte of 15-bit PPUADDR:
+                            // [] yyy NN YY
+                            // Of the first byte written to 2006:
+                            // bits 0 and 1 are ignored, rest mapped to yyNNYY
+                            // (and the leftmost bit of y_fine is forced to 0)
+                            let y_fine = (value & 0b0011_0000) >> 4;
+                            // (ignore nametable select NN for now)
+                            // two highest bits of y_coarse are written
+                            let y_coarse_hi = (value & 0b0000_0011) << 6;
+                            // combine that with the three middle bits of old y scroll
+                            let y_coarse = y_coarse_hi | (splits[last].scroll_y & 0b00111000);
+                            splits[last].scroll_y = y_coarse | y_fine;
+                        }
+                        ScrollLatch::V => {
+                            // Second byte of PPUADDR:
+                            // YYYX XXXX
+                            let y_coarse_lo = (value & 0b1110_0000) >> 4;
+                            let x_coarse = value & 0b0001_1111;
+                            // overwrite middle three bits of old y scroll
+                            let kept_y = splits[last].scroll_y & 0b1100_0111;
+                            // overwrite left five bits of old x scroll
+                            let kept_x = splits[last].scroll_x & 0b0000_0111;
+                            splits[last].scroll_x = (x_coarse << 5) | kept_x;
+                            splits[last].scroll_y = kept_y | (y_coarse_lo << 6);
+                        }
+                    };
                     self.latch = self.latch.flip();
                 }
             };
@@ -201,12 +146,11 @@ impl MappyState {
         self.splits = [(lo, hi)];
         let old_align = self.grid_align;
         self.find_tiling(lo, hi);
-        // update scroll based on grid align change.
+        // update scroll based on grid align change
         self.scroll = (
             self.scroll.0 + find_offset(old_align.0, self.grid_align.0) as i32,
             self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i32
         );
-
         self.track_sprites();
         self.determine_control();
         if self.has_control {
@@ -395,9 +339,11 @@ impl MappyState {
     pub fn split_region_for(&self, lo:u32, hi:u32, xo:u8, yo:u8) -> Rect {
         let lo = lo.max(Self::SCREEN_SAFE_TOP);
         let hi = hi.min(self.fb.h as u32-Self::SCREEN_SAFE_BOTTOM);
-        let dy = hi - (lo+yo as u32);
+        let xo = (TILE_SIZE - (xo as usize % TILE_SIZE)) as u32;
+        let yo = (TILE_SIZE - (yo as usize % TILE_SIZE)) as u32;
+        let dy = hi - (lo+yo);
         let dy = (dy/(TILE_SIZE as u32))*(TILE_SIZE as u32);
-        let dx = (self.fb.w as u32 - Self::SCREEN_SAFE_RIGHT) - (xo as u32+Self::SCREEN_SAFE_LEFT);
+        let dx = (self.fb.w as u32 - Self::SCREEN_SAFE_RIGHT) - (xo+Self::SCREEN_SAFE_LEFT);
         let dx = (dx/(TILE_SIZE as u32))*(TILE_SIZE as u32);
         Rect::new(
             Self::SCREEN_SAFE_LEFT as i32+xo as i32,
@@ -408,10 +354,6 @@ impl MappyState {
     }
 
     pub fn split_region(&self) -> Rect {
-        // [src/mappy.rs:65] lo + yo = 32
-        // [src/mappy.rs:65] hi = 232
-        // [src/mappy.rs:65] xo + 8 = 8
-        // [src/mappy.rs:65] w - 8 = 248
         self.split_region_for(self.splits[0].0.scanline as u32, self.splits[0].1.scanline as u32,
                               self.grid_align.0, self.grid_align.1)
     }
@@ -437,21 +379,22 @@ impl MappyState {
     }
 }
 
-fn find_offset(old:u8, new:u8) -> i8 {
+fn find_offset(old:u8, new:u8) -> i16 {
     // each coordinate either increased and possibly wrapped or decreased and possibly wrapped or stayed the same
     // in the former case calculate new+8 and subtract old if new < old, otherwise new - old
     // in the middle case calculate old+8 - new if new > old, otherwise old - new
-    let old = ((TILE_SIZE-1) as i8)-(old as i8);
-    let new = ((TILE_SIZE-1) as i8)-(new as i8);
+    // the magic number here (255, 8, whatever) is the largest value grid_offset can take
+    let old = old as i16;
+    let new = new as i16;
     let decrease = if new <= old {
         new-old
     } else {
-        new-(old+(TILE_SIZE as i8))
+        new-(old+256)
     };
     let increase = if new >= old {
         new-old
     } else {
-        (new+(TILE_SIZE as i8))-old
+        (new+256)-old
     };
 
     *[decrease, increase].iter().min_by_key(|n| n.abs()).unwrap()
