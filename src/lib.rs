@@ -1,53 +1,53 @@
 #![allow(clippy::many_single_char_names)]
 mod framebuffer;
 mod mappy;
+mod room;
+mod screen;
 mod scrolling;
 mod sprites;
 mod tile;
-mod screen;
-mod room;
 pub use crate::mappy::*;
-pub use tile::TILE_SIZE;
+use retro_rs::Buttons;
 use std::fs::File;
 use std::path::Path;
-use retro_rs::Buttons;
+pub use tile::TILE_SIZE;
 
-#[derive(Debug,Clone,Copy,PartialOrd,Ord,PartialEq,Eq,Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct Time(pub usize);
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct Rect {
-    pub x:i32,
-    pub y:i32,
-    pub w:u32,
-    pub h:u32
+    pub x: i32,
+    pub y: i32,
+    pub w: u32,
+    pub h: u32,
 }
 impl Rect {
-    pub fn new(x:i32, y:i32, w:u32, h:u32) -> Self {
-        Self {x,y,w,h}
+    pub fn new(x: i32, y: i32, w: u32, h: u32) -> Self {
+        Self { x, y, w, h }
     }
-    pub fn contains(&self, x:i32, y:i32) -> bool {
-        self.x <= x && x < self.x+self.w as i32 &&
-            self.y <= y && y < self.y+self.h as i32
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        self.x <= x && x < self.x + self.w as i32 && self.y <= y && y < self.y + self.h as i32
     }
 }
 
-fn to_bitstring(b:Buttons) -> String {
-    format!("{}{}{}{}{}{}{}{}",
-            if b.get_right() { "R" } else { "." },
-            if b.get_left() { "L" } else { "." },
-            if b.get_down() { "D" } else { "." },
-            if b.get_up() { "U" } else { "." },
-            if b.get_start() { "T" } else { "." },
-            if b.get_select() { "S" } else { "." },
-            if b.get_b() { "B" } else { "." },
-            if b.get_a() { "A" } else { "." }
+fn to_bitstring(b: Buttons) -> String {
+    format!(
+        "{}{}{}{}{}{}{}{}",
+        if b.get_right() { "R" } else { "." },
+        if b.get_left() { "L" } else { "." },
+        if b.get_down() { "D" } else { "." },
+        if b.get_up() { "U" } else { "." },
+        if b.get_start() { "T" } else { "." },
+        if b.get_select() { "S" } else { "." },
+        if b.get_b() { "B" } else { "." },
+        if b.get_a() { "A" } else { "." }
     )
 }
 
-pub fn write_fm2(inputs:&[[Buttons;2]], path:&Path) {
-    use uuid::Uuid;
+pub fn write_fm2(inputs: &[[Buttons; 2]], path: &Path) {
     use std::io::Write;
+    use uuid::Uuid;
     let mut file = File::create(path).expect("Couldn't dump file");
     writeln!(file, "version 3").unwrap();
     writeln!(file, "palFlag 0").unwrap();
@@ -68,7 +68,7 @@ pub fn write_fm2(inputs:&[[Buttons;2]], path:&Path) {
     }
 }
 
-pub fn from_bitstring(bs:[bool;8]) -> Buttons {
+pub fn from_bitstring(bs: [bool; 8]) -> Buttons {
     Buttons::new()
         .right(bs[0])
         .left(bs[1])
@@ -80,18 +80,18 @@ pub fn from_bitstring(bs:[bool;8]) -> Buttons {
         .a(bs[7])
 }
 
-pub fn read_fm2(inputs:&mut Vec<[Buttons;2]>, path:&Path) {
-    use std::io::{BufReader, BufRead};
+pub fn read_fm2(inputs: &mut Vec<[Buttons; 2]>, path: &Path) {
+    use std::io::{BufRead, BufReader};
     let file = File::open(path).expect("Couldn't open file");
     let reader = BufReader::new(file);
     for line in reader.lines() {
         if let Ok(line) = line {
             // scan ahead to second |
             let mut pipenum = 0;
-            let mut bitstr = [false;8];
+            let mut bitstr = [false; 8];
             let mut bitstr_idx = 0;
-            let mut buttons1:Option<Buttons> = None;
-            let mut buttons2:Option<Buttons> = None;
+            let mut buttons1: Option<Buttons> = None;
+            let mut buttons2: Option<Buttons> = None;
             for c in line.chars() {
                 if c == '|' {
                     pipenum += 1;
@@ -115,7 +115,7 @@ pub fn read_fm2(inputs:&mut Vec<[Buttons;2]>, path:&Path) {
                 (Some(buttons1), None) => {
                     inputs.push([buttons1, Buttons::new()]);
                 }
-                _ => ()
+                _ => (),
             }
         }
     }

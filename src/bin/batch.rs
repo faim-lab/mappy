@@ -14,18 +14,18 @@ fn main() {
     // So reset it afterwards
     emu.reset();
     let mut inputs = vec![];
-    let args:Vec<_> = env::args().collect();
+    let args: Vec<_> = env::args().collect();
     if args.len() > 1 {
         mappy::read_fm2(&mut inputs, &Path::new(&args[1]));
     }
     let mut mappy = MappyState::new(w, h);
     let start = Instant::now();
-    for (i,input_pair) in inputs.iter().enumerate() {
+    for (_i, input_pair) in inputs.iter().enumerate() {
         emu.run(*input_pair);
         mappy.process_screen(&emu);
         // if i > 280 && i % 60 == 0 {
-            // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-            // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
+        // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
+        // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
         // }
     }
     println!("Known tiles: {:?}", mappy.tiles.gfx_count());

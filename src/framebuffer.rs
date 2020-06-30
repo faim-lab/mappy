@@ -15,6 +15,7 @@ impl Framebuffer {
     }
     pub fn read_from(&mut self, emu: &Emulator) {
         // TODO: make fb.fb work on u64s for 8 pixel spans?  measure!
-        emu.copy_framebuffer_rgb332(&mut self.fb).expect("Couldn't get FB");
+        emu.copy_framebuffer_rgb332(&mut self.fb)
+            .expect("Couldn't get FB");
     }
 }
