@@ -162,6 +162,16 @@ mod tests {
     }
 
     #[test]
+    fn test_get_screen_for_2() {
+        let mut db = TileDB::new();
+        let r0 = Rect::new(2, 29, 29, 27);
+        let mut r = Room::new(0, &Screen::new(r0, &db.get_initial_tile()), &mut db);
+        r.get_screen_for_or_add(-56, 29, &db);
+        r.get_screen_for_or_add(-27, 29, &db);
+        assert_eq!(r.screens.len(), 3);
+    }
+
+    #[test]
     fn test_register() {
         use crate::tile::{TileGfx, TILE_NUM_PX};
         let mut db = TileDB::new();
