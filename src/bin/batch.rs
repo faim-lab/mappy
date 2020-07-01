@@ -1,12 +1,12 @@
 use mappy::MappyState;
-use retro_rs::{Buttons, Emulator};
+use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 use std::path::Path;
 use std::time::Instant;
 fn main() {
     use std::env;
     let mut emu = Emulator::create(
         Path::new("cores/fceumm_libretro"),
-        Path::new("roms/mario.nes"),
+        Path::new("roms/zelda.nes"),
     );
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -28,6 +28,9 @@ fn main() {
         // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
         // }
     }
+    let fb = emu.create_imagebuffer();
+    fb.unwrap().save("out.png").unwrap();
+
     println!("Known tiles: {:?}", mappy.tiles.gfx_count());
     println!("Emulation only: 0.316842184 for 867 inputs, avg 0.00036544689850057674");
     println!(

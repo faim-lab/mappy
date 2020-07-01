@@ -22,7 +22,7 @@ fn main() {
 
     let mut emu = Emulator::create(
         Path::new("cores/fceumm_libretro"),
-        Path::new("roms/mario.nes"),
+        Path::new("roms/zelda.nes"),
     );
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -220,15 +220,7 @@ zxcvbnm,./ for debug displays"
                 );
             }
             canvas
-                .copy_ex(
-                    &game_tex,
-                    Rect::new(0, 0, w as u32, h as u32),
-                    Rect::new(0, 0, ww, wh),
-                    0.0,
-                    None,
-                    false,
-                    false,
-                )
+                .copy(&game_tex, None, None)
                 .expect("Couldn't blit game tex");
 
             // draw mappy split
