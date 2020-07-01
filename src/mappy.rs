@@ -123,14 +123,14 @@ impl MappyState {
                         ScrollLatch::V => {
                             // Second byte of PPUADDR:
                             // YYYX XXXX
-                            let y_coarse_lo = (value & 0b1110_0000) >> 4;
-                            let x_coarse = value & 0b0001_1111;
+                            let y_coarse_lo = (value & 0b1110_0000) >> 2;
+                            let x_coarse = (value & 0b0001_1111) << 3;
                             // overwrite middle three bits of old y scroll
                             let kept_y = splits[last].scroll_y & 0b1100_0111;
                             // overwrite left five bits of old x scroll
                             let kept_x = splits[last].scroll_x & 0b0000_0111;
-                            splits[last].scroll_x = (x_coarse << 5) | kept_x;
-                            splits[last].scroll_y = kept_y | (y_coarse_lo << 6);
+                            splits[last].scroll_x = x_coarse | kept_x;
+                            splits[last].scroll_y = kept_y | y_coarse_lo;
                         }
                     };
                     self.latch = self.latch.flip();
