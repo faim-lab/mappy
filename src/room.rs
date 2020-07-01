@@ -34,20 +34,23 @@ impl Room {
             while x < sx {
                 sx -= r0.w as i32;
             }
-        } else if r0.x + r0.w as i32 <= x {
+        } else {
             while sx + r0.w as i32 <= x {
                 sx += r0.w as i32;
             }
         }
         let mut sy = r0.y;
         if y < r0.y {
-            while y <= sy {
+            while y < sy {
                 sy -= r0.h as i32;
             }
-        } else if r0.y + r0.h as i32 <= y {
+        } else {
             while sy + r0.h as i32 <= y {
                 sy += r0.h as i32;
             }
+        }
+        if !Rect::new(sx, sy, r0.w, r0.h).contains(x, y) {
+            println!("Rect {},{} {},{} does not contain {},{}", sx, sy, r0.w, r0.h, x, y);
         }
         assert!(Rect::new(sx, sy, r0.w, r0.h).contains(x, y));
         assert!(self.get_screen_for(sx, sy).is_none());
