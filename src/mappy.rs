@@ -146,14 +146,26 @@ impl MappyState {
         }
         splits
     }
+    pub fn get_best_effort_splits(&mut self, splits:&mut [Split]) {
+        let fb = &self.fb;
+        //If we can skim a rectangle bigger than 24px high at the top or the bottom, our split is height - that
+        let down_skim_len = skim_rect(&fb, 0, 1);
+        let up_skim_len = skim_rect(&fb, 239, -1);
+        if down_skim_len >= 24 && down_skim_len < 120 {
+            //move the top split lower
+            splits[0].scanline = down_skim_len;
+        }
+        if up_skim_len >= 24 && up_skim_len < 120 {
+            //move the bottom split higher
+            splits[1].scanline = 240-up_skim_len;
+        }
+    }
     pub fn process_screen(&mut self, emu: &Emulator) {
         self.fb.read_from(&emu);
         self.get_changes(&emu);
 
         sprites::get_sprites(&emu, &mut self.live_sprites);
-        // We are trying to find a tiling that reuses existing tiles, or
-        // a minimal tiling otherwise.
-        let splits = self.get_splits();
+        let mut splits = self.get_splits();
         let (lo, hi) = {
             match splits.windows(2).max_by_key(|&win| match win {
                 [lo, hi] => hi.scanline - lo.scanline,
@@ -163,7 +175,13 @@ impl MappyState {
                 _ => panic!("No valid splits"),
             }
         };
-        self.splits = [(lo, hi)];
+        splits = vec![lo,hi];
+        if hi.scanline - lo.scanline >= 239 {
+            self.get_best_effort_splits(&mut splits);
+        }
+        let lo = splits[0];
+        let hi = splits[1];
+        self.splits = [(lo,hi)];
         let old_align = self.grid_align;
         self.find_tiling(lo, hi);
         // update scroll based on grid align change
@@ -465,4 +483,27 @@ fn register_split(splits: &mut Vec<Split>, scanline: u8) {
             scroll_y,
         });
     }
+}
+
+fn skim_rect(fb:&Framebuffer, start:i16, dir:i16) -> u8 {
+    let color = fb.fb[start as usize * fb.w];
+    for column in 0..fb.w {
+        if fb.fb[start as usize * fb.w + column] != color {
+            return 0;
+        }
+    }
+    let mut row = start;
+    let mut last_good_row = start;
+    while 0 <= row && row < 240 {
+        let left = fb.fb[row as usize * fb.w];
+        let right = fb.fb[row as usize * fb.w + fb.w-1];
+        if left != right {
+            break;
+        }
+        if fb.fb[row as usize * fb.w .. (row as usize * fb.w + 1)].iter().all(|here| *here == color) {
+            last_good_row = row;
+        }
+        row += dir;
+    }
+    (last_good_row+1-start).abs() as u8
 }
