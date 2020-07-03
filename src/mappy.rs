@@ -399,8 +399,8 @@ impl MappyState {
     pub fn split_region_for(&self, lo: u32, hi: u32, xo: u8, yo: u8) -> Rect {
         let lo = lo.max(Self::SCREEN_SAFE_TOP);
         let hi = hi.min(self.fb.h as u32 - Self::SCREEN_SAFE_BOTTOM);
-        let xo = (TILE_SIZE - (xo as usize % TILE_SIZE)) as u32;
-        let yo = (TILE_SIZE - (yo as usize % TILE_SIZE)) as u32;
+        let xo = (TILE_SIZE - (xo as usize % TILE_SIZE)) as u32 % 8;
+        let yo = (TILE_SIZE - (yo as usize % TILE_SIZE)) as u32 % 8;
         let dy = hi - (lo + yo);
         let dy = (dy / (TILE_SIZE as u32)) * (TILE_SIZE as u32);
         let dx = (self.fb.w as u32 - Self::SCREEN_SAFE_RIGHT) - (xo + Self::SCREEN_SAFE_LEFT);
