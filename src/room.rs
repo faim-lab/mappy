@@ -50,7 +50,10 @@ impl Room {
             }
         }
         if !Rect::new(sx, sy, r0.w, r0.h).contains(x, y) {
-            println!("Rect {},{} {},{} does not contain {},{}", sx, sy, r0.w, r0.h, x, y);
+            println!(
+                "Rect {},{} {},{} does not contain {},{}",
+                sx, sy, r0.w, r0.h, x, y
+            );
         }
         assert!(Rect::new(sx, sy, r0.w, r0.h).contains(x, y));
         assert!(self.get_screen_for(sx, sy).is_none());
