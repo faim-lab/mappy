@@ -1,13 +1,10 @@
+use macroquad::*;
 use mappy::MappyState;
 use mappy::TILE_SIZE;
 use retro_rs::{Buttons, Emulator};
-use sdl2::event::Event;
-use sdl2::keyboard::{Keycode, Scancode};
-use sdl2::pixels::Color;
-use sdl2::rect::{Point, Rect};
-use std::collections::HashSet;
+
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 #[derive(PartialEq, Eq, Debug)]
 enum PlayState {
@@ -15,9 +12,20 @@ enum PlayState {
     Playing,
 }
 
-const SCALE: u32 = 3;
+const SCALE: f32 = 3.;
 
-fn main() {
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Mappy".to_owned(),
+        fullscreen: false,
+        window_width: 256 * SCALE as i32,
+        window_height: 240 * SCALE as i32,
+        ..Conf::default()
+    }
+}
+
+#[macroquad::main(window_conf)]
+async fn main() {
     use std::env;
 
     let mut emu = Emulator::create(
@@ -30,52 +38,17 @@ fn main() {
     // So reset it afterwards
     emu.reset();
 
-    let sdl_context = sdl2::init().unwrap();
-    let video_subsystem = sdl_context.video().unwrap();
-    let (ww, wh) = (w as u32 * SCALE, h as u32 * SCALE);
-    let window = video_subsystem.window("Mappy", ww, wh).build().unwrap();
+    assert_eq!((w, h), (256, 240));
 
-    let mut canvas = window.into_canvas().build().unwrap();
-
-    canvas.set_draw_color(Color::RGB(0, 0, 0));
-    canvas.clear();
-    canvas.present();
-
-    // let window2 = video_subsystem.window("Current Room", 512, 480)
-    //     .build()
-    //     .unwrap();
-
-    // let mut canvas2 = window2.into_canvas().build().unwrap();
-
-    // canvas2.set_draw_color(Color::RGB(0, 0, 0));
-    // canvas2.clear();
-    // canvas2.present();
-
-    let mut event_pump = sdl_context.event_pump().unwrap();
-
-    let tex_creator = canvas.texture_creator();
-    let mut game_tex = tex_creator
-        .create_texture(
-            sdl2::pixels::PixelFormatEnum::ARGB8888,
-            sdl2::render::TextureAccess::Streaming,
-            w as u32,
-            h as u32,
-        )
-        .expect("Couldn't make game render texture");
-    // let mut cur_screen_tex_size = (1,1);
-    // let mut cur_screen_tex = tex_creator.create_texture(
-    //     sdl2::pixels::PixelFormatEnum::ARGB32,
-    //     sdl2::render::TextureAccess::Streaming,
-    //     cur_screen_tex_size.0,
-    //     cur_screen_tex_size.1
-    // );
-
+    let mut game_img = Image::gen_image_color(w as u16, h as u16, WHITE);
+    let mut fb = vec![0_u8; w * h * 4];
+    let game_tex = load_texture_from_image(&game_img);
     let mut play_state = PlayState::Playing;
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
     let mut frame_counter: u64 = 0;
-    let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(32000);
+    let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
     let mut replay_index = 0;
     let args: Vec<_> = env::args().collect();
@@ -96,23 +69,11 @@ shift-# for dump inputs #
 
 zxcvbnm,./ for debug displays"
     );
-    let mut fb = vec![0_u32; w * h];
-    let mut last_pressed: HashSet<_> = event_pump.keyboard_state().pressed_scancodes().collect();
-    'running: loop {
+    loop {
         let frame_start = Instant::now();
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => break 'running,
-                _ => {}
-            }
+        if is_key_down(KeyCode::Escape) {
+            break;
         }
-        let now_pressed: HashSet<_> = event_pump.keyboard_state().pressed_scancodes().collect();
-        let just_pressed: HashSet<_> = now_pressed.difference(&last_pressed).collect();
-
         //space: pause/play
 
         //wasd: directional movement
@@ -121,45 +82,44 @@ zxcvbnm,./ for debug displays"
         //j: b (run)
         //k: a (jump)
 
-        if just_pressed.contains(&Scancode::Space) {
+        if is_key_pressed(KeyCode::Space) {
             play_state = match play_state {
                 PlayState::Paused => PlayState::Playing,
                 PlayState::Playing => PlayState::Paused,
             };
             println!("Toggle playing to: {:?}", play_state);
         }
-        if just_pressed.contains(&Scancode::Z) {
+        if is_key_pressed(KeyCode::Z) {
             draw_grid = !draw_grid;
         }
-        if just_pressed.contains(&Scancode::X) {
+        if is_key_pressed(KeyCode::X) {
             draw_tile_standins = !draw_tile_standins;
         }
-        if just_pressed.contains(&Scancode::C) {
+        if is_key_pressed(KeyCode::C) {
             draw_live_tracks = !draw_live_tracks;
         }
 
-        let shifted =
-            now_pressed.contains(&Scancode::LShift) || now_pressed.contains(&Scancode::RShift);
+        let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let numkey = {
-            if just_pressed.contains(&Scancode::Num0) {
+            if is_key_pressed(KeyCode::Key0) {
                 Some(0)
-            } else if just_pressed.contains(&Scancode::Num1) {
+            } else if is_key_pressed(KeyCode::Key1) {
                 Some(1)
-            } else if just_pressed.contains(&Scancode::Num2) {
+            } else if is_key_pressed(KeyCode::Key2) {
                 Some(2)
-            } else if just_pressed.contains(&Scancode::Num3) {
+            } else if is_key_pressed(KeyCode::Key3) {
                 Some(3)
-            } else if just_pressed.contains(&Scancode::Num4) {
+            } else if is_key_pressed(KeyCode::Key4) {
                 Some(4)
-            } else if just_pressed.contains(&Scancode::Num5) {
+            } else if is_key_pressed(KeyCode::Key5) {
                 Some(5)
-            } else if just_pressed.contains(&Scancode::Num6) {
+            } else if is_key_pressed(KeyCode::Key6) {
                 Some(6)
-            } else if just_pressed.contains(&Scancode::Num7) {
+            } else if is_key_pressed(KeyCode::Key7) {
                 Some(7)
-            } else if just_pressed.contains(&Scancode::Num8) {
+            } else if is_key_pressed(KeyCode::Key8) {
                 Some(8)
-            } else if just_pressed.contains(&Scancode::Num9) {
+            } else if is_key_pressed(KeyCode::Key9) {
                 Some(9)
             } else {
                 None
@@ -183,29 +143,28 @@ zxcvbnm,./ for debug displays"
         if play_state == PlayState::Playing {
             let buttons = if replay_index >= replay_inputs.len() {
                 Buttons::new()
-                    .up(now_pressed.contains(&Scancode::W))
-                    .down(now_pressed.contains(&Scancode::S))
-                    .left(now_pressed.contains(&Scancode::A))
-                    .right(now_pressed.contains(&Scancode::D))
-                    .select(now_pressed.contains(&Scancode::G))
-                    .start(now_pressed.contains(&Scancode::H))
-                    .b(now_pressed.contains(&Scancode::J))
-                    .a(now_pressed.contains(&Scancode::K))
+                    .up(is_key_down(KeyCode::W))
+                    .down(is_key_down(KeyCode::S))
+                    .left(is_key_down(KeyCode::A))
+                    .right(is_key_down(KeyCode::D))
+                    .select(is_key_down(KeyCode::G))
+                    .start(is_key_down(KeyCode::H))
+                    .b(is_key_down(KeyCode::J))
+                    .a(is_key_down(KeyCode::K))
             } else {
                 replay_index += 1;
                 replay_inputs[replay_index - 1][0]
             };
             inputs.push([buttons, Buttons::new()]);
             emu.run(inputs[inputs.len() - 1]);
-            emu.copy_framebuffer_argb32(&mut fb)
+            emu.copy_framebuffer_rgba8888(&mut fb)
                 .expect("Couldn't copy emulator framebuffer");
-            game_tex
-                .update(
-                    Rect::new(0, 0, w as u32, h as u32),
-                    unsafe { &fb.align_to().1 },
-                    4 * w,
-                )
-                .expect("Couldn't copy emulator fb to texture");
+            let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
+            assert!(pre.is_empty());
+            assert!(post.is_empty());
+            assert_eq!(mid.len(), w * h);
+            game_img.update(&mid);
+            update_texture(game_tex, &game_img);
             mappy.process_screen(&emu);
 
             frame_counter += 1;
@@ -219,117 +178,119 @@ zxcvbnm,./ for debug displays"
                     start.elapsed().as_secs_f64() / (frame_counter as f64)
                 );
             }
-            canvas
-                .copy(&game_tex, None, None)
-                .expect("Couldn't blit game tex");
+        }
+        draw_texture_ex(
+            game_tex,
+            0.,
+            0.,
+            WHITE,
+            DrawTextureParams {
+                dest_size: Some(Vec2::new(w as f32 * SCALE, h as f32 * SCALE)),
+                ..DrawTextureParams::default()
+            },
+        );
 
-            // draw mappy split
-            if draw_grid {
-                canvas.set_draw_color(Color::RGB(255, 0, 0));
-                let region = mappy.split_region();
-                for x in ((region.x as u32)..(region.x as u32 + region.w)).step_by(TILE_SIZE) {
-                    canvas
-                        .draw_line(
-                            Point::new(x as i32 * SCALE as i32, SCALE as i32 * region.y),
-                            Point::new(
-                                x as i32 * SCALE as i32,
-                                SCALE as i32 * (region.y + region.h as i32),
-                            ),
-                        )
-                        .unwrap();
-                }
-                for y in ((region.y as u32)..(region.y as u32 + region.h)).step_by(TILE_SIZE) {
-                    canvas
-                        .draw_line(
-                            Point::new(SCALE as i32 * region.x, y as i32 * SCALE as i32),
-                            Point::new(
-                                (SCALE as i32) * (region.x + region.w as i32),
-                                y as i32 * SCALE as i32,
-                            ),
-                        )
-                        .unwrap();
-                }
+        // draw mappy split
+        if draw_grid {
+            let region = mappy.split_region();
+            for x in ((region.x as u32)..(region.x as u32 + region.w)).step_by(TILE_SIZE) {
+                draw_line(
+                    x as f32 * SCALE,
+                    SCALE * region.y as f32,
+                    x as f32 * SCALE,
+                    SCALE * (region.y as f32 + region.h as f32),
+                    1.,
+                    RED,
+                );
             }
-            if draw_tile_standins {
-                let region = mappy.split_region();
-                let sr = mappy.current_screen.region;
-                for x in ((region.x)..(region.x + region.w as i32)).step_by(TILE_SIZE) {
-                    for y in ((region.y)..(region.y + region.h as i32)).step_by(TILE_SIZE) {
-                        // Use tile hash and convert to a 24-bit color
-                        let tile = mappy.current_screen.get(
-                            sr.x + (x - region.x) / TILE_SIZE as i32,
-                            sr.y + (y - region.y) / TILE_SIZE as i32,
-                        );
-                        let idx = tile.index();
-                        if idx != 0 {
-                            // TODO this but better
-                            canvas.set_draw_color(Color::RGB(
-                                (idx * 127 % 256) as u8,
-                                (idx * 33 % 256) as u8,
-                                (idx * 61 % 256) as u8,
-                            ));
-                            canvas
-                                .fill_rect(Rect::new(
-                                    (x as u32 * SCALE) as i32,
-                                    (y as u32 * SCALE) as i32,
-                                    TILE_SIZE as u32 * SCALE,
-                                    TILE_SIZE as u32 * SCALE,
-                                ))
-                                .unwrap()
-                        }
-                    }
-                }
+            for y in ((region.y as u32)..(region.y as u32 + region.h)).step_by(TILE_SIZE) {
+                draw_line(
+                    SCALE * region.x as f32,
+                    y as f32 * SCALE,
+                    (SCALE) * (region.x as f32 + region.w as f32),
+                    y as f32 * SCALE,
+                    1.,
+                    RED,
+                );
             }
-            if draw_live_tracks {
-                for track in mappy.live_tracks.iter() {
-                    canvas.set_draw_color(Color::RGB(
-                        ((track.positions[0].0).0 * 31 % 256) as u8,
-                        ((track.positions[0].0).0 * 127 % 256) as u8,
-                        ((track.positions[0].0).0 * 91 % 256) as u8,
-                    ));
-                    let startp = Point::new(
-                        (track.positions[0].1).0 + track.positions[0].2.x as i32 - mappy.scroll.0,
-                        (track.positions[0].1).1 + track.positions[0].2.y as i32 - mappy.scroll.1,
+        }
+        if draw_tile_standins {
+            let region = mappy.split_region();
+            let sr = mappy.current_screen.region;
+            for x in ((region.x)..(region.x + region.w as i32)).step_by(TILE_SIZE) {
+                for y in ((region.y)..(region.y + region.h as i32)).step_by(TILE_SIZE) {
+                    // Use tile hash and convert to a 24-bit color
+                    let tile = mappy.current_screen.get(
+                        sr.x + (x - region.x) / TILE_SIZE as i32,
+                        sr.y + (y - region.y) / TILE_SIZE as i32,
                     );
-                    canvas
-                        .fill_rect(Rect::new(
-                            (SCALE * (startp.x.max(0) as u32).max(SCALE * 2) - SCALE * 2) as i32,
-                            (SCALE * (startp.y.max(0) as u32).max(SCALE * 2) - SCALE * 2) as i32,
-                            SCALE * 4,
-                            SCALE * 4,
-                        ))
-                        .expect("Couldn't draw start for track");
-                    if track.positions.len() > 1 {
-                        canvas
-                            .draw_lines(
-                                track
-                                    .positions
-                                    .iter()
-                                    .filter_map(|(_, (sx, sy), sd)| {
-                                        let x = sx + (sd.x as i32) - mappy.scroll.0;
-                                        let y = sy + (sd.y as i32) - mappy.scroll.1;
-                                        if 0 <= x && x <= (w as i32) && 0 <= y && y <= (h as i32) {
-                                            Some(Point::new(x * (SCALE as i32), y * (SCALE as i32)))
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect::<Vec<Point>>()
-                                    .as_slice(),
-                            )
-                            .expect("Couldn't draw lines for track");
+                    let idx = tile.index();
+                    if idx != 0 {
+                        // TODO this but better
+                        draw_rectangle(
+                            (x as f32 * SCALE) as f32,
+                            (y as f32 * SCALE) as f32,
+                            TILE_SIZE as f32 * SCALE,
+                            TILE_SIZE as f32 * SCALE,
+                            Color::new(
+                                (idx * 127 % 256) as f32 / 255.,
+                                (idx * 33 % 256) as f32 / 255.,
+                                (idx * 61 % 256) as f32 / 255.,
+                                1.,
+                            ),
+                        );
                     }
                 }
             }
         }
-        last_pressed = now_pressed;
-        canvas.present();
-        let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);
-        // let frame_interval = Duration::new(0, 1);
-        let elapsed = frame_start.elapsed();
-        if frame_interval > elapsed {
-            ::std::thread::sleep(frame_interval - elapsed);
+        if draw_live_tracks {
+            for track in mappy.live_tracks.iter() {
+                let col = Color::new(
+                    ((track.positions[0].0).0 * 31 % 256) as f32 / 255.,
+                    ((track.positions[0].0).0 * 127 % 256) as f32 / 255.,
+                    ((track.positions[0].0).0 * 91 % 256) as f32 / 255.,
+                    1.,
+                );
+                let startp = Vec2::new(
+                    ((track.positions[0].1).0 + track.positions[0].2.x as i32 - mappy.scroll.0)
+                        as f32,
+                    ((track.positions[0].1).1 + track.positions[0].2.y as i32 - mappy.scroll.1)
+                        as f32,
+                );
+                draw_rectangle(
+                    SCALE * (startp.x().max(0.)).min(w as f32) - SCALE * 2.,
+                    SCALE * (startp.y().max(0.)).min(h as f32) - SCALE * 2.,
+                    SCALE * 4.,
+                    SCALE * 4.,
+                    col,
+                );
+                if track.positions.len() > 1 {
+                    for pair in track.positions.windows(2) {
+                        let (_, (sx0, sy0), sd0) = pair[0];
+                        let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
+                        let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
+                        let (_, (sx1, sy1), sd1) = pair[1];
+                        let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
+                        let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;
+                        draw_line(
+                            x0 as f32 * SCALE,
+                            y0 as f32 * SCALE,
+                            x1 as f32 * SCALE,
+                            y1 as f32 * SCALE,
+                            1.,
+                            col,
+                        );
+                    }
+                }
+            }
         }
+        next_frame().await;
+        // let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);
+        // // let frame_interval = Duration::new(0, 1);
+        // let elapsed = frame_start.elapsed();
+        // if frame_interval > elapsed {
+        //     ::std::thread::sleep(frame_interval - elapsed);
+        // }
     }
-    mappy.dump_tiles(Path::new("out/"));
+    //mappy.dump_tiles(Path::new("out/"));
 }
