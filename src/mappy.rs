@@ -103,6 +103,7 @@ impl MappyState {
                     self.latch = self.latch.flip();
                 }
                 ScrollChangeReason::Write2006 => {
+                    let scanline = if scanline > 3 { scanline - 3 } else { scanline };
                     register_split(&mut splits, scanline + 1);
                     let last = splits.len() - 1;
                     match self.latch {
@@ -436,8 +437,8 @@ impl MappyState {
         let mut buf = vec![0_u8; TILE_SIZE * TILE_SIZE * 3];
         for (ti, tile) in self.tiles.gfx_iter().enumerate() {
             tile.write_rgb888(&mut buf);
-            let img =
-                ImageBuffer::<Rgb<u8>, _>::from_raw(TILE_SIZE as u32, TILE_SIZE as u32, &buf[..])
+            let img: ImageBuffer<Rgb<u8>, _> =
+                ImageBuffer::from_raw(TILE_SIZE as u32, TILE_SIZE as u32, &buf[..])
                     .expect("Couldn't create image buffer");
             img.save(root.join(format!("t{:}.png", ti))).unwrap();
         }
