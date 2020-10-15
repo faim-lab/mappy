@@ -68,15 +68,15 @@ impl MappyState {
             current_room: room,
         }
     }
-    fn find_tiling(&mut self, lo: Split, _hi: Split) {
-        self.grid_align = (lo.scroll_x, lo.scroll_y);
-    }
-    fn get_splits(&mut self) -> Vec<Split> {
+
+    fn get_splits(&self) -> (Vec<Split>, ScrollLatch) {
+        // TODO have it return the new latch so we don't need mut self
         let mut splits = vec![Split {
             scanline: 0,
             scroll_x: 0,
             scroll_y: 0,
         }];
+        let mut latch = self.latch;
         for &ScrollChange {
             reason,
             scanline,
@@ -87,7 +87,7 @@ impl MappyState {
             // let old_latch = latch;
             match reason {
                 ScrollChangeReason::Read2002 => {
-                    self.latch = ScrollLatch::clear();
+                    latch = ScrollLatch::clear();
                 }
                 ScrollChangeReason::Write2005 => {
                     register_split(&mut splits, scanline + 1);
@@ -100,13 +100,13 @@ impl MappyState {
                             splits[last].scroll_y = value;
                         }
                     };
-                    self.latch = self.latch.flip();
+                    latch = latch.flip();
                 }
                 ScrollChangeReason::Write2006 => {
                     let scanline = if scanline > 3 { scanline - 3 } else { scanline };
                     register_split(&mut splits, scanline + 1);
                     let last = splits.len() - 1;
-                    match self.latch {
+                    match latch {
                         ScrollLatch::H => {
                             // First byte of 15-bit PPUADDR:
                             // [] yyy NN YY
@@ -134,7 +134,7 @@ impl MappyState {
                             splits[last].scroll_y = kept_y | y_coarse_lo;
                         }
                     };
-                    self.latch = self.latch.flip();
+                    latch = latch.flip();
                 }
             };
         }
@@ -145,28 +145,69 @@ impl MappyState {
                 scroll_y: 0,
             });
         }
-        splits
+        (splits, latch)
     }
-    pub fn get_best_effort_splits(&mut self, splits: &mut [Split]) {
+    pub fn get_best_effort_splits(&self, lo:Split, hi:Split) -> (Split, Split) {
         let fb = &self.fb;
         //If we can skim a rectangle bigger than 24px high at the top or the bottom, our split is height - that
         let down_skim_len = skim_rect(&fb, 0, 1);
         let up_skim_len = skim_rect(&fb, 239, -1);
+        let mut s0 = lo;
+        let mut s1 = hi;
         if down_skim_len >= 24 && down_skim_len < 120 {
             //move the top split lower
-            splits[0].scanline = down_skim_len;
+            s0.scanline = down_skim_len;
         }
         if up_skim_len >= 24 && up_skim_len < 120 {
             //move the bottom split higher
-            splits[1].scanline = 240 - up_skim_len;
+            s1.scanline = 240 - up_skim_len;
         }
+        (s0, s1)
     }
     pub fn process_screen(&mut self, emu: &Emulator) {
+        // Read new data from emulator
         self.fb.read_from(&emu);
         self.get_changes(&emu);
-
         sprites::get_sprites(&emu, &mut self.live_sprites);
-        let mut splits = self.get_splits();
+
+        // What can we learn from hardware screen splitting operations?
+        let (lo, hi, latch) = self.get_main_split();
+        self.latch = latch;
+        self.splits = [(lo, hi)];
+
+        // Update grid alignment and scrolling
+        let old_align = self.grid_align;
+        self.grid_align = (lo.scroll_x, lo.scroll_y);
+        // update scroll based on grid align change
+        self.scroll = (
+            self.scroll.0 + find_offset(old_align.0, self.grid_align.0) as i32,
+            self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i32,
+        );
+
+        // Relate current sprites to previous sprites
+        self.track_sprites();
+
+        // Update current screen tile grid
+        self.read_current_screen();
+
+        // Do we have control?
+        self.determine_control();
+        if self.has_control {
+            // Map only if we have control
+            if self.current_room.id == 0 {
+                self.current_room = Room::new(1, &self.current_screen, &mut self.tiles);
+            } else {
+                self.current_room
+                    .register_screen(&self.current_screen, &mut self.tiles);
+            }
+        }
+
+        // Update `now`
+        self.now.0 += 1;
+    }
+
+    fn get_main_split(&self) -> (Split, Split, ScrollLatch) {
+        let (splits, latch) = self.get_splits();
         let (lo, hi) = {
             match splits.windows(2).max_by_key(|&win| match win {
                 [lo, hi] => hi.scanline - lo.scanline,
@@ -176,65 +217,50 @@ impl MappyState {
                 _ => panic!("No valid splits"),
             }
         };
-        splits = vec![lo, hi];
+        // Is splitting happening some other way?
+        // E.g. in Zelda the "room" abuts the "menu"
         if hi.scanline - lo.scanline >= 239 {
-            self.get_best_effort_splits(&mut splits);
+            let (lo, hi) = self.get_best_effort_splits(lo, hi);
+            (lo, hi, latch)
+        } else {
+            (lo, hi, latch)
         }
-        let lo = splits[0];
-        let hi = splits[1];
-        self.splits = [(lo, hi)];
-        let old_align = self.grid_align;
-        self.find_tiling(lo, hi);
-        // update scroll based on grid align change
-        self.scroll = (
-            self.scroll.0 + find_offset(old_align.0, self.grid_align.0) as i32,
-            self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i32,
+    }
+
+    fn read_current_screen(&mut self) {
+        let region = self.split_region();
+        self.current_screen = Screen::new(
+            Rect::new(
+                (self.scroll.0 + region.x) / (TILE_SIZE as i32),
+                (self.scroll.1 + region.y) / (TILE_SIZE as i32),
+                region.w / (TILE_SIZE as u32),
+                region.h / (TILE_SIZE as u32),
+            ),
+            &self.tiles.get_initial_tile(),
         );
-        self.track_sprites();
-        self.determine_control();
-        if self.has_control {
-            // Just don't map at all if we don't have control
-            let region = self.split_region();
-            self.current_screen = Screen::new(
-                Rect::new(
-                    (self.scroll.0 + region.x) / (TILE_SIZE as i32),
-                    (self.scroll.1 + region.y) / (TILE_SIZE as i32),
-                    region.w / (TILE_SIZE as u32),
-                    region.h / (TILE_SIZE as u32),
-                ),
-                &self.tiles.get_initial_tile(),
-            );
-            for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
-                for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
-                    if sprites::overlapping_sprite(
-                        x as usize,
-                        y as usize,
-                        TILE_SIZE,
-                        TILE_SIZE,
-                        &self.live_sprites,
-                    ) {
-                        // Just leave the empty one there
-                        continue;
-                    }
-                    let tile = TileGfx::read(&self.fb, x as usize, y as usize);
-                    // if !(self.tiles.contains(&tile)) {
-                    // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
-                    // }
-                    self.current_screen.set(
-                        self.tiles.get_tile(tile),
-                        (self.scroll.0 + x) / (TILE_SIZE as i32),
-                        (self.scroll.1 + y) / (TILE_SIZE as i32),
-                    );
+        for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
+            for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
+                if sprites::overlapping_sprite(
+                    x as usize,
+                    y as usize,
+                    TILE_SIZE,
+                    TILE_SIZE,
+                    &self.live_sprites,
+                ) {
+                    // Just leave the empty one there
+                    continue;
                 }
-            }
-            if self.current_room.id == 0 {
-                self.current_room = Room::new(1, &self.current_screen, &mut self.tiles);
-            } else {
-                self.current_room
-                    .register_screen(&self.current_screen, &mut self.tiles);
+                let tile = TileGfx::read(&self.fb, x as usize, y as usize);
+                // if !(self.tiles.contains(&tile)) {
+                // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
+                // }
+                self.current_screen.set(
+                    self.tiles.get_tile(tile),
+                    (self.scroll.0 + x) / (TILE_SIZE as i32),
+                    (self.scroll.1 + y) / (TILE_SIZE as i32),
+                );
             }
         }
-        self.now.0 += 1;
     }
 
     fn determine_control(&mut self) {
@@ -486,6 +512,7 @@ fn register_split(splits: &mut Vec<Split>, scanline: u8) {
     }
 }
 
+/// Tries to find a rectangle of a solid-colored border starting from `start` and moving by `dir`.
 fn skim_rect(fb: &Framebuffer, start: i16, dir: i16) -> u8 {
     let color = fb.fb[start as usize * fb.w];
     for column in 0..fb.w {
