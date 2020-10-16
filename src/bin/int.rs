@@ -3,9 +3,9 @@ use mappy::MappyState;
 use mappy::TILE_SIZE;
 use retro_rs::{Buttons, Emulator};
 
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
-use std::io::{Read, Write};
 
 const SCALE: f32 = 3.;
 
@@ -19,9 +19,9 @@ fn window_conf() -> Conf {
     }
 }
 
-fn replay(emu:&mut Emulator, mappy:&mut MappyState, inputs:&[[Buttons;2]]) {
+fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
-    for (frames,inp) in inputs.iter().enumerate() {
+    for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
         mappy.process_screen(&emu);
         if frames % 60 == 0 {
@@ -41,14 +41,11 @@ fn replay(emu:&mut Emulator, mappy:&mut MappyState, inputs:&[[Buttons;2]]) {
 async fn main() {
     use std::env;
 
-    let romfile = Path::new("roms/mario3.nes");
+    let romfile = Path::new("roms/zelda.nes");
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
 
-    let mut emu = Emulator::create(
-        Path::new("cores/fceumm_libretro"),
-        Path::new(romfile)
-    );
+    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
@@ -67,21 +64,10 @@ async fn main() {
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
     let mut replay_index: usize = 0;
-    let speeds:[usize;10] = [
-        0,
-        1,
-        5,
-        15,
-        30,
-        60,
-        120,
-        240,
-        600,
-        6000
-    ];
-    let mut speed:usize = 5;
-    let mut accum:f32 = 0.0;
-    let mut save_buf:Vec<u8> = Vec::with_capacity(emu.save_size());
+    let speeds: [usize; 10] = [0, 1, 5, 15, 30, 60, 120, 240, 600, 6000];
+    let mut speed: usize = 5;
+    let mut accum: f32 = 0.0;
+    let mut save_buf: Vec<u8> = Vec::with_capacity(emu.save_size());
     let args: Vec<_> = env::args().collect();
     let mut mappy = MappyState::new(w, h);
     if args.len() > 1 {
@@ -117,13 +103,22 @@ zxcvbnm,./ for debug displays"
         //k: a (jump)
 
         if is_key_pressed(KeyCode::O) {
-            speed =
-            if speed == 0 || is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) { 0 } else { speed - 1 };
+            speed = if speed == 0
+                || is_key_down(KeyCode::LeftShift)
+                || is_key_down(KeyCode::RightShift)
+            {
+                0
+            } else {
+                speed - 1
+            };
 
             println!("Speed {:?}", speed);
         } else if is_key_pressed(KeyCode::P) {
-            speed =
-            if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) { 6 } else { (speed + 1).min(speeds.len()-1) };
+            speed = if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {
+                6
+            } else {
+                (speed + 1).min(speeds.len() - 1)
+            };
             println!("Speed {:?}", speed);
         }
         if is_key_pressed(KeyCode::Z) {
@@ -163,7 +158,11 @@ zxcvbnm,./ for debug displays"
             }
         };
         if let Some(n) = numkey {
-            let path = Path::new("inputs/").join(format!("{}_{}.fm2", romname.to_str().expect("rom name not a valid utf-8 string"), n));
+            let path = Path::new("inputs/").join(format!(
+                "{}_{}.fm2",
+                romname.to_str().expect("rom name not a valid utf-8 string"),
+                n
+            ));
             if shifted {
                 mappy::write_fm2(&inputs, &path);
                 println!("Dumped {}", n);
@@ -178,14 +177,21 @@ zxcvbnm,./ for debug displays"
             }
         }
         if is_key_pressed(KeyCode::R) {
-            let save_path = Path::new("state/").join(format!("{}.state", romname.to_str().expect("rom name not a valid utf-8 string")));
+            let save_path = Path::new("state/").join(format!(
+                "{}.state",
+                romname.to_str().expect("rom name not a valid utf-8 string")
+            ));
             emu.save(&mut save_buf);
             //write it out to the file
             let mut file = std::fs::File::create(save_path).expect("Couldn't create save file!");
-            file.write_all(&save_buf).expect("Couldn't write all save file bytes!");
+            file.write_all(&save_buf)
+                .expect("Couldn't write all save file bytes!");
         }
         if is_key_pressed(KeyCode::Y) {
-            let save_path = Path::new("state/").join(format!("{}.state", romname.to_str().expect("rom name not a valid utf-8 string")));
+            let save_path = Path::new("state/").join(format!(
+                "{}.state",
+                romname.to_str().expect("rom name not a valid utf-8 string")
+            ));
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
             assert_eq!(file.read_to_end(&mut save_buf).unwrap(), emu.save_size());
             emu.load(&save_buf);
@@ -322,10 +328,10 @@ zxcvbnm,./ for debug displays"
                 );
                 if track.positions.len() > 1 {
                     for pair in track.positions.windows(2) {
-                        let (_, (sx0, sy0), sd0) = pair[0];
+                        let mappy::At(_, (sx0, sy0), sd0) = pair[0];
                         let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
                         let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
-                        let (_, (sx1, sy1), sd1) = pair[1];
+                        let mappy::At(_, (sx1, sy1), sd1) = pair[1];
                         let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
                         let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;
                         draw_line(

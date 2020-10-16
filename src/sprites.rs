@@ -91,8 +91,11 @@ pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[Spr
 }
 
 #[derive(Clone)]
+pub struct At(pub Time, pub (i32, i32), pub SpriteData);
+
+#[derive(Clone)]
 pub struct SpriteTrack {
-    pub positions: Vec<(Time, (i32, i32), SpriteData)>,
+    pub positions: Vec<At>,
     // TODO measure against vecs or even arrays?
     pub patterns: HashSet<u8>,
     pub tables: HashSet<u8>,
@@ -118,13 +121,14 @@ impl SpriteTrack {
     }
     pub fn update(&mut self, t: Time, scroll: (i32, i32), sd: SpriteData) {
         // TODO handle time properly, dedup if no change
-        self.positions.push((t, scroll, sd));
+        // TODO TODO what does that mean?
+        self.positions.push(At(t, scroll, sd));
         self.patterns.insert(sd.pattern_id);
         self.tables.insert(sd.table);
         self.attrs.insert(sd.attrs);
     }
     pub fn starting_point(&self) -> (i32, i32) {
-        let (_, (sx, sy), sd) = &self.positions[0];
+        let At(_, (sx, sy), sd) = &self.positions[0];
         (sx + sd.x as i32, sy + sd.y as i32)
     }
     pub fn seen_pattern(&self, pat: u8) -> bool {
@@ -136,4 +140,5 @@ impl SpriteTrack {
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
     }
+
 }

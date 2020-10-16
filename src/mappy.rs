@@ -1,7 +1,6 @@
 use crate::framebuffer::Framebuffer;
 use crate::room::Room;
 use crate::screen::Screen;
-use crate::scrolling::*;
 use crate::sprites::{self, SpriteData, SpriteTrack, SPRITE_COUNT};
 use crate::tile::{TileDB, TileGfx, TileGfxId, TILE_SIZE};
 use crate::{Rect, Time};
@@ -9,6 +8,12 @@ use image::{ImageBuffer, Rgb};
 use libloading::Symbol;
 use retro_rs::{Buttons, Emulator};
 use std::path::Path;
+
+mod scrolling;
+use scrolling::*;
+mod splits;
+use splits::Split;
+mod matching;
 
 const INPUT_MEM: usize = 10;
 
@@ -69,100 +74,6 @@ impl MappyState {
         }
     }
 
-    fn get_splits(&self) -> (Vec<Split>, ScrollLatch) {
-        let mut splits = vec![Split {
-            scanline: 0,
-            scroll_x: 0,
-            scroll_y: 0,
-        }];
-        let mut latch = self.latch;
-        for &ScrollChange {
-            reason,
-            scanline,
-            value,
-        } in self.changes.iter()
-        {
-            let scanline = if scanline < 240 { scanline } else { 0 };
-            // let old_latch = latch;
-            match reason {
-                ScrollChangeReason::Read2002 => {
-                    latch = ScrollLatch::clear();
-                }
-                ScrollChangeReason::Write2005 => {
-                    register_split(&mut splits, scanline + 1);
-                    let last = splits.len() - 1;
-                    match latch {
-                        ScrollLatch::H => {
-                            splits[last].scroll_x = value;
-                        }
-                        ScrollLatch::V => {
-                            splits[last].scroll_y = value;
-                        }
-                    };
-                    latch = latch.flip();
-                }
-                ScrollChangeReason::Write2006 => {
-                    let scanline = if scanline > 3 { scanline - 3 } else { scanline };
-                    register_split(&mut splits, scanline + 1);
-                    let last = splits.len() - 1;
-                    match latch {
-                        ScrollLatch::H => {
-                            // First byte of 15-bit PPUADDR:
-                            // [] yyy NN YY
-                            // Of the first byte written to 2006:
-                            // bits 0 and 1 are ignored, rest mapped to yyNNYY
-                            // (and the leftmost bit of y_fine is forced to 0)
-                            let y_fine = (value & 0b0011_0000) >> 4;
-                            // (ignore nametable select NN for now)
-                            // two highest bits of y_coarse are written
-                            let y_coarse_hi = (value & 0b0000_0011) << 6;
-                            // combine that with the three middle bits of old y scroll
-                            let y_coarse = y_coarse_hi | (splits[last].scroll_y & 0b00111000);
-                            splits[last].scroll_y = y_coarse | y_fine;
-                        }
-                        ScrollLatch::V => {
-                            // Second byte of PPUADDR:
-                            // YYYX XXXX
-                            let y_coarse_lo = (value & 0b1110_0000) >> 2;
-                            let x_coarse = (value & 0b0001_1111) << 3;
-                            // overwrite middle three bits of old y scroll
-                            let kept_y = splits[last].scroll_y & 0b1100_0111;
-                            // overwrite left five bits of old x scroll
-                            let kept_x = splits[last].scroll_x & 0b0000_0111;
-                            splits[last].scroll_x = x_coarse | kept_x;
-                            splits[last].scroll_y = kept_y | y_coarse_lo;
-                        }
-                    };
-                    latch = latch.flip();
-                }
-            };
-        }
-        if splits[splits.len() - 1].scanline < 240 {
-            splits.push(Split {
-                scanline: 240,
-                scroll_x: 0,
-                scroll_y: 0,
-            });
-        }
-        (splits, latch)
-    }
-    pub fn get_best_effort_splits(&self, lo: Split, hi: Split) -> (Split, Split) {
-        let fb = &self.fb;
-        //If we can skim a rectangle bigger than 24px high at the top or the bottom, our split is height - that
-        let down_skim_len = skim_rect(&fb, 0, 1);
-        let up_skim_len = skim_rect(&fb, 239, -1);
-        let mut s0 = lo;
-        let mut s1 = hi;
-        if down_skim_len >= 24 && down_skim_len < 120 {
-            //move the top split lower
-            s0.scanline = down_skim_len;
-        }
-        if up_skim_len >= 24 && up_skim_len < 120 {
-            //move the bottom split higher
-            s1.scanline = 240 - up_skim_len;
-        }
-        (s0, s1)
-    }
     pub fn process_screen(&mut self, emu: &Emulator) {
         // Read new data from emulator
         self.fb.read_from(&emu);
@@ -170,7 +81,7 @@ impl MappyState {
         sprites::get_sprites(&emu, &mut self.live_sprites);
 
         // What can we learn from hardware screen splitting operations?
-        let (lo, hi, latch) = self.get_main_split();
+        let (lo, hi, latch) = splits::get_main_split(&self.changes, self.latch, &self.fb);
         self.latch = latch;
         self.splits = [(lo, hi)];
 
@@ -179,8 +90,8 @@ impl MappyState {
         self.grid_align = (lo.scroll_x, lo.scroll_y);
         // update scroll based on grid align change
         self.scroll = (
-            self.scroll.0 + find_offset(old_align.0, self.grid_align.0) as i32,
-            self.scroll.1 + find_offset(old_align.1, self.grid_align.1) as i32,
+            self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0) as i32,
+            self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1) as i32,
         );
 
         // Relate current sprites to previous sprites
@@ -203,27 +114,6 @@ impl MappyState {
 
         // Update `now`
         self.now.0 += 1;
-    }
-
-    fn get_main_split(&self) -> (Split, Split, ScrollLatch) {
-        let (splits, latch) = self.get_splits();
-        let (lo, hi) = {
-            match splits.windows(2).max_by_key(|&win| match win {
-                [lo, hi] => hi.scanline - lo.scanline,
-                _ => panic!("Misshapen windows"),
-            }) {
-                Some(&[lo, hi]) => (lo, hi),
-                _ => panic!("No valid splits"),
-            }
-        };
-        // Is splitting happening some other way?
-        // E.g. in Zelda the "room" abuts the "menu"
-        if hi.scanline - lo.scanline >= 239 {
-            let (lo, hi) = self.get_best_effort_splits(lo, hi);
-            (lo, hi, latch)
-        } else {
-            (lo, hi, latch)
-        }
     }
 
     fn read_current_screen(&mut self) {
@@ -304,9 +194,11 @@ impl MappyState {
     const DESTROY_COAST: usize = 5;
     // TODO: increase cost if this would alter blobbing?
     fn sprite_change_cost(new_s: &SpriteData, old: &SpriteTrack) -> u32 {
-        let sd2 = &old.positions[old.positions.len() - 1].2;
+        let sd2 = old.current_data();
         new_s.distance(sd2) as u32
-            + (if sd2.index == new_s.index { 0 } else { 12 })
+            // questionable
+            //+ (if sd2.index == new_s.index { 0 } else { 12 })
+            // okay
             + (if old.seen_pattern(new_s.pattern_id) {
                 0
             } else {
@@ -316,48 +208,9 @@ impl MappyState {
             + (if old.seen_attrs(new_s.attrs) { 0 } else { 4 })
             + (if new_s.height() == sd2.height() { 0 } else { 8 })
     }
-    #[allow(clippy::type_complexity)]
-    fn greedy_match(
-        mut candidates: Vec<(&SpriteData, Vec<(Option<usize>, u32)>)>,
-        track_count: usize,
-    ) -> (Vec<(SpriteData, Option<usize>)>, u32) {
-        // greedy match:
-        // pick candidate with least cost match
-        // fix it to that match
-        // repeat until done
-        let mut used_old: Vec<bool> = vec![false; track_count];
-        let mut used_new = [false; SPRITE_COUNT];
-        let mut net_cost = 0;
-        let mut matching: Vec<(SpriteData, Option<usize>)> = Vec::with_capacity(candidates.len());
-        candidates
-            .iter_mut()
-            .for_each(|(_, opts)| opts.sort_unstable_by_key(|tup| tup.1));
-        candidates.sort_unstable_by_key(|(_, opts)| opts.len());
-        for (new, opts) in candidates.into_iter() {
-            let (maybe_oldi, cost) = opts
-                .into_iter()
-                .find(|(maybe_oldi, _cost)| match maybe_oldi {
-                    Some(oldi) => !used_old[*oldi],
-                    None => true,
-                })
-                .expect("Conflict!  Shouldn't be possible!");
-            assert!(!used_new[new.index as usize]);
-            used_new[new.index as usize] = true;
-            net_cost += cost;
-            match maybe_oldi {
-                Some(oldi) => {
-                    used_old[oldi] = true;
-                    matching.push((*new, Some(oldi)));
-                }
-                None => {
-                    matching.push((*new, None));
-                }
-            }
-        }
-        // TODO increase net_cost by coast_cost for each old track with no matching new track?
-        (matching, net_cost)
-    }
+
     fn track_sprites(&mut self) {
+        use matching::{greedy_match, Match, MatchTo, Target};
         let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
         self.live_tracks.retain(|t| {
@@ -368,7 +221,6 @@ impl MappyState {
                 true
             }
         });
-
         // find minimal matching of sprites
         // local search is okay
         // vec<vec> is worrisome
@@ -377,12 +229,12 @@ impl MappyState {
         let candidates: Vec<_> = live
             .iter()
             .map(|s| {
-                (
-                    *s,
-                    std::iter::once((None, Self::CREATE_COST))
+                MatchTo(
+                    s.index as usize,
+                    std::iter::once(Target(None, Self::CREATE_COST))
                         .chain(self.live_tracks.iter().enumerate().filter_map(|(ti, old)| {
                             if (s.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
-                                Some((Some(ti), Self::sprite_change_cost(s, &old)))
+                                Some(Target(Some(ti), Self::sprite_change_cost(s, &old)))
                             } else {
                                 None
                             }
@@ -391,60 +243,45 @@ impl MappyState {
                 )
             })
             .collect();
-        if candidates.is_empty() && self.live_tracks.is_empty() {
-            // no old and no new sprites
+        if candidates.is_empty() {
+            // no new sprites at all
             return;
         }
         //branch and bound should quickly find the global optimum? maybe later
-        let (matching, _cost) = Self::greedy_match(candidates, self.live_tracks.len());
+        let matching = greedy_match(candidates, self.live_tracks.len());
         // println!("Matched with cost {:?}",cost);
         let mut _new_count = 0;
         let mut _matched_count = 0;
         // println!("Go through {:?}", self.now);
-        for (new, maybe_oldi) in matching.into_iter() {
+        for Match(new, maybe_oldi) in matching.into_iter() {
             match maybe_oldi {
                 None => {
-                    println!("Create new {:?}", new.index);
+                    println!("Create new {:?}", new);
                     _new_count += 1;
-                    self.live_tracks
-                        .push(SpriteTrack::new(self.now, self.scroll, new));
+                    self.live_tracks.push(SpriteTrack::new(
+                        self.now,
+                        self.scroll,
+                        self.live_sprites[new],
+                    ));
                 }
                 Some(oldi) => {
                     // match
                     // println!("Update {:?} {:?}", oldi, newi);
                     _matched_count += 1;
-                    self.live_tracks[oldi].update(self.now, self.scroll, new);
+                    self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[new]);
                 }
             }
         }
     }
-    const SCREEN_SAFE_LEFT: u32 = 8;
-    const SCREEN_SAFE_RIGHT: u32 = 8;
-    const SCREEN_SAFE_TOP: u32 = 8;
-    const SCREEN_SAFE_BOTTOM: u32 = 8;
-    pub fn split_region_for(&self, lo: u32, hi: u32, xo: u8, yo: u8) -> Rect {
-        let lo = lo.max(Self::SCREEN_SAFE_TOP);
-        let hi = hi.min(self.fb.h as u32 - Self::SCREEN_SAFE_BOTTOM);
-        let xo = ((TILE_SIZE - (xo as usize % TILE_SIZE)) % TILE_SIZE) as u32;
-        let yo = ((TILE_SIZE - (yo as usize % TILE_SIZE)) % TILE_SIZE) as u32;
-        let dy = hi - (lo + yo);
-        let dy = (dy / (TILE_SIZE as u32)) * (TILE_SIZE as u32);
-        let dx = (self.fb.w as u32 - Self::SCREEN_SAFE_RIGHT) - (xo + Self::SCREEN_SAFE_LEFT);
-        let dx = (dx / (TILE_SIZE as u32)) * (TILE_SIZE as u32);
-        Rect::new(
-            Self::SCREEN_SAFE_LEFT as i32 + xo as i32,
-            lo as i32 + yo as i32,
-            dx,
-            dy,
-        )
-    }
 
     pub fn split_region(&self) -> Rect {
-        self.split_region_for(
+        splits::split_region_for(
             self.splits[0].0.scanline as u32,
             self.splits[0].1.scanline as u32,
             self.grid_align.0,
             self.grid_align.1,
+            self.fb.w as u32,
+            self.fb.h as u32
         )
     }
 
@@ -468,72 +305,4 @@ impl MappyState {
             img.save(root.join(format!("t{:}.png", ti))).unwrap();
         }
     }
-}
-
-fn find_offset(old: u8, new: u8) -> i16 {
-    // each coordinate either increased and possibly wrapped or decreased and possibly wrapped or stayed the same
-    // in the former case calculate new+8 and subtract old if new < old, otherwise new - old
-    // in the middle case calculate old+8 - new if new > old, otherwise old - new
-    // the magic number here (255, 8, whatever) is the largest value grid_offset can take
-    let old = old as i16;
-    let new = new as i16;
-    let decrease = if new <= old {
-        new - old
-    } else {
-        new - (old + 256)
-    };
-    let increase = if new >= old {
-        new - old
-    } else {
-        (new + 256) - old
-    };
-
-    *[decrease, increase].iter().min_by_key(|n| n.abs()).unwrap()
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Split {
-    pub scanline: u8,
-    pub scroll_x: u8,
-    pub scroll_y: u8,
-}
-
-fn register_split(splits: &mut Vec<Split>, scanline: u8) {
-    let last = &splits[splits.len() - 1];
-    if last.scanline < scanline {
-        let scroll_x = last.scroll_x;
-        let scroll_y = last.scroll_y;
-        splits.push(Split {
-            scanline,
-            scroll_x,
-            scroll_y,
-        });
-    }
-}
-
-/// Tries to find a rectangle of a solid-colored border starting from `start` and moving by `dir`.
-fn skim_rect(fb: &Framebuffer, start: i16, dir: i16) -> u8 {
-    let color = fb.fb[start as usize * fb.w];
-    for column in 0..fb.w {
-        if fb.fb[start as usize * fb.w + column] != color {
-            return 0;
-        }
-    }
-    let mut row = start;
-    let mut last_good_row = start;
-    while 0 <= row && row < 240 {
-        let left = fb.fb[row as usize * fb.w];
-        let right = fb.fb[row as usize * fb.w + fb.w - 1];
-        if left != right {
-            break;
-        }
-        if fb.fb[row as usize * fb.w..(row as usize * fb.w + 1)]
-            .iter()
-            .all(|here| *here == color)
-        {
-            last_good_row = row;
-        }
-        row += dir;
-    }
-    (last_good_row + 1 - start).abs() as u8
 }
