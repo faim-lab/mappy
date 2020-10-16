@@ -24,13 +24,31 @@ fn window_conf() -> Conf {
     }
 }
 
+fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
+    let start = Instant::now();
+    for (frames,inp) in inputs.iter().enumerate() {
+        emu.run(*inp);
+        mappy.process_screen(&emu);
+        if frames % 60 == 0 {
+            println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
+            println!("Known tiles: {:?}", mappy.tiles.gfx_count());
+            println!(
+                "Net: {:} for {:} inputs, avg {:}",
+                start.elapsed().as_secs_f64(),
+                frames,
+                start.elapsed().as_secs_f64() / (frames as f64)
+            );
+        }
+    }
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     use std::env;
 
     let mut emu = Emulator::create(
         Path::new("cores/fceumm_libretro"),
-        Path::new("roms/mario.nes"),
+        Path::new("roms/mario3.nes"),
     );
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -50,12 +68,14 @@ async fn main() {
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
-    let mut replay_index = 0;
     let args: Vec<_> = env::args().collect();
+    let mut mappy = MappyState::new(w, h);
     if args.len() > 1 {
         mappy::read_fm2(&mut replay_inputs, &Path::new(&args[1]));
+        replay(&mut emu, &mut mappy, &replay_inputs);
+        inputs.extend(replay_inputs.drain(..));
     }
-    let mut mappy = MappyState::new(w, h);
+
     let start = Instant::now();
     println!(
         "Instructions
@@ -70,7 +90,7 @@ shift-# for dump inputs #
 zxcvbnm,./ for debug displays"
     );
     loop {
-        let frame_start = Instant::now();
+        // let frame_start = Instant::now();
         if is_key_down(KeyCode::Escape) {
             break;
         }
@@ -137,24 +157,20 @@ zxcvbnm,./ for debug displays"
                 inputs.clear();
                 replay_inputs.clear();
                 mappy::read_fm2(&mut replay_inputs, &path);
-                replay_index = 0;
+                replay(&mut emu, &mut mappy, &replay_inputs);
+                inputs.extend(replay_inputs.drain(..));
             }
         }
         if play_state == PlayState::Playing {
-            let buttons = if replay_index >= replay_inputs.len() {
-                Buttons::new()
-                    .up(is_key_down(KeyCode::W))
-                    .down(is_key_down(KeyCode::S))
-                    .left(is_key_down(KeyCode::A))
-                    .right(is_key_down(KeyCode::D))
-                    .select(is_key_down(KeyCode::G))
-                    .start(is_key_down(KeyCode::H))
-                    .b(is_key_down(KeyCode::J))
-                    .a(is_key_down(KeyCode::K))
-            } else {
-                replay_index += 1;
-                replay_inputs[replay_index - 1][0]
-            };
+            let buttons = Buttons::new()
+                .up(is_key_down(KeyCode::W))
+                .down(is_key_down(KeyCode::S))
+                .left(is_key_down(KeyCode::A))
+                .right(is_key_down(KeyCode::D))
+                .select(is_key_down(KeyCode::G))
+                .start(is_key_down(KeyCode::H))
+                .b(is_key_down(KeyCode::J))
+                .a(is_key_down(KeyCode::K));
             inputs.push([buttons, Buttons::new()]);
             emu.run(inputs[inputs.len() - 1]);
             emu.copy_framebuffer_rgba8888(&mut fb)

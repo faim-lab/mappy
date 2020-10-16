@@ -147,7 +147,7 @@ impl MappyState {
         }
         (splits, latch)
     }
-    pub fn get_best_effort_splits(&self, lo:Split, hi:Split) -> (Split, Split) {
+    pub fn get_best_effort_splits(&self, lo: Split, hi: Split) -> (Split, Split) {
         let fb = &self.fb;
         //If we can skim a rectangle bigger than 24px high at the top or the bottom, our split is height - that
         let down_skim_len = skim_rect(&fb, 0, 1);
