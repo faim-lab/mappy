@@ -70,7 +70,6 @@ impl MappyState {
     }
 
     fn get_splits(&self) -> (Vec<Split>, ScrollLatch) {
-        // TODO have it return the new latch so we don't need mut self
         let mut splits = vec![Split {
             scanline: 0,
             scroll_x: 0,
