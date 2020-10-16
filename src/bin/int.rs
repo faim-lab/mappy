@@ -5,12 +5,7 @@ use retro_rs::{Buttons, Emulator};
 
 use std::path::Path;
 use std::time::Instant;
-
-#[derive(PartialEq, Eq, Debug)]
-enum PlayState {
-    Paused,
-    Playing,
-}
+use std::io::{Read, Write};
 
 const SCALE: f32 = 3.;
 
@@ -24,7 +19,7 @@ fn window_conf() -> Conf {
     }
 }
 
-fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
+fn replay(emu:&mut Emulator, mappy:&mut MappyState, inputs:&[[Buttons;2]]) {
     let start = Instant::now();
     for (frames,inp) in inputs.iter().enumerate() {
         emu.run(*inp);
@@ -46,9 +41,13 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
 async fn main() {
     use std::env;
 
+    let romfile = Path::new("roms/mario3.nes");
+    // "mario3"
+    let romname = romfile.file_stem().expect("No file name!");
+
     let mut emu = Emulator::create(
         Path::new("cores/fceumm_libretro"),
-        Path::new("roms/mario3.nes"),
+        Path::new(romfile)
     );
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -61,13 +60,28 @@ async fn main() {
     let mut game_img = Image::gen_image_color(w as u16, h as u16, WHITE);
     let mut fb = vec![0_u8; w * h * 4];
     let game_tex = load_texture_from_image(&game_img);
-    let mut play_state = PlayState::Playing;
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
+    let mut replay_index: usize = 0;
+    let speeds:[usize;10] = [
+        0,
+        1,
+        5,
+        15,
+        30,
+        60,
+        120,
+        240,
+        600,
+        6000
+    ];
+    let mut speed:usize = 5;
+    let mut accum:f32 = 0.0;
+    let mut save_buf:Vec<u8> = Vec::with_capacity(emu.save_size());
     let args: Vec<_> = env::args().collect();
     let mut mappy = MappyState::new(w, h);
     if args.len() > 1 {
@@ -79,7 +93,7 @@ async fn main() {
     let start = Instant::now();
     println!(
         "Instructions
-Space bar toggles play/pause
+op changes playback speed (O for 0fps, P for 60fps)
 wasd for directional movement
 gh for select/start
 j for run/throw fireball (when fiery)
@@ -90,7 +104,7 @@ shift-# for dump inputs #
 zxcvbnm,./ for debug displays"
     );
     loop {
-        // let frame_start = Instant::now();
+        let frame_start = Instant::now();
         if is_key_down(KeyCode::Escape) {
             break;
         }
@@ -102,12 +116,15 @@ zxcvbnm,./ for debug displays"
         //j: b (run)
         //k: a (jump)
 
-        if is_key_pressed(KeyCode::Space) {
-            play_state = match play_state {
-                PlayState::Paused => PlayState::Playing,
-                PlayState::Playing => PlayState::Paused,
-            };
-            println!("Toggle playing to: {:?}", play_state);
+        if is_key_pressed(KeyCode::O) {
+            speed =
+            if speed == 0 || is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) { 0 } else { speed - 1 };
+
+            println!("Speed {:?}", speed);
+        } else if is_key_pressed(KeyCode::P) {
+            speed =
+            if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) { 6 } else { (speed + 1).min(speeds.len()-1) };
+            println!("Speed {:?}", speed);
         }
         if is_key_pressed(KeyCode::Z) {
             draw_grid = !draw_grid;
@@ -146,7 +163,7 @@ zxcvbnm,./ for debug displays"
             }
         };
         if let Some(n) = numkey {
-            let path = Path::new("inputs/").join(format!("mario_{}.fm2", n));
+            let path = Path::new("inputs/").join(format!("{}_{}.fm2", romname.to_str().expect("rom name not a valid utf-8 string"), n));
             if shifted {
                 mappy::write_fm2(&inputs, &path);
                 println!("Dumped {}", n);
@@ -157,32 +174,46 @@ zxcvbnm,./ for debug displays"
                 inputs.clear();
                 replay_inputs.clear();
                 mappy::read_fm2(&mut replay_inputs, &path);
-                replay(&mut emu, &mut mappy, &replay_inputs);
-                inputs.extend(replay_inputs.drain(..));
+                replay_index = 0;
             }
         }
-        if play_state == PlayState::Playing {
-            let buttons = Buttons::new()
-                .up(is_key_down(KeyCode::W))
-                .down(is_key_down(KeyCode::S))
-                .left(is_key_down(KeyCode::A))
-                .right(is_key_down(KeyCode::D))
-                .select(is_key_down(KeyCode::G))
-                .start(is_key_down(KeyCode::H))
-                .b(is_key_down(KeyCode::J))
-                .a(is_key_down(KeyCode::K));
+        if is_key_pressed(KeyCode::R) {
+            let save_path = Path::new("state/").join(format!("{}.state", romname.to_str().expect("rom name not a valid utf-8 string")));
+            emu.save(&mut save_buf);
+            //write it out to the file
+            let mut file = std::fs::File::create(save_path).expect("Couldn't create save file!");
+            file.write_all(&save_buf).expect("Couldn't write all save file bytes!");
+        }
+        if is_key_pressed(KeyCode::Y) {
+            let save_path = Path::new("state/").join(format!("{}.state", romname.to_str().expect("rom name not a valid utf-8 string")));
+            let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
+            assert_eq!(file.read_to_end(&mut save_buf).unwrap(), emu.save_size());
+            emu.load(&save_buf);
+        }
+
+        // f/s * s = how many frames
+        let dt = get_frame_time();
+        // Add dt (s) * multiplier (frame/s) to get number of frames.
+        // e.g. 60 * 1/60 = 1
+        accum += speeds[speed] as f32 * dt;
+        while accum >= 1.0 {
+            let buttons = if replay_index >= replay_inputs.len() {
+                Buttons::new()
+                    .up(is_key_down(KeyCode::W))
+                    .down(is_key_down(KeyCode::S))
+                    .left(is_key_down(KeyCode::A))
+                    .right(is_key_down(KeyCode::D))
+                    .select(is_key_down(KeyCode::G))
+                    .start(is_key_down(KeyCode::H))
+                    .b(is_key_down(KeyCode::J))
+                    .a(is_key_down(KeyCode::K))
+            } else {
+                replay_index += 1;
+                replay_inputs[replay_index - 1][0]
+            };
             inputs.push([buttons, Buttons::new()]);
             emu.run(inputs[inputs.len() - 1]);
-            emu.copy_framebuffer_rgba8888(&mut fb)
-                .expect("Couldn't copy emulator framebuffer");
-            let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
-            assert!(pre.is_empty());
-            assert!(post.is_empty());
-            assert_eq!(mid.len(), w * h);
-            game_img.update(&mid);
-            update_texture(game_tex, &game_img);
             mappy.process_screen(&emu);
-
             frame_counter += 1;
             if frame_counter % 60 == 0 {
                 println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
@@ -194,7 +225,16 @@ zxcvbnm,./ for debug displays"
                     start.elapsed().as_secs_f64() / (frame_counter as f64)
                 );
             }
+            accum -= 1.0;
         }
+        emu.copy_framebuffer_rgba8888(&mut fb)
+            .expect("Couldn't copy emulator framebuffer");
+        let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
+        assert!(pre.is_empty());
+        assert!(post.is_empty());
+        assert_eq!(mid.len(), w * h);
+        game_img.update(&mid);
+        update_texture(game_tex, &game_img);
         draw_texture_ex(
             game_tex,
             0.,
