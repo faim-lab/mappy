@@ -92,7 +92,7 @@ impl MappyState {
                 ScrollChangeReason::Write2005 => {
                     register_split(&mut splits, scanline + 1);
                     let last = splits.len() - 1;
-                    match self.latch {
+                    match latch {
                         ScrollLatch::H => {
                             splits[last].scroll_x = value;
                         }
