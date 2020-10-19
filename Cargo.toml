@@ -13,6 +13,7 @@ itertools = "0.8.0"
 macroquad = { git = "https://github.com/not-fl3/macroquad", rev="31cff5d89ed17a6c83f39cf6568348dab25145dc" }
 id-arena = { version="2.2.1", features=["rayon"] }
 uuid = { version="0.8.1", features=["v4"] }
+chrono = "0.4"
 
 [profile.dev]
 opt-level = 3
