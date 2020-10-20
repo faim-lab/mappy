@@ -1,14 +1,14 @@
 #![allow(clippy::many_single_char_names)]
 mod framebuffer;
 mod mappy;
+mod ring;
 mod room;
 mod screen;
 mod sprites;
 mod tile;
-mod ring;
-pub use sprites::At;
 pub use crate::mappy::*;
 use retro_rs::Buttons;
+pub use sprites::At;
 use std::fs::File;
 use std::path::Path;
 pub use tile::TILE_SIZE;
@@ -27,8 +27,21 @@ impl Rect {
     pub fn new(x: i32, y: i32, w: u32, h: u32) -> Self {
         Self { x, y, w, h }
     }
+    #[inline(always)]
     pub fn contains(&self, x: i32, y: i32) -> bool {
         self.x <= x && x < self.x + self.w as i32 && self.y <= y && y < self.y + self.h as i32
+    }
+    pub fn union(&self, other: &Rect) -> Rect {
+        let x0 = self.x.min(other.x);
+        let y0 = self.y.min(other.y);
+        let x1 = (self.x + self.w as i32).max(other.x + other.w as i32);
+        let y1 = (self.y + self.h as i32).max(other.y + other.h as i32);
+        Rect {
+            x: x0,
+            y: y0,
+            w: (x1 - x0) as u32,
+            h: (y1 - y0) as u32,
+        }
     }
 }
 

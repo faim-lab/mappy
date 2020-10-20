@@ -140,5 +140,4 @@ impl SpriteTrack {
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
     }
-
 }

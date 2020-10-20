@@ -18,7 +18,9 @@ chrono = "0.4"
 [profile.dev]
 opt-level = 3
 lto = "thin"
+rustflags = ['-C target-cpu=native']
 
 [profile.test]
 opt-level = 3
 lto = "thin"
+rustflags = ['-C target-cpu=native']

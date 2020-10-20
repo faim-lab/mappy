@@ -26,17 +26,23 @@ pub struct MappyState {
     dead_tracks: Vec<SpriteTrack>,
     // last_inputs: [Buttons; INPUT_MEM],
     pub current_screen: Screen<TileGfxId>,
+    last_control_screen: Screen<TileGfxId>,
     fb: Framebuffer,
     state_buffer: Vec<u8>,
     changes: Vec<ScrollChange>,
     change_count: u32,
     pub current_room: Room,
+    rooms: Vec<Room>,
     pub now: Time,
+    maybe_control: bool,
+    maybe_control_change_time: Time,
     pub last_control: Time,
-    pub last_controlled_scroll: (i32,i32)
+    pub last_controlled_scroll: (i32, i32),
 }
 
 impl MappyState {
+    const CONTROL_ROOM_CHANGE_THRESHOLD: usize = 60;
+    const SCREEN_ROOM_CHANGE_DIFF: f32 = 400.0;
     pub fn new(w: usize, h: usize) -> Self {
         let mut db = TileDB::new();
         let t0 = db.get_initial_tile();
@@ -63,7 +69,10 @@ impl MappyState {
             now: Time(0),
             state_buffer: Vec::new(),
             last_control: Time(0),
-            last_controlled_scroll: (0,0),
+            maybe_control: false,
+            maybe_control_change_time: Time(0),
+
+            last_controlled_scroll: (0, 0),
             live_sprites: [SpriteData::default(); SPRITE_COUNT],
             live_tracks: Vec::with_capacity(SPRITE_COUNT),
             // just for the current room
@@ -72,8 +81,10 @@ impl MappyState {
             fb: Framebuffer::new(w, h),
             changes: Vec::with_capacity(32000),
             change_count: 0,
-            current_screen: s0,
+            current_screen: s0.clone(),
+            last_control_screen: s0,
             current_room: room,
+            rooms: vec![],
         }
     }
 
@@ -107,15 +118,31 @@ impl MappyState {
         self.read_current_screen();
 
         // Do we have control?
+        let had_control = self.has_control;
+        let last_control_time = self.last_control;
         self.determine_control(emu);
         if self.has_control {
-            // Map only if we have control
             if self.current_room.id == 0 {
                 self.current_room = Room::new(1, &self.current_screen, &mut self.tiles);
+            } else if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
+                && self.current_screen.difference(&self.last_control_screen)
+                    > Self::SCREEN_ROOM_CHANGE_DIFF
+            {
+                // if we have control now and didn't before and the room changed significantly since then...
+                let id = self.current_room.id + 1;
+                let old_room = std::mem::replace(
+                    &mut self.current_room,
+                    Room::new(id, &self.current_screen, &mut self.tiles),
+                );
+                println!("Room change {}", id);
+                self.rooms.push(old_room);
             } else {
                 self.current_room
                     .register_screen(&self.current_screen, &mut self.tiles);
             }
+        } else if had_control {
+            // dbg!("control loss", self.current_screen.region);
+            self.last_control_screen.copy_from(&self.current_screen);
         }
 
         // Update `now`
@@ -158,17 +185,18 @@ impl MappyState {
         }
     }
 
-    fn determine_control(&mut self, emu:&mut Emulator) {
+    fn determine_control(&mut self, emu: &mut Emulator) {
         // every A frames...
         // We'll start with the expensive version and later try the cheaper version if that's too slow.
         // Expensive version:
-        const K:usize = 10;
+        const K: usize = 10;
         // Save state S.
         if self.state_buffer.is_empty() {
-            self.state_buffer = vec![0;emu.save_size()];
+            self.state_buffer = vec![0; emu.save_size()];
         }
         emu.save(&mut self.state_buffer);
         // Apply down-left and b input for K frames
+        // TODO: in mario 3 on the level select screen simultaneous presses sometimes cause no movement.  Consider random or alternating down and left and b presses?
         let down_left_b = Buttons::new().down(true).left(true).b(true);
         for _ in 0..K {
             emu.run([down_left_b, Buttons::default()]);
@@ -187,7 +215,16 @@ impl MappyState {
         let mut sprites_ura = [SpriteData::default(); SPRITE_COUNT];
         sprites::get_sprites(emu, &mut sprites_ura);
         // If P1 != P2, we have control; otherwise we do not
-        self.has_control = sprites_dlb != sprites_ura && (self.has_control || (self.now.0-self.last_control.0 >= K)) && self.now.0 > K;
+        if sprites_dlb != sprites_ura {
+            if !self.maybe_control {
+                self.maybe_control_change_time = self.now;
+            }
+            self.maybe_control = true;
+        } else {
+            self.maybe_control = false;
+        }
+        self.has_control = self.maybe_control
+            && (self.has_control || (self.now.0 - self.maybe_control_change_time.0 > K));
         // Load state S.
         emu.load(&self.state_buffer);
 
@@ -211,7 +248,7 @@ impl MappyState {
         // unless we want to say "any sufficiently fast full-frame period of scrolling (i.e. within D frames) OR big sudden change that doesn't revert (within E frames) indicates a transition"
         // but then we only find out we were scrolling /after/ we're done and have to throw away some stuff we've seen in the room, which is doable if rooms track when they observe tile changes but maybe not the easiest thing, and side effects to the tiledb (especially through room fades) may be annoying
         if self.has_control {
-            self.last_control.0 = self.now.0+1;
+            self.last_control.0 = self.now.0 + 1;
         }
     }
 
@@ -307,7 +344,7 @@ impl MappyState {
             self.grid_align.0,
             self.grid_align.1,
             self.fb.w as u32,
-            self.fb.h as u32
+            self.fb.h as u32,
         )
     }
 

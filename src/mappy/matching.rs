@@ -4,20 +4,17 @@ pub struct Target(pub Option<usize>, pub u32);
 pub struct Matching(Vec<Match>);
 impl std::iter::IntoIterator for Matching {
     type Item = Match;
-    type IntoIter= std::vec::IntoIter<Self::Item>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 pub struct Match(pub usize, pub Option<usize>);
-pub fn greedy_match(
-    mut candidates: Vec<MatchTo>,
-    track_count: usize,
-) -> Matching {
-        // greedy match:
-        // pick candidate with least cost match
-        // fix it to that match
-        // repeat until done
+pub fn greedy_match(mut candidates: Vec<MatchTo>, track_count: usize) -> Matching {
+    // greedy match:
+    // pick candidate with least cost match
+    // fix it to that match
+    // repeat until done
     let mut used_old: Vec<bool> = vec![false; track_count];
     let mut matching = Matching(Vec::with_capacity(candidates.len()));
     candidates

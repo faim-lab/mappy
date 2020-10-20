@@ -90,7 +90,7 @@ shift-# for dump inputs #
 zxcvbnm,./ for debug displays"
     );
     loop {
-        let frame_start = Instant::now();
+        // let frame_start = Instant::now();
         if is_key_down(KeyCode::Escape) {
             break;
         }
@@ -229,7 +229,10 @@ zxcvbnm,./ for debug displays"
             mappy.process_screen(&mut emu);
             frame_counter += 1;
             if mappy.has_control && !had_control {
-                println!("Lost control for {} frames", mappy.now.0-old_control_time.0);
+                println!(
+                    "Lost control for {} frames",
+                    mappy.now.0 - old_control_time.0
+                );
             }
             if frame_counter % 60 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);

@@ -5,7 +5,7 @@ use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 
 use std::io::{Read, Write};
 use std::path::Path;
-use std::time::Instant;
+// use std::time::Instant;
 
 const SCALE: f32 = 3.;
 const OUTPUT_INTERVAL: u64 = 19;
@@ -21,8 +21,8 @@ fn window_conf() -> Conf {
 }
 
 fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
-    let start = Instant::now();
-    for (frames, inp) in inputs.iter().enumerate() {
+    // let start = Instant::now();
+    for inp in inputs.iter() {
         emu.run(*inp);
         mappy.process_screen(emu);
     }
@@ -30,15 +30,19 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    use std::env;
     use chrono::Local;
+    use std::env;
     let romfile = Path::new("roms/zelda.nes");
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
-    let date_str = format!("{}",Local::now().format("%Y-%m-%d-%H-%M-%S"));
-    let image_folder = Path::new("images/").join(Path::new(&romname)).join(Path::new(&date_str));
+    let date_str = format!("{}", Local::now().format("%Y-%m-%d-%H-%M-%S"));
+    let image_folder = Path::new("images/")
+        .join(Path::new(&romname))
+        .join(Path::new(&date_str));
     std::fs::create_dir_all(image_folder.clone()).unwrap_or_else(|_err| {});
-    let csv_path = Path::new("images/").join(Path::new(&romname)).join(Path::new(&(date_str + ".csv")));
+    let csv_path = Path::new("images/")
+        .join(Path::new(&romname))
+        .join(Path::new(&(date_str + ".csv")));
     let mut csv = std::fs::File::create(csv_path).expect("Couldn't create CSV file");
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
@@ -73,21 +77,21 @@ async fn main() {
     let mut sx = 0;
     let mut sy = 0;
 
-    let start = Instant::now();
-//     println!(
-//         "Instructions
-// op changes playback speed (O for 0fps, P for 60fps)
-// wasd for directional movement
-// gh for select/start
-// j for run/throw fireball (when fiery)
-// k for jump
-// # for load inputs #
-// shift-# for dump inputs #
+    // let start = Instant::now();
+    //     println!(
+    //         "Instructions
+    // op changes playback speed (O for 0fps, P for 60fps)
+    // wasd for directional movement
+    // gh for select/start
+    // j for run/throw fireball (when fiery)
+    // k for jump
+    // # for load inputs #
+    // shift-# for dump inputs #
 
-// zxcvbnm,./ for debug displays"
-//     );
+    // zxcvbnm,./ for debug displays"
+    //     );
     loop {
-        let frame_start = Instant::now();
+        // let frame_start = Instant::now();
         if is_key_down(KeyCode::Escape) {
             break;
         }
@@ -109,7 +113,7 @@ async fn main() {
                 speed - 1
             };
 
-            // println!("Speed {:?}", speed);
+        // println!("Speed {:?}", speed);
         } else if is_key_pressed(KeyCode::P) {
             speed = if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {
                 6
@@ -162,7 +166,7 @@ async fn main() {
             ));
             if shifted {
                 mappy::write_fm2(&inputs, &path);
-                // println!("Dumped {}", n);
+            // println!("Dumped {}", n);
             } else {
                 // TODO clear mappy too?
                 emu.reset();
@@ -225,9 +229,17 @@ async fn main() {
             frame_counter += 1;
             if frame_counter % OUTPUT_INTERVAL == 0 {
                 let fb_out = emu.create_imagebuffer();
-                fb_out.unwrap().save(format!("{}/{}.png", image_folder.display(), frame_counter)).unwrap();
-                println!("{},{}", mappy.scroll.0-sx, mappy.scroll.1-sy);
-                csv.write_fmt(format_args!("{},{}\n", mappy.scroll.0-sx, mappy.scroll.1-sy)).expect("Couldn't write scroll data to csv");
+                fb_out
+                    .unwrap()
+                    .save(format!("{}/{}.png", image_folder.display(), frame_counter))
+                    .unwrap();
+                println!("{},{}", mappy.scroll.0 - sx, mappy.scroll.1 - sy);
+                csv.write_fmt(format_args!(
+                    "{},{}\n",
+                    mappy.scroll.0 - sx,
+                    mappy.scroll.1 - sy
+                ))
+                .expect("Couldn't write scroll data to csv");
                 sx = mappy.scroll.0;
                 sy = mappy.scroll.1;
             }

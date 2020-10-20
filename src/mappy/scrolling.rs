@@ -46,7 +46,6 @@ pub struct ScrollChange {
     pub value: u8,
 }
 
-
 pub fn find_offset(old: u8, new: u8) -> i16 {
     // each coordinate either increased and possibly wrapped or decreased and possibly wrapped or stayed the same
     // in the former case calculate new+8 and subtract old if new < old, otherwise new - old

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-pub trait Tile: PartialEq + Eq + Hash + Clone {}
+pub trait Tile: PartialEq + Eq + Hash + Clone + Copy {}
 
 pub const TILE_SIZE: usize = 8;
 pub const TILE_NUM_PX: usize = TILE_SIZE * TILE_SIZE;
@@ -72,7 +72,7 @@ impl fmt::Debug for TileGfx {
 pub type TileGfxId = Id<TileGfx>;
 impl Tile for TileGfxId {}
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TileChange {
     pub from: TileGfxId,
     pub to: TileGfxId,
@@ -162,13 +162,13 @@ impl TileDB {
     }
     pub fn change_from_to(&mut self, tc: &TileChange, gfx: &TileGfxId) -> TileChange {
         if gfx == &tc.to {
-            tc.clone()
+            *tc
         } else {
             // Note! Could change from not-initial to initial under some circumstances (sprites?)
             // Or if we go from a large region screen to a small region screen?
             // For now, just ignore
             if gfx == &self.get_initial_tile() {
-                return tc.clone();
+                return *tc;
             }
             let init = self.get_initial_change();
             let old_change = self.changes.get_mut(&tc).unwrap();
@@ -190,7 +190,7 @@ impl TileDB {
             let tc2 = TileChange::new(tc.to, *gfx);
             let change = self
                 .changes
-                .entry(tc2.clone())
+                .entry(tc2)
                 .or_insert_with(TileChangeData::default);
             change.count += 1;
             tc2
