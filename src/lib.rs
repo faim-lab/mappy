@@ -5,6 +5,7 @@ mod room;
 mod screen;
 mod sprites;
 mod tile;
+mod ring;
 pub use sprites::At;
 pub use crate::mappy::*;
 use retro_rs::Buttons;

@@ -24,7 +24,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
     for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
-        mappy.process_screen(&emu);
+        mappy.process_screen(emu);
     }
 }
 
@@ -216,7 +216,12 @@ async fn main() {
             };
             inputs.push([buttons, Buttons::new()]);
             emu.run(inputs[inputs.len() - 1]);
-            mappy.process_screen(&emu);
+            if accum < 2.0 {
+                // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
+                emu.copy_framebuffer_rgba8888(&mut fb)
+                    .expect("Couldn't copy emulator framebuffer");
+            }
+            mappy.process_screen(&mut emu);
             frame_counter += 1;
             if frame_counter % OUTPUT_INTERVAL == 0 {
                 let fb_out = emu.create_imagebuffer();
@@ -228,8 +233,6 @@ async fn main() {
             }
             accum -= 1.0;
         }
-        emu.copy_framebuffer_rgba8888(&mut fb)
-            .expect("Couldn't copy emulator framebuffer");
         let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
         assert!(pre.is_empty());
         assert!(post.is_empty());

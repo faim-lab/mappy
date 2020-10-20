@@ -8,14 +8,11 @@ use image::{ImageBuffer, Rgb};
 use libloading::Symbol;
 use retro_rs::{Buttons, Emulator};
 use std::path::Path;
-
 mod scrolling;
 use scrolling::*;
 mod splits;
 use splits::Split;
 mod matching;
-
-const INPUT_MEM: usize = 10;
 
 pub struct MappyState {
     latch: ScrollLatch,
@@ -30,10 +27,13 @@ pub struct MappyState {
     // last_inputs: [Buttons; INPUT_MEM],
     pub current_screen: Screen<TileGfxId>,
     fb: Framebuffer,
+    state_buffer: Vec<u8>,
     changes: Vec<ScrollChange>,
     change_count: u32,
     pub current_room: Room,
-    now: Time,
+    pub now: Time,
+    pub last_control: Time,
+    pub last_controlled_scroll: (i32,i32)
 }
 
 impl MappyState {
@@ -61,6 +61,9 @@ impl MappyState {
                 },
             )],
             now: Time(0),
+            state_buffer: Vec::new(),
+            last_control: Time(0),
+            last_controlled_scroll: (0,0),
             live_sprites: [SpriteData::default(); SPRITE_COUNT],
             live_tracks: Vec::with_capacity(SPRITE_COUNT),
             // just for the current room
@@ -74,7 +77,7 @@ impl MappyState {
         }
     }
 
-    pub fn process_screen(&mut self, emu: &Emulator) {
+    pub fn process_screen(&mut self, emu: &mut Emulator) {
         // Read new data from emulator
         self.fb.read_from(&emu);
         self.get_changes(&emu);
@@ -88,6 +91,9 @@ impl MappyState {
         // Update grid alignment and scrolling
         let old_align = self.grid_align;
         self.grid_align = (lo.scroll_x, lo.scroll_y);
+        if self.has_control {
+            self.last_controlled_scroll = self.scroll;
+        }
         // update scroll based on grid align change
         self.scroll = (
             self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0) as i32,
@@ -101,7 +107,7 @@ impl MappyState {
         self.read_current_screen();
 
         // Do we have control?
-        self.determine_control();
+        self.determine_control(emu);
         if self.has_control {
             // Map only if we have control
             if self.current_room.id == 0 {
@@ -152,30 +158,49 @@ impl MappyState {
         }
     }
 
-    fn determine_control(&mut self) {
+    fn determine_control(&mut self, emu:&mut Emulator) {
         // every A frames...
         // We'll start with the expensive version and later try the cheaper version if that's too slow.
-
         // Expensive version:
+        const K:usize = 10;
         // Save state S.
-        // Apply down-left input for K frames
+        if self.state_buffer.is_empty() {
+            self.state_buffer = vec![0;emu.save_size()];
+        }
+        emu.save(&mut self.state_buffer);
+        // Apply down-left and b input for K frames
+        let down_left_b = Buttons::new().down(true).left(true).b(true);
+        for _ in 0..K {
+            emu.run([down_left_b, Buttons::default()]);
+        }
         // Store positions of all sprites P1
+        let mut sprites_dlb = [SpriteData::default(); SPRITE_COUNT];
+        sprites::get_sprites(emu, &mut sprites_dlb);
         // Load state S.
-        // Apply up-right input for K frames
+        emu.load(&self.state_buffer);
+        // Apply up-right and a input for K frames
+        let up_right_a = Buttons::new().up(true).right(true).a(true);
+        for _ in 0..K {
+            emu.run([up_right_a, Buttons::default()]);
+        }
         // Store positions of all sprites P2
+        let mut sprites_ura = [SpriteData::default(); SPRITE_COUNT];
+        sprites::get_sprites(emu, &mut sprites_ura);
         // If P1 != P2, we have control; otherwise we do not
+        self.has_control = sprites_dlb != sprites_ura && (self.has_control || (self.now.0-self.last_control.0 >= K)) && self.now.0 > K;
         // Load state S.
+        emu.load(&self.state_buffer);
 
         // Cheaper version:
         // Look at the history of sprite movement among live tracks
         // Compare to the recent input history of the last B frames
-        // Filter out tracks that are moving in the same direction as the inputs
+        // Filter out tracks that are accelerating in the same direction as the inputs
         //   Store the hardware sprite indices and positions used for these tracks in a vec
-        //   Alternative:  Flag a track as "controlled" if it usually moves in the direction of input, over time
+        //   Alternative:  Flag a track as "controlled" if it usually accelerates in the direction of input, over time
         // Save state S
         // Move in one x and one y direction /most different/ from the recent input history for C frames
         //   Question: do I need to actually track during these frames?
-        // If in this series of new states the sprites of the corresponding indices are mostly moving in one of the directions we picked, we have control
+        // If in this series of new states the sprites of the corresponding indices are mostly accelerating in one of the directions we picked, we have control
         //   i.e., for each track, consider the movement of any of the the sprite indices used in that track
         //   Look for a majority of sprite indices used in controlled tracks to move with the new input?
         // Otherwise we don't
@@ -185,8 +210,9 @@ impl MappyState {
         // We have to do /some/ speculative execution because of the case where player holds right during moving right between screens in zelda
         // unless we want to say "any sufficiently fast full-frame period of scrolling (i.e. within D frames) OR big sudden change that doesn't revert (within E frames) indicates a transition"
         // but then we only find out we were scrolling /after/ we're done and have to throw away some stuff we've seen in the room, which is doable if rooms track when they observe tile changes but maybe not the easiest thing, and side effects to the tiledb (especially through room fades) may be annoying
-
-        self.has_control = true;
+        if self.has_control {
+            self.last_control.0 = self.now.0+1;
+        }
     }
 
     const CREATE_COST: u32 = 20;
@@ -256,7 +282,7 @@ impl MappyState {
         for Match(new, maybe_oldi) in matching.into_iter() {
             match maybe_oldi {
                 None => {
-                    println!("Create new {:?}", new);
+                    // println!("Create new {:?}", new);
                     _new_count += 1;
                     self.live_tracks.push(SpriteTrack::new(
                         self.now,

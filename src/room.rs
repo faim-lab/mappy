@@ -6,20 +6,35 @@ type RoomScreen = Screen<TileChange>;
 
 pub struct Room {
     pub id: usize,
-    screens: Vec<RoomScreen>,
+    pub screens: Vec<RoomScreen>,
 }
 
 impl Room {
     pub fn new(id: usize, screen: &Screen<TileGfxId>, db: &mut TileDB) -> Self {
         let mut ret = Self {
             id,
-            screens: vec![Screen::new(screen.region, &db.get_initial_change())],
+            screens: vec![Screen::new(
+                Rect {
+                    x: screen.region.x,
+                    y: screen.region.y,
+                    w: 32,
+                    h: 32,
+                },
+                &db.get_initial_change(),
+            )],
         };
         if screen.region.w != 0 && screen.region.h != 0 {
             ret.register_screen(&screen, db);
         }
         ret
     }
+    pub fn width(&self) -> u32 {
+        self.screens[0].region.w
+    }
+    pub fn height(&self) -> u32 {
+        self.screens[0].region.h
+    }
+
     fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
         self.screens.iter().position(|s| s.region.contains(x, y))
     }
@@ -66,6 +81,8 @@ impl Room {
             Rect::new(sx, sy, r0.w, r0.h),
             &db.get_initial_change(),
         ));
+        //println!("Added region {:?}", self.screens.last().unwrap().region);
+        assert_eq!(self.get_screen_for(x, y).unwrap(), self.screens.len() - 1);
         self.screens.len() - 1
     }
     // r is presumed to be in tile coordinates
@@ -120,8 +137,8 @@ impl Room {
 
 #[inline(always)]
 fn extend_tile(rs: &mut RoomScreen, s: &Screen<TileGfxId>, x: i32, y: i32, db: &mut TileDB) {
-    assert!(s.region.contains(x, y));
-    assert!(rs.region.contains(x, y));
+    assert!(s.region.contains(x, y), "{},{} : {:?}", x, y, s.region);
+    assert!(rs.region.contains(x, y), "{},{} : {:?}", x, y, rs.region);
     rs.set(db.change_from_to(rs.get(x, y), s.get(x, y)), x, y);
 }
 

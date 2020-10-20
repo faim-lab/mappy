@@ -23,7 +23,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
     for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
-        mappy.process_screen(&emu);
+        mappy.process_screen(emu);
         if frames % 60 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
             println!("Known tiles: {:?}", mappy.tiles.gfx_count());
@@ -64,7 +64,7 @@ async fn main() {
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
     let mut replay_index: usize = 0;
-    let speeds: [usize; 10] = [0, 1, 5, 15, 30, 60, 120, 240, 600, 6000];
+    let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 600];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
     let mut save_buf: Vec<u8> = Vec::with_capacity(emu.save_size());
@@ -219,11 +219,21 @@ zxcvbnm,./ for debug displays"
             };
             inputs.push([buttons, Buttons::new()]);
             emu.run(inputs[inputs.len() - 1]);
-            mappy.process_screen(&emu);
+            if accum < 2.0 {
+                // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
+                emu.copy_framebuffer_rgba8888(&mut fb)
+                    .expect("Couldn't copy emulator framebuffer");
+            }
+            let had_control = mappy.has_control;
+            let old_control_time = mappy.last_control;
+            mappy.process_screen(&mut emu);
             frame_counter += 1;
+            if mappy.has_control && !had_control {
+                println!("Lost control for {} frames", mappy.now.0-old_control_time.0);
+            }
             if frame_counter % 60 == 0 {
-                println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-                println!("Known tiles: {:?}", mappy.tiles.gfx_count());
+                // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
+                // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
                 println!(
                     "Net: {:} for {:} inputs, avg {:}",
                     start.elapsed().as_secs_f64(),
@@ -233,8 +243,6 @@ zxcvbnm,./ for debug displays"
             }
             accum -= 1.0;
         }
-        emu.copy_framebuffer_rgba8888(&mut fb)
-            .expect("Couldn't copy emulator framebuffer");
         let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
         assert!(pre.is_empty());
         assert!(post.is_empty());
