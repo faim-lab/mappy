@@ -24,7 +24,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
         mappy.process_screen(emu);
-        if frames % 60 == 0 {
+        if frames % 300 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
             println!("Known tiles: {:?}", mappy.tiles.gfx_count());
             println!(
@@ -47,10 +47,12 @@ async fn main() {
 
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
+    let mut start_state = vec![0; emu.save_size()];
+    emu.save(&mut start_state);
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
     // So reset it afterwards
-    emu.reset();
+    emu.load(&start_state);
 
     assert_eq!((w, h), (256, 240));
 
@@ -64,7 +66,7 @@ async fn main() {
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
     let mut replay_index: usize = 0;
-    let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 600];
+    let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 300];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
     let mut save_buf: Vec<u8> = Vec::with_capacity(emu.save_size());
@@ -79,11 +81,11 @@ async fn main() {
     let start = Instant::now();
     println!(
         "Instructions
-op changes playback speed (O for 0fps, P for 60fps)
+op change playback speed (O for 0fps, P for 60fps)
 wasd for directional movement
 gh for select/start
-j for run/throw fireball (when fiery)
-k for jump
+j for NES \"b\" button
+k for NES \"a\" button
 # for load inputs #
 shift-# for dump inputs #
 
@@ -168,7 +170,7 @@ zxcvbnm,./ for debug displays"
                 println!("Dumped {}", n);
             } else {
                 // TODO clear mappy too?
-                emu.reset();
+                emu.load(&start_state);
                 frame_counter = 0;
                 inputs.clear();
                 replay_inputs.clear();
@@ -234,7 +236,7 @@ zxcvbnm,./ for debug displays"
                     mappy.now.0 - old_control_time.0
                 );
             }
-            if frame_counter % 60 == 0 {
+            if frame_counter % 300 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
                 // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
                 println!(
