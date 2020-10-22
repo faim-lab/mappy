@@ -186,6 +186,7 @@ impl MappyState {
     }
 
     fn determine_control(&mut self, emu: &mut Emulator) {
+        if self.now.0 % 7 != 0 { return; }
         // every A frames...
         // We'll start with the expensive version and later try the cheaper version if that's too slow.
         // Expensive version:

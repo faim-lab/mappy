@@ -1,7 +1,6 @@
 #![allow(clippy::many_single_char_names)]
 mod framebuffer;
 mod mappy;
-mod ring;
 mod room;
 mod screen;
 mod sprites;
