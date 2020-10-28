@@ -14,13 +14,15 @@ macroquad = { git = "https://github.com/not-fl3/macroquad", rev="31cff5d89ed17a6
 id-arena = { version="2.2.1", features=["rayon"] }
 uuid = { version="0.8.1", features=["v4"] }
 chrono = "0.4"
+crossbeam = "0.8.0"
+rayon="1.5.0"
 
 [profile.dev]
 opt-level = 3
 lto = "thin"
-rustflags = ['-C target-cpu=native']
+codegen-units = 1
 
 [profile.test]
 opt-level = 3
 lto = "thin"
-rustflags = ['-C target-cpu=native']
+codegen-units = 1

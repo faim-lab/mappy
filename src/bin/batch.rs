@@ -28,6 +28,7 @@ fn main() {
         // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
         // }
     }
+
     let fb = emu.create_imagebuffer();
     fb.unwrap().save("out.png").unwrap();
 

@@ -1,4 +1,5 @@
 use crate::framebuffer::Framebuffer;
+use crate::metaroom::Metaroom;
 use crate::room::Room;
 use crate::screen::Screen;
 use crate::sprites::{self, SpriteData, SpriteTrack, SPRITE_COUNT};
@@ -14,6 +15,13 @@ mod splits;
 use splits::Split;
 mod matching;
 
+use crossbeam::channel::{unbounded, Receiver, Sender};
+use rayon::{prelude::*, spawn_fifo};
+use std::sync::{Arc, RwLock};
+
+// Merge room ID into metarooms with given scores
+struct DoMerge(usize, Vec<(usize, (i32, i32), f32)>);
+
 pub struct MappyState {
     latch: ScrollLatch,
     pub tiles: TileDB,
@@ -24,7 +32,6 @@ pub struct MappyState {
     pub live_sprites: [SpriteData; SPRITE_COUNT],
     pub live_tracks: Vec<SpriteTrack>,
     dead_tracks: Vec<SpriteTrack>,
-    // last_inputs: [Buttons; INPUT_MEM],
     pub current_screen: Screen<TileGfxId>,
     last_control_screen: Screen<TileGfxId>,
     fb: Framebuffer,
@@ -32,7 +39,10 @@ pub struct MappyState {
     changes: Vec<ScrollChange>,
     change_count: u32,
     pub current_room: Room,
-    rooms: Vec<Room>,
+    rooms: Arc<RwLock<Vec<Room>>>,
+    metarooms: Arc<RwLock<Vec<Metaroom>>>,
+    room_merge_tx: Arc<Sender<DoMerge>>,
+    room_merge_rx: Receiver<DoMerge>,
     pub now: Time,
     maybe_control: bool,
     maybe_control_change_time: Time,
@@ -41,13 +51,18 @@ pub struct MappyState {
 }
 
 impl MappyState {
-    const CONTROL_ROOM_CHANGE_THRESHOLD: usize = 60;
+    const CONTROL_ROOM_CHANGE_THRESHOLD: usize = 45;
     const SCREEN_ROOM_CHANGE_DIFF: f32 = 400.0;
+
+    const ROOM_MERGE_THRESHOLD: f32 = 0.1;
+
     pub fn new(w: usize, h: usize) -> Self {
         let mut db = TileDB::new();
         let t0 = db.get_initial_tile();
         let s0 = Screen::new(Rect::new(0, 0, 0, 0), &t0);
         let room = Room::new(0, &s0, &mut db);
+        let (room_merge_tx, room_merge_rx) = unbounded();
+        let room_merge_tx = Arc::new(room_merge_tx);
         MappyState {
             latch: ScrollLatch::default(),
             tiles: db,
@@ -84,7 +99,10 @@ impl MappyState {
             current_screen: s0.clone(),
             last_control_screen: s0,
             current_room: room,
-            rooms: vec![],
+            rooms: Arc::new(RwLock::new(vec![])),
+            metarooms: Arc::new(RwLock::new(vec![])),
+            room_merge_rx,
+            room_merge_tx,
         }
     }
 
@@ -122,9 +140,7 @@ impl MappyState {
         let last_control_time = self.last_control;
         self.determine_control(emu);
         if self.has_control {
-            if self.current_room.id == 0 {
-                self.current_room = Room::new(1, &self.current_screen, &mut self.tiles);
-            } else if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
+            if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
                 && self.current_screen.difference(&self.last_control_screen)
                     > Self::SCREEN_ROOM_CHANGE_DIFF
             {
@@ -135,7 +151,14 @@ impl MappyState {
                     Room::new(id, &self.current_screen, &mut self.tiles),
                 );
                 println!("Room change {}", id);
-                self.rooms.push(old_room);
+                self.rooms
+                    .write()
+                    .expect("Poisoned rooms lock!")
+                    .push(old_room);
+                self.metarooms
+                    .write()
+                    .expect("Poisoned metarooms lock!")
+                    .push(Metaroom::new(id));
             } else {
                 self.current_room
                     .register_screen(&self.current_screen, &mut self.tiles);
@@ -144,7 +167,45 @@ impl MappyState {
             // dbg!("control loss", self.current_screen.region);
             self.last_control_screen.copy_from(&self.current_screen);
         }
-
+        if self.now.0 % 120 == 0 && self.current_room.id != 0 {
+            //spawn room merge thing with self.room_merge_tx
+            let room = self.current_room.clone();
+            let rooms = Arc::clone(&self.rooms);
+            let mrs = Arc::clone(&self.metarooms);
+            let tx = Arc::clone(&self.room_merge_tx);
+            spawn_fifo(move || {
+                let mrs = mrs.read().unwrap();
+                let merges:Vec<_> = mrs
+                        .par_iter()
+                        .enumerate()
+                        .filter_map(|(mri, mr)| {
+                            let rooms = rooms.read().unwrap();
+                            if let Some((p, c)) =
+                                mr.merge_cost(&room, &rooms, Self::ROOM_MERGE_THRESHOLD)
+                            {
+                                Some((mri, p, c))
+                            } else {
+                                None
+                            }
+                        })
+                    .collect();
+                // also do the reverse merge for merges that went ok
+                tx.send(DoMerge(
+                    room.id,
+                    merges,
+                ))
+                    .expect("Couldn't send merge message");
+            });
+        }
+        if !self.room_merge_rx.is_empty() {
+            let mut metarooms = self.metarooms.write().unwrap();
+            while let Ok(DoMerge(room_id, metas)) = self.room_merge_rx.try_recv() {
+                for &(meta, posn, cost) in metas.iter() {
+                    metarooms[meta].merge_room(room_id, posn, cost);
+                }
+                // for each meta, spawn a task to merge its rooms into
+            }
+        }
         // Update `now`
         self.now.0 += 1;
     }
@@ -186,7 +247,9 @@ impl MappyState {
     }
 
     fn determine_control(&mut self, emu: &mut Emulator) {
-        if self.now.0 % 7 != 0 { return; }
+        if self.now.0 % 7 != 0 {
+            return;
+        }
         // every A frames...
         // We'll start with the expensive version and later try the cheaper version if that's too slow.
         // Expensive version:

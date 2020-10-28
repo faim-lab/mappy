@@ -1,13 +1,18 @@
 use crate::screen::Screen;
 use crate::tile::{TileChange, TileDB, TileGfxId};
 use crate::Rect;
+use std::collections::HashSet;
 
 type RoomScreen = Screen<TileChange>;
-
+#[derive(Clone)]
 pub struct Room {
     pub id: usize,
     pub screens: Vec<RoomScreen>,
+    pub seen_changes: HashSet<TileChange>,
+    top_left: (i32, i32),
+    bottom_right: (i32, i32),
 }
+// TODO consider dense grid of screens so that lookups are fast and predictable
 
 impl Room {
     pub fn new(id: usize, screen: &Screen<TileGfxId>, db: &mut TileDB) -> Self {
@@ -22,6 +27,9 @@ impl Room {
                 },
                 &db.get_initial_change(),
             )],
+            seen_changes: HashSet::new(),
+            top_left: (screen.region.x, screen.region.y),
+            bottom_right: (screen.region.x + 32, screen.region.y + 32),
         };
         if screen.region.w != 0 && screen.region.h != 0 {
             ret.register_screen(&screen, db);
@@ -33,6 +41,14 @@ impl Room {
     }
     pub fn height(&self) -> u32 {
         self.screens[0].region.h
+    }
+    pub fn region(&self) -> Rect {
+        Rect {
+            x: self.top_left.0,
+            y: self.top_left.1,
+            w: (self.bottom_right.0 - self.top_left.0) as u32,
+            h: (self.bottom_right.1 - self.top_left.1) as u32,
+        }
     }
 
     fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
@@ -83,6 +99,7 @@ impl Room {
         ));
         //println!("Added region {:?}", self.screens.last().unwrap().region);
         assert_eq!(self.get_screen_for(x, y).unwrap(), self.screens.len() - 1);
+        self.top_left = (sx.min(self.top_left.0), sy.min(self.top_left.1));
         self.screens.len() - 1
     }
     // r is presumed to be in tile coordinates
@@ -103,43 +120,117 @@ impl Room {
         let ulr = self.screens[ul].region;
         let lr_split = xmax.min(ulr.x + ulr.w as i32);
         let ud_split = ymax.min(ulr.y + ulr.h as i32);
+        let mut seen = Vec::with_capacity(s.region.w as usize * s.region.h as usize);
         // TODO any way to avoid bounds checking within these loops?
         // ul
         let ul = &mut self.screens[ul];
         for y in s.region.y..ud_split {
             for x in s.region.x..lr_split {
-                extend_tile(ul, s, x, y, db);
+                extend_tile(ul, s, &mut seen, x, y, db);
             }
         }
         // ur
         let ur = &mut self.screens[ur];
         for y in s.region.y..ud_split {
             for x in lr_split..xmax {
-                extend_tile(ur, s, x, y, db);
+                extend_tile(ur, s, &mut seen, x, y, db);
             }
         }
         // bl
         let bl = &mut self.screens[bl];
         for y in ud_split..ymax {
             for x in s.region.x..lr_split {
-                extend_tile(bl, s, x, y, db);
+                extend_tile(bl, s, &mut seen, x, y, db);
             }
         }
         // br
         let br = &mut self.screens[br];
         for y in ud_split..ymax {
             for x in lr_split..xmax {
-                extend_tile(br, s, x, y, db);
+                extend_tile(br, s, &mut seen, x, y, db);
             }
         }
+        self.seen_changes.extend(seen.into_iter());
+    }
+    pub fn merge_cost_at(
+        &self,
+        x: i32,
+        y: i32,
+        r2x:i32,
+        r2y:i32,
+        room: &Room,
+        threshold: f32,
+    ) -> f32 {
+        let mut any1 = 0;
+        let mut any2 = 0;
+        let r = self.region();
+        let (r2xo,r2yo) = room.top_left;
+        let r2x = r2xo + r2x;
+        let r2y = r2yo + r2y;
+        let mut cost = 0.0;
+        //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
+        for yo in 0..(r.h as i32) {
+            for xo in 0..(r.w as i32) {
+                // TODO make this more cache friendly, should be able to read a row at a time
+                let s1x = r.x + xo;
+                let s1y = r.y + yo;
+                let screen = self.get_screen_for(s1x, s1y);
+                // dbg!((s1x, s1y, screen));
+                let s2x = r2x + xo;
+                let s2y = r2y + yo;
+                let screen2 = room.get_screen_for(s2x, s2y);
+                // dbg!((s2x, s2y, screen2));
+
+                // println!(
+                //     "{:?}, {:?}\n{:?}, {:?}, {:?}\n{:?} -- {:?}",
+                //     r,
+                //     room.region(),
+                //     (xo, yo),
+                //     (x, y),
+                //     (rxo, ryo),
+                //     (s1x,s1y),(s2x,s2y)
+                // );
+                any1 += if screen.is_some() { 1 } else { 0 };
+                any2 += if screen2.is_some() { 1 } else { 0 };
+                assert!(screen.is_some() || screen2.is_some());
+                cost += match (screen, screen2) {
+                    (Some(screen), Some(screen2)) => {
+                        // println!("compare");
+                        // TODO if tiles.compatible(..., ...)
+                        if self.screens[screen].get(s1x, s1y) == room.screens[screen2].get(s2x, s2y)
+                        {
+                            0.0
+                        } else {
+                            1.0
+                        }
+                    }
+                    _ => 0.0,
+                }
+            }
+            if cost > threshold {
+                break;
+            }
+        }
+        assert!(any1 > 0, "a1 {:?}-{:?} {:?} {:?}", r, (x,y), room.region(), cost);
+        assert!(any2 > 0, "a2 {:?}-{:?} {:?} {:?}", r, (x,y), room.region(), cost);
+        cost
     }
 }
 
 #[inline(always)]
-fn extend_tile(rs: &mut RoomScreen, s: &Screen<TileGfxId>, x: i32, y: i32, db: &mut TileDB) {
+fn extend_tile(
+    rs: &mut RoomScreen,
+    s: &Screen<TileGfxId>,
+    seen: &mut Vec<TileChange>,
+    x: i32,
+    y: i32,
+    db: &mut TileDB,
+) {
     assert!(s.region.contains(x, y), "{},{} : {:?}", x, y, s.region);
     assert!(rs.region.contains(x, y), "{},{} : {:?}", x, y, rs.region);
-    rs.set(db.change_from_to(rs.get(x, y), s.get(x, y)), x, y);
+    let change = db.change_from_to(rs.get(x, y), s.get(x, y));
+    seen.push(change);
+    rs.set(change, x, y);
 }
 
 #[cfg(test)]
