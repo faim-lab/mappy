@@ -266,13 +266,10 @@ impl MappyState {
     fn finalize_current_room(&mut self, start_new: bool) {
         // if we have control now and didn't before and the room changed significantly since then...
         if self.current_room.is_some() {
-            let mut rooms = self.rooms.write().expect("Poisoned rooms lock!");
             let mut old_room = if start_new {
                 let id = {
                     let cur = self.current_room.as_ref().unwrap();
-                    let id = cur.id + 1;
-                    assert_eq!(id, rooms.len() + 1);
-                    id
+                    cur.id + 1
                 };
                 println!("Enter room {}", id);
                 self.current_room
@@ -289,7 +286,7 @@ impl MappyState {
             };
             old_room.reregister_at(0, 0);
             self.kickoff_merge_calc(old_room.clone(), MergePhase::Finalize);
-            rooms.push(old_room);
+            self.rooms.write().unwrap().push(old_room);
         } else if start_new {
             let id = self.rooms.read().unwrap().len();
             println!("Room refresh {}", id);
