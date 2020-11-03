@@ -24,14 +24,33 @@ fn window_conf() -> Conf {
     }
 }
 
+use argh::FromArgs;
+
+#[derive(FromArgs, PartialEq, Debug)]
+/// A command with positional arguments.
+struct Args {
+    #[argh(positional)]
+    /// won't allow Path, REMEMBER to turn String to Path later on!!
+    romfile: String,
+    #[argh(option, short = 'r')]
+    /// replay
+    replay: Option<String>,
+    #[argh(option, short = 's')]
+    /// save
+    save: Option<String>,
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     use std::env;
-
-    let mut emu = Emulator::create(
-        Path::new("cores/fceumm_libretro"),
-        Path::new("roms/mario.nes"),
-    );
+    // running cargo run --bin int help will give instructions
+    let args: Args = argh::from_env();
+    let romfile: &str = &args.romfile;
+    dbg!(&args);
+    // let rompath = String::from("roms/") + romfile;
+    // let rom: &str = &rompath;
+    // println!("{}", rompath);
+    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
@@ -51,9 +70,9 @@ async fn main() {
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
     let mut replay_index = 0;
-    let args: Vec<_> = env::args().collect();
-    if args.len() > 1 {
-        mappy::read_fm2(&mut replay_inputs, &Path::new(&args[1]));
+    // let args: Vec<_> = env::args().collect();
+    if let Some(input_path) = args.replay {
+        mappy::read_fm2(&mut replay_inputs, &Path::new(&input_path));
     }
     let mut mappy = MappyState::new(w, h);
     let start = Instant::now();
