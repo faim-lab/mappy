@@ -120,6 +120,7 @@ impl MappyState {
     }
 
     pub fn handle_reset(&mut self) {
+        self.finalize_current_room(false);
         self.latch = ScrollLatch::default();
         self.grid_align = (0, 0);
         self.scroll = (0, 0);
@@ -154,8 +155,6 @@ impl MappyState {
         );
         self.current_screen = s0.clone();
         self.last_control_screen = s0;
-        self.finalize_current_room(true);
-        self.current_room = None;
     }
     // TODO return a "finalized mappy"
     pub fn finish(&mut self) {
@@ -206,23 +205,23 @@ impl MappyState {
                     > Self::SCREEN_ROOM_CHANGE_DIFF)
                 || self.current_room.is_none()
             {
-                if let Some(r) = self.current_room.as_ref() {
-                    assert!(
-                        r.id < 3,
-                        "Too many! {} - {}, diff {}\nr {:?} -- {:?}",
-                        self.now.0,
-                        last_control_time.0,
-                        self.current_screen.difference(&self.last_control_screen),
-                        self.current_screen.region,
-                        self.last_control_screen.region
-                    );
-                } else {
-                    assert!(
-                        self.rooms.read().unwrap().len() <= 3,
-                        "Strange none screen! {}",
-                        self.now.0
-                    );
-                }
+                // if let Some(r) = self.current_room.as_ref() {
+                //     assert!(
+                //         r.id < 3,
+                //         "Too many! {} - {}, diff {}\nr {:?} -- {:?}",
+                //         self.now.0,
+                //         last_control_time.0,
+                //         self.current_screen.difference(&self.last_control_screen),
+                //         self.current_screen.region,
+                //         self.last_control_screen.region
+                //     );
+                // } else {
+                //     assert!(
+                //         self.rooms.read().unwrap().len() <= 3,
+                //         "Strange none screen! {}",
+                //         self.now.0
+                //     );
+                // }
                 self.finalize_current_room(true);
             } else {
                 self.current_room
@@ -234,7 +233,7 @@ impl MappyState {
             // dbg!("control loss", self.current_screen.region);
             self.last_control_screen.copy_from(&self.current_screen);
         }
-        if self.now.0 % 120 == 0 && self.current_room.is_some() {
+        if self.current_room.is_some() && self.now.0 % 300 == 0 {
             //spawn room merge thing with self.room_merge_tx
             self.kickoff_merge_calc(
                 self.current_room.as_ref().unwrap().clone(),
@@ -253,7 +252,7 @@ impl MappyState {
                     MergePhase::Intermediate => {
                         for (metaroom, posn, cost) in metas {
                             //metarooms[meta].merge_room(room_id, posn, cost);
-                            println!("Merge {} with {:?}: {}@{:?}", room_id, metaroom, cost, posn);
+                            println!("Temp merge {} with {:?}: {}@{:?}", room_id, metaroom, cost, posn);
                         }
                     }
                     MergePhase::Finalize => {
@@ -306,9 +305,9 @@ impl MappyState {
         let rooms = Arc::clone(&self.rooms);
         let mrs = self.metarooms.clone();
         let tx = Arc::clone(&self.room_merge_tx);
+        THREADS_WAITING.fetch_add(1, Ordering::SeqCst);
         // TODO only do this if the current room histogram is different from last merge-checked room histogram
         spawn_fifo(move || {
-            THREADS_WAITING.fetch_add(1, Ordering::SeqCst);
             let merges = mrs
                 .metarooms()
                 .collect::<Vec<_>>()
@@ -595,6 +594,10 @@ pub fn merge_cost(
         }
         rect
     };
+
+    // if room.id == 3 {
+    // dbg!(ar, br);
+    // }
     let xover = (br.w as i32 / 2).min(ar.w as i32 / 2);
     let yover = (br.h as i32 / 2).min(ar.h as i32 / 2);
     let left = br.x + xover - (ar.w as i32);
@@ -621,7 +624,7 @@ pub fn merge_cost(
                 ) / num_rooms as f32;
 
                 if room.id == 3 && x == 0 && metaroom[0].0 == 0 && y == 0 {
-                    println!("{},{} : {}", x, y, cost);
+                    println!("3-0 {},{} : {}", x, y, cost);
                 }
                 if cost > threshold {
                     break;

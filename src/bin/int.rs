@@ -49,6 +49,7 @@ async fn main() {
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
     let mut start_state = vec![0; emu.save_size()];
+    let mut save_buf = vec![0; emu.save_size()];
     emu.save(&mut start_state);
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
@@ -70,7 +71,6 @@ async fn main() {
     let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 300];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
-    let mut save_buf: Vec<u8> = Vec::with_capacity(emu.save_size());
     let mut mappy = MappyState::new(w, h);
     if args.len() > 2 {
         mappy::read_fm2(&mut replay_inputs, &Path::new(&args[2]));

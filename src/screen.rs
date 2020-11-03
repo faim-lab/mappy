@@ -15,8 +15,8 @@ impl<T: Tile> Screen<T> {
         }
     }
     #[inline(always)]
-    pub fn get(&self, x: i32, y: i32) -> &T {
-        &self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize]
+    pub fn get(&self, x: i32, y: i32) -> T {
+        self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize]
     }
     #[inline(always)]
     pub fn set(&mut self, t: T, x: i32, y: i32) {

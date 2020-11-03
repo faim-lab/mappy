@@ -9,6 +9,9 @@ fn main() {
         Path::new("cores/fceumm_libretro"),
         Path::new(args[1].as_str()),
     );
+    let mut start_state = vec![0; emu.save_size()];
+    emu.save(&mut start_state);
+
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
@@ -17,8 +20,8 @@ fn main() {
     let mut all_inputs = 0;
     for (file_i, file) in args[2..].iter().enumerate() {
         // So reset it afterwards
+        emu.load(&start_state);
         mappy.handle_reset();
-        emu.reset();
         let mut inputs = vec![];
         mappy::read_fm2(&mut inputs, &Path::new(file.as_str()));
         all_inputs += inputs.len();
