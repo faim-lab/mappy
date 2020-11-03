@@ -22,6 +22,10 @@ impl<T: Tile> Screen<T> {
     pub fn set(&mut self, t: T, x: i32, y: i32) {
         self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize] = t;
     }
+    pub fn reregister_at(&mut self, x: i32, y: i32) {
+        self.region.x = x;
+        self.region.y = y;
+    }
     pub fn copy_from(&mut self, s: &Self) {
         if self.region.w != s.region.w || self.region.h != s.region.h {
             self.tiles = s.tiles.clone();

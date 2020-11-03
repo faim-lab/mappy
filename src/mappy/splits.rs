@@ -50,7 +50,7 @@ pub fn skim_rect(fb: &Framebuffer, start: i16, dir: i16) -> u8 {
     (last_good_row + 1 - start).abs() as u8
 }
 
-fn get_splits(changes: &[ScrollChange], mut latch: ScrollLatch) -> (Vec<Split>, ScrollLatch) {
+pub fn get_splits(changes: &[ScrollChange], mut latch: ScrollLatch) -> (Vec<Split>, ScrollLatch) {
     let mut splits = vec![Split {
         scanline: 0,
         scroll_x: 0,

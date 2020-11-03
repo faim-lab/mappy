@@ -26,7 +26,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
         mappy.process_screen(emu);
         if frames % 300 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-            println!("Known tiles: {:?}", mappy.tiles.gfx_count());
+            println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
             println!(
                 "Net: {:} for {:} inputs, avg {:}",
                 start.elapsed().as_secs_f64(),
@@ -40,8 +40,9 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
 #[macroquad::main(window_conf)]
 async fn main() {
     use std::env;
+    let args: Vec<_> = env::args().collect();
 
-    let romfile = Path::new("roms/zelda.nes");
+    let romfile = Path::new(args[1].as_str());
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
 
@@ -70,10 +71,9 @@ async fn main() {
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
     let mut save_buf: Vec<u8> = Vec::with_capacity(emu.save_size());
-    let args: Vec<_> = env::args().collect();
     let mut mappy = MappyState::new(w, h);
-    if args.len() > 1 {
-        mappy::read_fm2(&mut replay_inputs, &Path::new(&args[1]));
+    if args.len() > 2 {
+        mappy::read_fm2(&mut replay_inputs, &Path::new(&args[2]));
         replay(&mut emu, &mut mappy, &replay_inputs);
         inputs.extend(replay_inputs.drain(..));
     }
@@ -171,6 +171,7 @@ zxcvbnm,./ for debug displays"
             } else {
                 // TODO clear mappy too?
                 emu.load(&start_state);
+                mappy.handle_reset();
                 frame_counter = 0;
                 inputs.clear();
                 replay_inputs.clear();
@@ -197,6 +198,7 @@ zxcvbnm,./ for debug displays"
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
             assert_eq!(file.read_to_end(&mut save_buf).unwrap(), emu.save_size());
             emu.load(&save_buf);
+            mappy.handle_reset();
         }
 
         // f/s * s = how many frames
@@ -367,5 +369,6 @@ zxcvbnm,./ for debug displays"
         //     ::std::thread::sleep(frame_interval - elapsed);
         // }
     }
+    mappy.finish();
     //mappy.dump_tiles(Path::new("out/"));
 }

@@ -50,6 +50,16 @@ impl Room {
             h: (self.bottom_right.1 - self.top_left.1) as u32,
         }
     }
+    pub fn reregister_at(&mut self, x: i32, y: i32) {
+        let Rect { x: ox, y: oy, w, h } = self.region();
+        self.top_left = (x, y);
+        self.bottom_right = (x + w as i32, y + h as i32);
+        let xoff = x - ox;
+        let yoff = y - oy;
+        for s in self.screens.iter_mut() {
+            s.reregister_at(s.region.x + xoff, s.region.y + yoff);
+        }
+    }
 
     fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
         self.screens.iter().position(|s| s.region.contains(x, y))
@@ -97,9 +107,13 @@ impl Room {
             Rect::new(sx, sy, r0.w, r0.h),
             &db.get_initial_change(),
         ));
+        self.top_left.0 = self.top_left.0.min(sx);
+        self.top_left.1 = self.top_left.1.min(sy);
+        self.bottom_right.0 = self.bottom_right.0.max(sx + r0.w as i32);
+        self.bottom_right.1 = self.bottom_right.1.max(sy + r0.h as i32);
+
         //println!("Added region {:?}", self.screens.last().unwrap().region);
         assert_eq!(self.get_screen_for(x, y).unwrap(), self.screens.len() - 1);
-        self.top_left = (sx.min(self.top_left.0), sy.min(self.top_left.1));
         self.screens.len() - 1
     }
     // r is presumed to be in tile coordinates
@@ -156,53 +170,51 @@ impl Room {
         &self,
         x: i32,
         y: i32,
-        r2x:i32,
-        r2y:i32,
+        r2xo: i32,
+        r2yo: i32,
         room: &Room,
-        threshold: f32,
+        tiles:&TileDB,
+        threshold: f32
     ) -> f32 {
         let mut any1 = 0;
         let mut any2 = 0;
         let r = self.region();
-        let (r2xo,r2yo) = room.top_left;
-        let r2x = r2xo + r2x;
-        let r2y = r2yo + r2y;
+        let (r2x, r2y) = room.top_left;
+        let r2x = r2xo + r2x + x;
+        let r2y = r2yo + r2y + y;
         let mut cost = 0.0;
         //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
         for yo in 0..(r.h as i32) {
             for xo in 0..(r.w as i32) {
-                // TODO make this more cache friendly, should be able to read a row at a time
+                // TODO make this more cache friendly, should be able to read a row at a time; room could be a different data structure?
                 let s1x = r.x + xo;
                 let s1y = r.y + yo;
                 let screen = self.get_screen_for(s1x, s1y);
-                // dbg!((s1x, s1y, screen));
                 let s2x = r2x + xo;
                 let s2y = r2y + yo;
                 let screen2 = room.get_screen_for(s2x, s2y);
-                // dbg!((s2x, s2y, screen2));
 
-                // println!(
-                //     "{:?}, {:?}\n{:?}, {:?}, {:?}\n{:?} -- {:?}",
-                //     r,
-                //     room.region(),
-                //     (xo, yo),
-                //     (x, y),
-                //     (rxo, ryo),
-                //     (s1x,s1y),(s2x,s2y)
-                // );
                 any1 += if screen.is_some() { 1 } else { 0 };
                 any2 += if screen2.is_some() { 1 } else { 0 };
-                assert!(screen.is_some() || screen2.is_some());
+                assert!(
+                    screen.is_some() || screen2.is_some(),
+                    "r1 {:?}\noff {},{}\nr2 {:?}\noff {},{}\nat {},{}\nposns {:?} -vs- {:?}",
+                    self.region(),
+                    x,
+                    y,
+                    room.region(),
+                    r2x,
+                    r2y,
+                    xo,
+                    yo,
+                    (s1x, s1y),
+                    (s2x, s2y)
+                );
                 cost += match (screen, screen2) {
                     (Some(screen), Some(screen2)) => {
                         // println!("compare");
                         // TODO if tiles.compatible(..., ...)
-                        if self.screens[screen].get(s1x, s1y) == room.screens[screen2].get(s2x, s2y)
-                        {
-                            0.0
-                        } else {
-                            1.0
-                        }
+                        tiles.change_cost(self.screens[screen].get(s1x, s1y), room.screens[screen2].get(s2x, s2y))
                     }
                     _ => 0.0,
                 }
@@ -211,8 +223,22 @@ impl Room {
                 break;
             }
         }
-        assert!(any1 > 0, "a1 {:?}-{:?} {:?} {:?}", r, (x,y), room.region(), cost);
-        assert!(any2 > 0, "a2 {:?}-{:?} {:?} {:?}", r, (x,y), room.region(), cost);
+        assert!(
+            any1 > 0,
+            "a1 {:?}-{:?} {:?} {:?}",
+            r,
+            (x, y),
+            room.region(),
+            cost
+        );
+        assert!(
+            any2 > 0,
+            "a2 {:?}-{:?} {:?} {:?}",
+            r,
+            (x, y),
+            room.region(),
+            cost
+        );
         cost
     }
 }

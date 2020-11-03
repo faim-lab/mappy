@@ -1,5 +1,6 @@
 use crate::framebuffer::Framebuffer;
-use crate::metaroom::Metaroom;
+// use crate::metaroom::Metaroom;
+use crate::metaroom::{Merges, MetaroomID};
 use crate::room::Room;
 use crate::screen::Screen;
 use crate::sprites::{self, SpriteData, SpriteTrack, SPRITE_COUNT};
@@ -17,14 +18,24 @@ mod matching;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use rayon::{prelude::*, spawn_fifo};
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, RwLock,
+};
+
+static THREADS_WAITING: AtomicUsize = AtomicUsize::new(0);
 
 // Merge room ID into metarooms with given scores
-struct DoMerge(usize, Vec<(usize, (i32, i32), f32)>);
+struct DoMerge(MergePhase, usize, Vec<(MetaroomID, (i32, i32), f32)>);
+
+enum MergePhase {
+    Intermediate,
+    Finalize,
+}
 
 pub struct MappyState {
     latch: ScrollLatch,
-    pub tiles: TileDB,
+    pub tiles: Arc<RwLock<TileDB>>,
     pub grid_align: (u8, u8),
     pub scroll: (i32, i32),
     pub has_control: bool,
@@ -38,9 +49,9 @@ pub struct MappyState {
     state_buffer: Vec<u8>,
     changes: Vec<ScrollChange>,
     change_count: u32,
-    pub current_room: Room,
+    pub current_room: Option<Room>,
     rooms: Arc<RwLock<Vec<Room>>>,
-    metarooms: Arc<RwLock<Vec<Metaroom>>>,
+    metarooms: Merges,
     room_merge_tx: Arc<Sender<DoMerge>>,
     room_merge_rx: Receiver<DoMerge>,
     pub now: Time,
@@ -51,21 +62,23 @@ pub struct MappyState {
 }
 
 impl MappyState {
+    // 45 frames of no control
     const CONTROL_ROOM_CHANGE_THRESHOLD: usize = 45;
+    // 400 tiles are different (out of 32*30 = 960)
     const SCREEN_ROOM_CHANGE_DIFF: f32 = 400.0;
 
-    const ROOM_MERGE_THRESHOLD: f32 = 0.1;
+    // 4 is a hack until the animation cycling thing is fixed and fractional scores are OK
+    const ROOM_MERGE_THRESHOLD: f32 = 10.0;
 
     pub fn new(w: usize, h: usize) -> Self {
-        let mut db = TileDB::new();
+        let db = TileDB::new();
         let t0 = db.get_initial_tile();
         let s0 = Screen::new(Rect::new(0, 0, 0, 0), &t0);
-        let room = Room::new(0, &s0, &mut db);
         let (room_merge_tx, room_merge_rx) = unbounded();
         let room_merge_tx = Arc::new(room_merge_tx);
         MappyState {
             latch: ScrollLatch::default(),
-            tiles: db,
+            tiles: Arc::new(RwLock::new(db)),
             grid_align: (0, 0),
             scroll: (0, 0),
             has_control: false,
@@ -98,11 +111,59 @@ impl MappyState {
             change_count: 0,
             current_screen: s0.clone(),
             last_control_screen: s0,
-            current_room: room,
+            current_room: None,
             rooms: Arc::new(RwLock::new(vec![])),
-            metarooms: Arc::new(RwLock::new(vec![])),
+            metarooms: Merges::new(),
             room_merge_rx,
             room_merge_tx,
+        }
+    }
+
+    pub fn handle_reset(&mut self) {
+        self.latch = ScrollLatch::default();
+        self.grid_align = (0, 0);
+        self.scroll = (0, 0);
+        self.has_control = false;
+        self.splits = [(
+            Split {
+                scanline: 0,
+                scroll_x: 0,
+                scroll_y: 0,
+            },
+            Split {
+                scanline: 240,
+                scroll_x: 0,
+                scroll_y: 0,
+            },
+        )];
+        self.now = Time(0);
+        self.last_control = Time(0);
+        self.maybe_control = false;
+        self.maybe_control_change_time = Time(0);
+        self.last_controlled_scroll = (0, 0);
+        self.live_sprites
+            .iter_mut()
+            .for_each(|s| *s = SpriteData::default());
+        self.live_tracks.clear();
+        self.dead_tracks.clear();
+        self.changes.clear();
+        self.change_count = 0;
+        let s0 = Screen::new(
+            Rect::new(0, 0, 0, 0),
+            &self.tiles.read().unwrap().get_initial_tile(),
+        );
+        self.current_screen = s0.clone();
+        self.last_control_screen = s0;
+        self.finalize_current_room(true);
+        self.current_room = None;
+    }
+    // TODO return a "finalized mappy"
+    pub fn finish(&mut self) {
+        self.finalize_current_room(false);
+        self.process_merges();
+        while THREADS_WAITING.load(Ordering::SeqCst) != 0 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            self.process_merges();
         }
     }
 
@@ -140,77 +201,141 @@ impl MappyState {
         let last_control_time = self.last_control;
         self.determine_control(emu);
         if self.has_control {
-            if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
+            if (self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
                 && self.current_screen.difference(&self.last_control_screen)
-                    > Self::SCREEN_ROOM_CHANGE_DIFF
+                    > Self::SCREEN_ROOM_CHANGE_DIFF)
+                || self.current_room.is_none()
             {
-                // if we have control now and didn't before and the room changed significantly since then...
-                let id = self.current_room.id + 1;
-                let old_room = std::mem::replace(
-                    &mut self.current_room,
-                    Room::new(id, &self.current_screen, &mut self.tiles),
-                );
-                println!("Room change {}", id);
-                self.rooms
-                    .write()
-                    .expect("Poisoned rooms lock!")
-                    .push(old_room);
-                self.metarooms
-                    .write()
-                    .expect("Poisoned metarooms lock!")
-                    .push(Metaroom::new(id));
+                if let Some(r) = self.current_room.as_ref() {
+                    assert!(
+                        r.id < 3,
+                        "Too many! {} - {}, diff {}\nr {:?} -- {:?}",
+                        self.now.0,
+                        last_control_time.0,
+                        self.current_screen.difference(&self.last_control_screen),
+                        self.current_screen.region,
+                        self.last_control_screen.region
+                    );
+                } else {
+                    assert!(
+                        self.rooms.read().unwrap().len() <= 3,
+                        "Strange none screen! {}",
+                        self.now.0
+                    );
+                }
+                self.finalize_current_room(true);
             } else {
                 self.current_room
-                    .register_screen(&self.current_screen, &mut self.tiles);
+                    .as_mut()
+                    .unwrap()
+                    .register_screen(&self.current_screen, &mut self.tiles.write().unwrap());
             }
         } else if had_control {
             // dbg!("control loss", self.current_screen.region);
             self.last_control_screen.copy_from(&self.current_screen);
         }
-        if self.now.0 % 120 == 0 && self.current_room.id != 0 {
+        if self.now.0 % 120 == 0 && self.current_room.is_some() {
             //spawn room merge thing with self.room_merge_tx
-            let room = self.current_room.clone();
-            let rooms = Arc::clone(&self.rooms);
-            let mrs = Arc::clone(&self.metarooms);
-            let tx = Arc::clone(&self.room_merge_tx);
-            spawn_fifo(move || {
-                let mrs = mrs.read().unwrap();
-                let merges:Vec<_> = mrs
-                        .par_iter()
-                        .enumerate()
-                        .filter_map(|(mri, mr)| {
-                            let rooms = rooms.read().unwrap();
-                            if let Some((p, c)) =
-                                mr.merge_cost(&room, &rooms, Self::ROOM_MERGE_THRESHOLD)
-                            {
-                                Some((mri, p, c))
-                            } else {
-                                None
-                            }
-                        })
-                    .collect();
-                // also do the reverse merge for merges that went ok
-                tx.send(DoMerge(
-                    room.id,
-                    merges,
-                ))
-                    .expect("Couldn't send merge message");
-            });
+            self.kickoff_merge_calc(
+                self.current_room.as_ref().unwrap().clone(),
+                MergePhase::Intermediate,
+            );
         }
-        if !self.room_merge_rx.is_empty() {
-            let mut metarooms = self.metarooms.write().unwrap();
-            while let Ok(DoMerge(room_id, metas)) = self.room_merge_rx.try_recv() {
-                for &(meta, posn, cost) in metas.iter() {
-                    metarooms[meta].merge_room(room_id, posn, cost);
-                }
-                // for each meta, spawn a task to merge its rooms into
-            }
-        }
+        self.process_merges();
         // Update `now`
         self.now.0 += 1;
     }
+    fn process_merges(&mut self) {
+        if !self.room_merge_rx.is_empty() {
+            //let mut metarooms = self.metarooms.write().unwrap();
+            while let Ok(DoMerge(phase, room_id, metas)) = self.room_merge_rx.try_recv() {
+                match phase {
+                    MergePhase::Intermediate => {
+                        for (metaroom, posn, cost) in metas {
+                            //metarooms[meta].merge_room(room_id, posn, cost);
+                            println!("Merge {} with {:?}: {}@{:?}", room_id, metaroom, cost, posn);
+                        }
+                    }
+                    MergePhase::Finalize => {
+                        //let room_meta = self.metarooms.insert(room_id);
+                        self.metarooms.merge_new_room(room_id, &metas);
+                    }
+                }
+            }
+        }
+    }
+    fn finalize_current_room(&mut self, start_new: bool) {
+        // if we have control now and didn't before and the room changed significantly since then...
+        if self.current_room.is_some() {
+            let mut rooms = self.rooms.write().expect("Poisoned rooms lock!");
+            let mut old_room = if start_new {
+                let id = {
+                    let cur = self.current_room.as_ref().unwrap();
+                    let id = cur.id + 1;
+                    assert_eq!(id, rooms.len() + 1);
+                    id
+                };
+                println!("Enter room {}", id);
+                self.current_room
+                    .replace(Room::new(
+                        id,
+                        &self.current_screen,
+                        &mut self.tiles.write().unwrap(),
+                    ))
+                    .unwrap()
+            } else {
+                let old_room = self.current_room.take().unwrap();
+                println!("Room end {}", old_room.id);
+                old_room
+            };
+            old_room.reregister_at(0, 0);
+            self.kickoff_merge_calc(old_room.clone(), MergePhase::Finalize);
+            rooms.push(old_room);
+        } else if start_new {
+            let id = self.rooms.read().unwrap().len();
+            println!("Room refresh {}", id);
+            self.current_room.replace(Room::new(
+                id,
+                &self.current_screen,
+                &mut self.tiles.write().unwrap(),
+            ));
+        }
+    }
+    fn kickoff_merge_calc(&self, room: Room, phase: MergePhase) {
+        let tiles = Arc::clone(&self.tiles);
+        let rooms = Arc::clone(&self.rooms);
+        let mrs = self.metarooms.clone();
+        let tx = Arc::clone(&self.room_merge_tx);
+        // TODO only do this if the current room histogram is different from last merge-checked room histogram
+        spawn_fifo(move || {
+            THREADS_WAITING.fetch_add(1, Ordering::SeqCst);
+            let merges = mrs
+                .metarooms()
+                .collect::<Vec<_>>()
+                .into_par_iter()
+                .filter_map(|metaroom| {
+                    // TODO make sure room has significant histogram overlap with at least one room in metaroom
+                    if let Some((p, c)) = merge_cost(
+                        &room,
+                        &metaroom.registrations,
+                        &rooms,
+                        &tiles,
+                        Self::ROOM_MERGE_THRESHOLD,
+                    ) {
+                        Some((metaroom.id, p, c))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            tx.send(DoMerge(phase, room.id, merges))
+                .expect("Couldn't send merge message");
+            THREADS_WAITING.fetch_sub(1, Ordering::SeqCst);
+        });
+    }
 
     fn read_current_screen(&mut self) {
+        let mut tiles = self.tiles.write().unwrap();
         let region = self.split_region();
         self.current_screen = Screen::new(
             Rect::new(
@@ -219,7 +344,7 @@ impl MappyState {
                 region.w / (TILE_SIZE as u32),
                 region.h / (TILE_SIZE as u32),
             ),
-            &self.tiles.get_initial_tile(),
+            &tiles.get_initial_tile(),
         );
         for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
             for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
@@ -238,7 +363,7 @@ impl MappyState {
                 // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
                 // }
                 self.current_screen.set(
-                    self.tiles.get_tile(tile),
+                    tiles.get_tile(tile),
                     (self.scroll.0 + x) / (TILE_SIZE as i32),
                     (self.scroll.1 + y) / (TILE_SIZE as i32),
                 );
@@ -247,13 +372,16 @@ impl MappyState {
     }
 
     fn determine_control(&mut self, emu: &mut Emulator) {
-        if self.now.0 % 7 != 0 {
+        // should be long enough to fight momentum
+        const CONTROL_CHECK_K: usize = 17;
+        // should be odd
+        const CONTROL_CHECK_INTERVAL: usize = 7;
+        if self.now.0 % CONTROL_CHECK_INTERVAL != 0 {
             return;
         }
         // every A frames...
         // We'll start with the expensive version and later try the cheaper version if that's too slow.
         // Expensive version:
-        const K: usize = 10;
         // Save state S.
         if self.state_buffer.is_empty() {
             self.state_buffer = vec![0; emu.save_size()];
@@ -261,25 +389,40 @@ impl MappyState {
         emu.save(&mut self.state_buffer);
         // Apply down-left and b input for K frames
         // TODO: in mario 3 on the level select screen simultaneous presses sometimes cause no movement.  Consider random or alternating down and left and b presses?
-        let down_left_b = Buttons::new().down(true).left(true).b(true);
-        for _ in 0..K {
-            emu.run([down_left_b, Buttons::default()]);
+        let down_left = Buttons::new()
+            .down(true)
+            .left(true)
+            .b(self.now.0 % 2 == 0)
+            .a(self.now.0 % 2 == 1);
+        for _ in 0..CONTROL_CHECK_K {
+            emu.run([down_left, Buttons::default()]);
         }
+        // What can we learn from hardware screen splitting operations?
+        self.get_changes(&emu);
+        let latch = self.latch;
+        let (dl_splits, _latch) = splits::get_splits(&self.changes, latch);
         // Store positions of all sprites P1
         let mut sprites_dlb = [SpriteData::default(); SPRITE_COUNT];
         sprites::get_sprites(emu, &mut sprites_dlb);
         // Load state S.
         emu.load(&self.state_buffer);
         // Apply up-right and a input for K frames
-        let up_right_a = Buttons::new().up(true).right(true).a(true);
-        for _ in 0..K {
-            emu.run([up_right_a, Buttons::default()]);
+        let up_right = Buttons::new()
+            .up(true)
+            .right(true)
+            .a(self.now.0 % 2 == 0)
+            .b(self.now.0 % 2 == 1);
+        for _ in 0..CONTROL_CHECK_K {
+            emu.run([up_right, Buttons::default()]);
         }
+        self.get_changes(&emu);
+        let latch = self.latch;
+        let (ur_splits, _latch) = splits::get_splits(&self.changes, latch);
         // Store positions of all sprites P2
         let mut sprites_ura = [SpriteData::default(); SPRITE_COUNT];
         sprites::get_sprites(emu, &mut sprites_ura);
-        // If P1 != P2, we have control; otherwise we do not
-        if sprites_dlb != sprites_ura {
+        // If P1 != P2 or scroll different, we have control; otherwise we do not
+        if sprites_dlb != sprites_ura || dl_splits != ur_splits {
             if !self.maybe_control {
                 self.maybe_control_change_time = self.now;
             }
@@ -288,7 +431,8 @@ impl MappyState {
             self.maybe_control = false;
         }
         self.has_control = self.maybe_control
-            && (self.has_control || (self.now.0 - self.maybe_control_change_time.0 > K));
+            && (self.has_control
+                || (self.now.0 - self.maybe_control_change_time.0 > CONTROL_CHECK_K));
         // Load state S.
         emu.load(&self.state_buffer);
 
@@ -424,7 +568,7 @@ impl MappyState {
     }
     pub fn dump_tiles(&self, root: &Path) {
         let mut buf = vec![0_u8; TILE_SIZE * TILE_SIZE * 3];
-        for (ti, tile) in self.tiles.gfx_iter().enumerate() {
+        for (ti, tile) in self.tiles.read().unwrap().gfx_iter().enumerate() {
             tile.write_rgb888(&mut buf);
             let img: ImageBuffer<Rgb<u8>, _> =
                 ImageBuffer::from_raw(TILE_SIZE as u32, TILE_SIZE as u32, &buf[..])
@@ -432,4 +576,72 @@ impl MappyState {
             img.save(root.join(format!("t{:}.png", ti))).unwrap();
         }
     }
+}
+
+pub fn merge_cost(
+    room: &Room,
+    metaroom: &[(usize, (i32, i32))],
+    rooms: &RwLock<Vec<Room>>,
+    tiles: &RwLock<TileDB>,
+    mut threshold: f32,
+) -> Option<((i32, i32), f32)> {
+    let mut best = None;
+    let ar = room.region();
+    let br = {
+        let rooms = rooms.read().unwrap();
+        let mut rect = rooms[metaroom[0].0].region();
+        for r in metaroom.iter().skip(1) {
+            rect = rect.union(&rooms[r.0].region());
+        }
+        rect
+    };
+    let xover = (br.w as i32 / 2).min(ar.w as i32 / 2);
+    let yover = (br.h as i32 / 2).min(ar.h as i32 / 2);
+    let left = br.x + xover - (ar.w as i32);
+    let right = (br.x + br.w as i32) - xover;
+    let top = br.y + yover - (ar.h as i32);
+    let bot = (br.y + br.h as i32) - yover;
+    let num_rooms = metaroom.len();
+    for y in top..bot {
+        for x in left..right {
+            let mut cost = 0.0;
+            for r in metaroom.iter() {
+                let tiles = tiles.read().unwrap();
+                let rooms = rooms.read().unwrap();
+                let room_b = &rooms[r.0];
+                let (rxo, rxy) = r.1;
+                cost += room.merge_cost_at(
+                    x,
+                    y,
+                    rxo,
+                    rxy,
+                    room_b,
+                    &tiles,
+                    threshold * num_rooms as f32 - cost,
+                ) / num_rooms as f32;
+
+                if room.id == 3 && x == 0 && metaroom[0].0 == 0 && y == 0 {
+                    println!("{},{} : {}", x, y, cost);
+                }
+                if cost > threshold {
+                    break;
+                }
+            }
+            if cost <= threshold {
+                threshold = cost;
+                best = Some(((x, y), cost));
+            }
+        }
+    }
+    // dbg!(self.id, best);
+    best
+    // for each registration of room.region() onto full, calculate difference across the rooms I have (going a row within each existing room at a time seems good, think about cache effects).  we want to take the best difference and throw away ones that get too bad.  One possibility is to go a row (or a room already in the metaroom, or a room/row combo) at a time and put that into a bnb kind of framework... since we want to find the best one.
+    // min_by might work...? but it calculates everything.  I'd like to filter_map and then min_by maybe, or have the min_by sometimes choose to dump in the threshold value + 1.0
+
+    // go through full, registering room at different offsets; bailing out each difference calculation once it gets too big (check every row or col or something).
+    // see how room's set of seen changes intersects with each r in self.rooms's... if empty skip it
+    // get cost of registering room onto it at best posn
+    //   (this is the weighted average of cost of registering at posn wrt all other rooms in the metaroom)
+    //      cost of registering ra in rb at posn is just existing room difference but with rects aligned appropriately and out of bounds spots ignored (also maybe taking change cycles into account)
+    //   bail out if cost exceeds ROOM_MERGE_THRESHOLD
 }

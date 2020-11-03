@@ -35,6 +35,26 @@ impl TileGfx {
             dst[2] = b;
         }
     }
+    pub fn write_rgb888_at(&self, x: usize, y: usize, buf: &mut [u8], buf_w: usize) {
+        assert!((x + TILE_SIZE) < buf_w);
+        assert!((y + TILE_SIZE) * buf_w * 3 + (x + TILE_SIZE) * 3 < buf.len());
+        for (row_t, row_b) in self
+            .0
+            .chunks_exact(TILE_SIZE)
+            .zip(buf[(y * 3 * buf_w)..((y + TILE_SIZE) * buf_w * 3)].chunks_mut(buf_w))
+        {
+            for (col, dst) in row_t
+                .iter()
+                .zip(row_b[(x * 3)..(x * 3 + TILE_SIZE * 3)].chunks_mut(3))
+            {
+                let (r, g, b) = pixels::rgb332_to_rgb888(*col);
+                dst[0] = r;
+                dst[1] = g;
+                dst[2] = b;
+            }
+        }
+    }
+
     pub fn perceptual_hash(&self) -> u128 {
         self.0
             .iter()
@@ -106,6 +126,57 @@ pub struct TileDB {
     gfx: HashMap<TileGfx, TileGfxId>,
 
     changes: HashMap<TileChange, TileChangeData>,
+    change_closure: TransitiveClosure<TileGfxId>,
+}
+
+use std::collections::BTreeSet;
+struct TransitiveClosure<T: Ord + Eq + Copy> {
+    elts: Vec<T>,
+    fwd: Vec<BTreeSet<usize>>,
+    back: Vec<BTreeSet<usize>>,
+}
+impl TransitiveClosure<TileGfxId> {
+    fn new() -> Self {
+        Self {
+            elts: vec![],
+            fwd: vec![],
+            back: vec![],
+        }
+    }
+    fn insert(&mut self, t: TileGfxId) {
+        if t.index() == self.elts.len() {
+            self.elts.push(t);
+            self.fwd.push(BTreeSet::new());
+            self.back.push(BTreeSet::new());
+        } else {
+            assert!(t.index() < self.elts.len());
+        }
+    }
+    fn chain(&mut self, tpre: TileGfxId, tpost: TileGfxId) {
+        let ipre = tpre.index();
+        let ipost = tpost.index();
+        self.fwd[ipre].insert(ipost);
+        self.back[ipost].insert(ipre);
+        // TODO resolve too much copying, can't prove that ipre isn't in to_add_back.
+        // a dense matrix would improve things but then adding tiles stinks
+
+        // tpost's descendants get backward links to all of tpre's ancestors
+        for to_add_back in self.fwd[ipost].iter() {
+            self.back[*to_add_back].insert(ipre);
+            let cp: Vec<_> = self.back[ipre].iter().copied().collect();
+            self.back[*to_add_back].extend(cp);
+        }
+        // tpre's ancestors get forward links to all of tpost's descendants
+        for to_add_fwd in self.back[ipre].iter() {
+            self.fwd[*to_add_fwd].insert(ipost);
+            let cp: Vec<_> = self.fwd[ipost].iter().copied().collect();
+            self.fwd[*to_add_fwd].extend(cp);
+        }
+    }
+
+    fn goes_to(&self, tpre: TileGfxId, tpost: TileGfxId) -> bool {
+        self.fwd[tpre.index()].contains(&(tpost.index()))
+    }
 }
 
 impl TileDB {
@@ -117,11 +188,14 @@ impl TileDB {
         let gfx = HashMap::new();
         let mut changes = HashMap::new();
         changes.insert(TileChange::new(initial, initial), TileChangeData::default());
+        let mut change_closure = TransitiveClosure::new();
+        change_closure.insert(initial);
         TileDB {
             gfx_arena,
             initial,
             gfx,
             changes,
+            change_closure,
         }
     }
     pub fn get_initial_change(&self) -> TileChange {
@@ -135,7 +209,9 @@ impl TileDB {
     }
     pub fn get_tile(&mut self, tg: TileGfx) -> TileGfxId {
         let arena = &mut self.gfx_arena;
-        *self.gfx.entry(tg).or_insert_with(|| arena.alloc(tg))
+        let id = *self.gfx.entry(tg).or_insert_with(|| arena.alloc(tg));
+        self.change_closure.insert(id);
+        id
     }
     pub fn contains(&self, tg: &TileGfx) -> bool {
         self.gfx.contains_key(tg)
@@ -160,6 +236,19 @@ impl TileDB {
     pub fn gfx_count(&self) -> usize {
         self.gfx.len()
     }
+    pub fn change_cost(&self, tc1: &TileChange, tc2: &TileChange) -> f32 {
+        if tc1 == tc2 {
+            0.0
+        } else if tc1.to == self.initial || tc2.to == self.initial {
+            0.0
+        } else if self.change_closure.goes_to(tc1.to, tc2.from)
+            || self.change_closure.goes_to(tc2.to, tc1.from)
+        {
+            0.1
+        } else {
+            1.0
+        }
+    }
     pub fn change_from_to(&mut self, tc: &TileChange, gfx: &TileGfxId) -> TileChange {
         if gfx == &tc.to {
             *tc
@@ -170,6 +259,7 @@ impl TileDB {
             if gfx == &self.get_initial_tile() {
                 return *tc;
             }
+            self.change_closure.chain(tc.to, *gfx);
             let init = self.get_initial_change();
             let old_change = self.changes.get_mut(&tc).unwrap();
             if *tc != init {
