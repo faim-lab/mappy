@@ -1,4 +1,4 @@
-// use super::{room::Room, Rect};
+use super::{room::Room, Rect};
 
 // // the usize here is another metaroom
 // #[derive(Debug)]
@@ -27,6 +27,24 @@ impl Metaroom {
             registrations,
             merged_into: vec![],
         }
+    }
+    pub fn region(&self, rooms: &[Room]) -> Rect {
+        let (r0, p0) = self.registrations[0];
+        let r0 = &rooms[r0];
+        let mut r = Rect {
+            x: p0.0,
+            y: p0.1,
+            ..r0.region()
+        };
+        for &(room, (x, y)) in self.registrations.iter() {
+            let r2 = Rect {
+                x,
+                y,
+                ..rooms[room].region()
+            };
+            r = r.union(&r2);
+        }
+        r
     }
 }
 

@@ -60,6 +60,9 @@ impl Room {
             s.reregister_at(s.region.x + xoff, s.region.y + yoff);
         }
     }
+    pub fn get(&self, x: i32, y: i32) -> TileChange {
+        self.screens[self.get_screen_for(x, y).unwrap_or_else(|| panic!("bad {:?} {:?}",self.region(), (x,y)))].get(x, y)
+    }
 
     pub fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
         self.screens.iter().position(|s| s.region.contains(x, y))
@@ -107,10 +110,6 @@ impl Room {
             Rect::new(sx, sy, r0.w, r0.h),
             &db.get_initial_change(),
         ));
-        self.top_left.0 = self.top_left.0.min(sx);
-        self.top_left.1 = self.top_left.1.min(sy);
-        self.bottom_right.0 = self.bottom_right.0.max(sx + r0.w as i32);
-        self.bottom_right.1 = self.bottom_right.1.max(sy + r0.h as i32);
 
         //println!("Added region {:?}", self.screens.last().unwrap().region);
         assert_eq!(self.get_screen_for(x, y).unwrap(), self.screens.len() - 1);
@@ -165,6 +164,10 @@ impl Room {
             }
         }
         self.seen_changes.extend(seen.into_iter());
+        self.top_left.0 = self.top_left.0.min(s.region.x);
+        self.top_left.1 = self.top_left.1.min(s.region.y);
+        self.bottom_right.0 = self.bottom_right.0.max(xmax);
+        self.bottom_right.1 = self.bottom_right.1.max(ymax);
     }
     pub fn merge_cost_at(
         &self,
@@ -179,9 +182,8 @@ impl Room {
         let mut any1 = 0;
         let mut any2 = 0;
         let r = self.region();
-        let (r2x, r2y) = room.top_left;
-        let r2x = r2xo + r2x + x;
-        let r2y = r2yo + r2y + y;
+        let r2x = r2xo + x;
+        let r2y = r2yo + y;
         let mut cost = 0.0;
         //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
         for yo in 0..(r.h as i32) {
@@ -235,9 +237,10 @@ impl Room {
         );
         assert!(
             any2 > 0,
-            "a2 {:?}-{:?} {:?} {:?}",
+            "a2 {:?}-{:?} {:?} {:?} {:?}",
             r,
             (x, y),
+            (r2x, r2y),
             room.region(),
             cost
         );
@@ -256,9 +259,11 @@ fn extend_tile(
 ) {
     assert!(s.region.contains(x, y), "{},{} : {:?}", x, y, s.region);
     assert!(rs.region.contains(x, y), "{},{} : {:?}", x, y, rs.region);
-    let change = db.change_from_to(rs.get(x, y), s.get(x, y));
-    seen.push(change);
-    rs.set(change, x, y);
+    if s.get(x, y) != db.get_initial_tile() {
+        let change = db.change_from_to(rs.get(x, y), s.get(x, y));
+        seen.push(change);
+        rs.set(change, x, y);
+    }
 }
 
 #[cfg(test)]

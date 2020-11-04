@@ -145,7 +145,7 @@ impl<T> Chain<Id<T>> {
 pub type TileChange = Id<TileChangeData>;
 impl Tile for TileChange {}
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct TileChangeData {
     from: TileGfxId,
     to: TileGfxId,
@@ -222,6 +222,9 @@ impl TileDB {
     }
     pub fn get_tile_by_id(&self, tg: TileGfxId) -> Option<&TileGfx> {
         self.gfx_arena.get(tg)
+    }
+    pub fn get_change_by_id(&self, tc: TileChange) -> Option<&TileChangeData> {
+        self.change_arena.get(tc)
     }
     pub fn gfx_iter(&self) -> impl Iterator<Item = &TileGfx> {
         self.gfx.keys()

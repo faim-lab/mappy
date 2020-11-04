@@ -50,6 +50,7 @@ async fn main() {
     let mut start_state = vec![0; emu.save_size()];
     let mut save_buf = vec![0; emu.save_size()];
     emu.save(&mut start_state);
+    emu.save(&mut save_buf);
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
     // So reset it afterwards
@@ -154,6 +155,12 @@ zxcvbnm,./ for debug displays"
             println!("Diff vs {:?}", draw_merge_diff);
         }
 
+        if is_key_pressed(KeyCode::N) {
+            std::fs::remove_dir_all("out/tiles").unwrap_or(());
+            std::fs::create_dir_all("out/tiles").unwrap();
+            mappy.dump_tiles(Path::new("out/tiles"));
+        }
+
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let numkey = {
             if is_key_pressed(KeyCode::Key0) {
@@ -217,7 +224,7 @@ zxcvbnm,./ for debug displays"
                 romname.to_str().expect("rom name not a valid utf-8 string")
             ));
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
-            assert_eq!(file.read_to_end(&mut save_buf).unwrap(), emu.save_size());
+            file.read_exact(&mut save_buf).unwrap();
             emu.load(&save_buf);
             mappy.handle_reset();
         }
@@ -341,6 +348,20 @@ zxcvbnm,./ for debug displays"
                 }
             }
         }
+
+        if is_mouse_button_down(MouseButton::Left)
+            && mappy.current_room.is_some()
+        {
+            let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
+            if shifted {
+                println!("{},{}  csr {:?}\nsr {:?}\nsc {:?}\ncrr {:?}",tx,ty,mappy.current_screen.region,mappy.split_region(),mappy.scroll,mappy.current_room.as_ref().unwrap().region());
+            }
+            let change = mappy.current_room.as_ref().unwrap().get(tx, ty);
+            let tiles = mappy.tiles.read().unwrap();
+            let change_data = tiles.get_change_by_id(change);
+            // todo print screen tile gfx at this position
+            println!("{},{} -- {:?},{:?}", tx, ty, change, change_data);
+        }
         if let Some(mr) = draw_merge_diff {
             let cur = &mappy.current_room;
             if let Some(cur) = cur {
@@ -351,13 +372,13 @@ zxcvbnm,./ for debug displays"
                     .iter()
                     .map(|(room_id, pos)| (&rooms[*room_id], pos))
                     .collect();
-                let x = 0;
-                let y = 0;
+                let x = 132;
+                let y = -16;
                 let mut cost = 0.0;
                 for (room_b, (rxo, rxy)) in regs.iter() {
                     let tiles = mappy.tiles.read().unwrap();
                     cost += debug_merge_cost_at(
-                        mappy.split_region(),
+                        (mappy.scroll.0 - 8, mappy.scroll.1 - 32),
                         cur,
                         x,
                         y,
@@ -368,7 +389,9 @@ zxcvbnm,./ for debug displays"
                         MappyState::ROOM_MERGE_THRESHOLD * regs.len() as f32 - cost,
                     ) / regs.len() as f32;
                 }
-                println!("Cost: {}", cost);
+                if frame_counter % 3 == 0 {
+                    println!("Cost: {}@{:?}\n{:?} -- {:?}\n", cost, (x,y),cur.region(), mappy::Rect{x:regs[0].1.0, y:regs[0].1.1, ..regs[0].0.region()});
+                }
             }
         }
         if draw_live_tracks {
@@ -425,7 +448,7 @@ zxcvbnm,./ for debug displays"
 }
 
 fn debug_merge_cost_at(
-    split_r: mappy::Rect,
+    scroll: (i32, i32),
     this: &Room,
     x: i32,
     y: i32,
@@ -438,9 +461,8 @@ fn debug_merge_cost_at(
     let mut any1 = 0;
     let mut any2 = 0;
     let r = this.region();
-    let (r2x, r2y) = room.top_left;
-    let r2x = r2xo + r2x + x;
-    let r2y = r2yo + r2y + y;
+    let r2x = r2xo + x;
+    let r2y = r2yo + y;
     let mut cost = 0.0;
     //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
     for yo in 0..(r.h as i32) {
@@ -477,25 +499,15 @@ fn debug_merge_cost_at(
                         room.screens[screen2].get(s2x, s2y),
                     );
                     draw_rectangle(
-                        ((split_r.x+(xo*TILE_SIZE as i32)) as f32 * SCALE) as f32,
-                        ((split_r.y+(yo*TILE_SIZE as i32)) as f32 * SCALE) as f32,
+                        (((xo * TILE_SIZE as i32) - scroll.0) as f32 * SCALE) as f32,
+                        (((yo * TILE_SIZE as i32) - scroll.1) as f32 * SCALE) as f32,
                         TILE_SIZE as f32 * SCALE,
                         TILE_SIZE as f32 * SCALE,
                         Color::new(1.0, 0.0, 0.0, c),
                     );
                     c
                 }
-                _ => {
-                    draw_rectangle(
-                        ((split_r.x+(xo*TILE_SIZE as i32)) as f32 * SCALE) as f32,
-                        ((split_r.y+(yo*TILE_SIZE as i32)) as f32 * SCALE) as f32,
-                        TILE_SIZE as f32 * SCALE,
-                        TILE_SIZE as f32 * SCALE,
-                        Color::new(1.0, 0.0, 1.0, 1.0)
-                    );
-
-                    0.0
-                },
+                _ => 0.0,
             };
         }
         if cost > threshold {
@@ -520,3 +532,18 @@ fn debug_merge_cost_at(
     );
     cost
 }
+
+fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
+    let x = (x / SCALE) as i32;
+    let y = (y / SCALE) as i32;
+    let tx = (x + mappy.scroll.0) / TILE_SIZE as i32;
+    let ty = (y + mappy.scroll.1) / TILE_SIZE as i32;
+    (
+        tx,
+        ty,
+    )
+}
+
+// fn tile_to_screen_f32(pos:(i32,i32), mappy:MappyState) -> (f32,f32) {
+
+// }

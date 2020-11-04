@@ -170,7 +170,6 @@ impl MappyState {
         // Read new data from emulator
         self.fb.read_from(&emu);
         self.get_changes(&emu);
-        sprites::get_sprites(&emu, &mut self.live_sprites);
 
         // What can we learn from hardware screen splitting operations?
         let (lo, hi, latch) = splits::get_main_split(&self.changes, self.latch, &self.fb);
@@ -189,11 +188,12 @@ impl MappyState {
             self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1) as i32,
         );
 
-        // Relate current sprites to previous sprites
-        self.track_sprites();
-
         // Update current screen tile grid
         self.read_current_screen();
+
+        sprites::get_sprites(&emu, &mut self.live_sprites);
+        // Relate current sprites to previous sprites
+        self.track_sprites();
 
         // Do we have control?
         let had_control = self.has_control;
@@ -256,6 +256,13 @@ impl MappyState {
                                 "Temp merge {} with {:?}: {}@{:?}",
                                 room_id, metaroom, cost, posn
                             );
+                            println!(
+                                "RR:{:?}\nMRR:{:?}",
+                                self.current_room.as_ref().unwrap().region(),
+                                self.metarooms
+                                    .metaroom(metaroom.0)
+                                    .region(&(*self.rooms.read().unwrap()))
+                            )
                         }
                     }
                     MergePhase::Finalize => {
@@ -626,11 +633,11 @@ pub fn merge_cost(
                 if room.id == 3 && x == 0 && metaroom[0].0 == 0 && y == 0 {
                     println!("3-0 {},{} : {}", x, y, cost);
                 }
-                if cost > threshold {
+                if cost >= threshold {
                     break;
                 }
             }
-            if cost <= threshold {
+            if cost < threshold {
                 threshold = cost;
                 best = Some(((x, y), cost));
             }
