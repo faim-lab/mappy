@@ -9,8 +9,8 @@ pub struct Room {
     pub id: usize,
     pub screens: Vec<RoomScreen>,
     pub seen_changes: HashSet<TileChange>,
-    top_left: (i32, i32),
-    bottom_right: (i32, i32),
+    pub top_left: (i32, i32),
+    pub bottom_right: (i32, i32),
 }
 // TODO consider dense grid of screens so that lookups are fast and predictable
 
@@ -61,7 +61,7 @@ impl Room {
         }
     }
 
-    fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
+    pub fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
         self.screens.iter().position(|s| s.region.contains(x, y))
     }
     // x,y are in tile coordinates
@@ -173,8 +173,8 @@ impl Room {
         r2xo: i32,
         r2yo: i32,
         room: &Room,
-        tiles:&TileDB,
-        threshold: f32
+        tiles: &TileDB,
+        threshold: f32,
     ) -> f32 {
         let mut any1 = 0;
         let mut any2 = 0;
@@ -193,11 +193,10 @@ impl Room {
                 let s2x = r2x + xo;
                 let s2y = r2y + yo;
                 let screen2 = room.get_screen_for(s2x, s2y);
-
                 any1 += if screen.is_some() { 1 } else { 0 };
                 any2 += if screen2.is_some() { 1 } else { 0 };
                 assert!(
-                    screen.is_some() || screen2.is_some(),
+                    screen.is_some(),
                     "r1 {:?}\noff {},{}\nr2 {:?}\noff {},{}\nat {},{}\nposns {:?} -vs- {:?}",
                     self.region(),
                     x,
@@ -214,7 +213,10 @@ impl Room {
                     (Some(screen), Some(screen2)) => {
                         // println!("compare");
                         // TODO if tiles.compatible(..., ...)
-                        tiles.change_cost(self.screens[screen].get(s1x, s1y), room.screens[screen2].get(s2x, s2y))
+                        tiles.change_cost(
+                            self.screens[screen].get(s1x, s1y),
+                            room.screens[screen2].get(s2x, s2y),
+                        )
                     }
                     _ => 0.0,
                 }

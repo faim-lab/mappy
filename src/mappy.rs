@@ -50,8 +50,8 @@ pub struct MappyState {
     changes: Vec<ScrollChange>,
     change_count: u32,
     pub current_room: Option<Room>,
-    rooms: Arc<RwLock<Vec<Room>>>,
-    metarooms: Merges,
+    pub rooms: Arc<RwLock<Vec<Room>>>,
+    pub metarooms: Merges,
     room_merge_tx: Arc<Sender<DoMerge>>,
     room_merge_rx: Receiver<DoMerge>,
     pub now: Time,
@@ -68,7 +68,7 @@ impl MappyState {
     const SCREEN_ROOM_CHANGE_DIFF: f32 = 400.0;
 
     // 4 is a hack until the animation cycling thing is fixed and fractional scores are OK
-    const ROOM_MERGE_THRESHOLD: f32 = 10.0;
+    pub const ROOM_MERGE_THRESHOLD: f32 = 10.0;
 
     pub fn new(w: usize, h: usize) -> Self {
         let db = TileDB::new();
@@ -252,7 +252,10 @@ impl MappyState {
                     MergePhase::Intermediate => {
                         for (metaroom, posn, cost) in metas {
                             //metarooms[meta].merge_room(room_id, posn, cost);
-                            println!("Temp merge {} with {:?}: {}@{:?}", room_id, metaroom, cost, posn);
+                            println!(
+                                "Temp merge {} with {:?}: {}@{:?}",
+                                room_id, metaroom, cost, posn
+                            );
                         }
                     }
                     MergePhase::Finalize => {

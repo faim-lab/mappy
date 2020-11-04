@@ -230,7 +230,7 @@ impl TileDB {
         self.gfx.len()
     }
     pub fn change_cost(&self, tc1: TileChange, tc2: TileChange) -> f32 {
-        if tc1 == tc2 {
+        if tc1 == tc2 || tc1 == self.initial_change || tc2 == self.initial_change {
             0.0
         } else if self.change_arena.get(tc1).unwrap().to == self.change_arena.get(tc2).unwrap().to {
             0.5

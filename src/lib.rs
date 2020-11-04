@@ -2,10 +2,10 @@
 mod framebuffer;
 mod mappy;
 mod metaroom;
-mod room;
+pub mod room;
 mod screen;
 mod sprites;
-mod tile;
+pub mod tile;
 mod uf;
 pub use crate::mappy::*;
 use retro_rs::Buttons;

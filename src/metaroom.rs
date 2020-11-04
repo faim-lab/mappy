@@ -40,9 +40,12 @@ impl Merges {
     pub fn new() -> Self {
         Self { metarooms: vec![] }
     }
-    // pub fn metaroom(&self, id: MetaroomID) -> &Metaroom {
-    // self.metarooms.iter().find(|&mr| mr.id == id).unwrap()
-    // }
+    pub fn len(&self) -> usize {
+        self.metarooms.len()
+    }
+    pub fn metaroom(&self, id: usize) -> &Metaroom {
+        self.metarooms.iter().find(|&mr| mr.id.0 == id).unwrap()
+    }
     pub fn metaroom_mut(&mut self, id: MetaroomID) -> &mut Metaroom {
         self.metarooms.iter_mut().find(|mr| mr.id == id).unwrap()
     }
@@ -61,7 +64,7 @@ impl Merges {
             let mid = MetaroomID(self.metarooms.len());
             let meta = Metaroom::new_single(mid, room);
             // definitely still sorted!
-            println!("pushed meta a {:?}",mid);
+            println!("pushed meta a {:?}", mid);
             self.metarooms.insert(0, meta);
             return mid;
         }
@@ -73,7 +76,7 @@ impl Merges {
             let room_mid = MetaroomID(self.metarooms.len());
             let mut meta = Metaroom::new_single(room_mid, room);
             meta.merged_into.push(mid);
-            println!("pushed meta b {:?}",mid);
+            println!("pushed meta b {:?}", mid);
             self.metarooms.insert(0, meta);
         }
 
@@ -87,7 +90,7 @@ impl Merges {
             }
             meta.merged_into.push(mid);
         }
-        println!("pushed meta c {:?} {:?}",mid,regs);
+        println!("pushed meta c {:?} {:?}", mid, regs);
 
         self.metarooms.push(Metaroom::new_merge(mid, regs));
         //resort everything

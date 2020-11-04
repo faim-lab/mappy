@@ -1,6 +1,5 @@
 use macroquad::*;
-use mappy::MappyState;
-use mappy::TILE_SIZE;
+use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
 
 use std::io::{Read, Write};
@@ -64,6 +63,7 @@ async fn main() {
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
+    let mut draw_merge_diff: Option<usize> = None;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
@@ -131,6 +131,27 @@ zxcvbnm,./ for debug displays"
         }
         if is_key_pressed(KeyCode::C) {
             draw_live_tracks = !draw_live_tracks;
+        }
+        if is_key_pressed(KeyCode::V) {
+            draw_merge_diff = match draw_merge_diff {
+                None => None,
+                Some(0) => None,
+                Some(n) => Some(n - 1),
+            };
+            println!("Diff vs {:?}", draw_merge_diff);
+        }
+        if is_key_pressed(KeyCode::B) {
+            draw_merge_diff = match draw_merge_diff {
+                None => Some(0),
+                Some(n) => {
+                    if mappy.metarooms.len() == n + 1 {
+                        Some(n)
+                    } else {
+                        Some(n + 1)
+                    }
+                }
+            };
+            println!("Diff vs {:?}", draw_merge_diff);
         }
 
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
@@ -320,6 +341,36 @@ zxcvbnm,./ for debug displays"
                 }
             }
         }
+        if let Some(mr) = draw_merge_diff {
+            let cur = &mappy.current_room;
+            if let Some(cur) = cur {
+                let mr = mappy.metarooms.metaroom(mr);
+                let regs = &mr.registrations;
+                let rooms = mappy.rooms.read().unwrap();
+                let regs: Vec<_> = regs
+                    .iter()
+                    .map(|(room_id, pos)| (&rooms[*room_id], pos))
+                    .collect();
+                let x = 0;
+                let y = 0;
+                let mut cost = 0.0;
+                for (room_b, (rxo, rxy)) in regs.iter() {
+                    let tiles = mappy.tiles.read().unwrap();
+                    cost += debug_merge_cost_at(
+                        mappy.split_region(),
+                        cur,
+                        x,
+                        y,
+                        *rxo,
+                        *rxy,
+                        room_b,
+                        &tiles,
+                        MappyState::ROOM_MERGE_THRESHOLD * regs.len() as f32 - cost,
+                    ) / regs.len() as f32;
+                }
+                println!("Cost: {}", cost);
+            }
+        }
         if draw_live_tracks {
             for track in mappy.live_tracks.iter() {
                 let col = Color::new(
@@ -371,4 +422,101 @@ zxcvbnm,./ for debug displays"
     }
     mappy.finish();
     //mappy.dump_tiles(Path::new("out/"));
+}
+
+fn debug_merge_cost_at(
+    split_r: mappy::Rect,
+    this: &Room,
+    x: i32,
+    y: i32,
+    r2xo: i32,
+    r2yo: i32,
+    room: &Room,
+    tiles: &TileDB,
+    threshold: f32,
+) -> f32 {
+    let mut any1 = 0;
+    let mut any2 = 0;
+    let r = this.region();
+    let (r2x, r2y) = room.top_left;
+    let r2x = r2xo + r2x + x;
+    let r2y = r2yo + r2y + y;
+    let mut cost = 0.0;
+    //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
+    for yo in 0..(r.h as i32) {
+        for xo in 0..(r.w as i32) {
+            // TODO make this more cache friendly, should be able to read a row at a time; room could be a different data structure?
+            let s1x = r.x + xo;
+            let s1y = r.y + yo;
+            let screen = this.get_screen_for(s1x, s1y);
+            let s2x = r2x + xo;
+            let s2y = r2y + yo;
+            let screen2 = room.get_screen_for(s2x, s2y);
+            any1 += if screen.is_some() { 1 } else { 0 };
+            any2 += if screen2.is_some() { 1 } else { 0 };
+            assert!(
+                screen.is_some(),
+                "r1 {:?}\noff {},{}\nr2 {:?}\noff {},{}\nat {},{}\nposns {:?} -vs- {:?}",
+                this.region(),
+                x,
+                y,
+                room.region(),
+                r2x,
+                r2y,
+                xo,
+                yo,
+                (s1x, s1y),
+                (s2x, s2y)
+            );
+            cost += match (screen, screen2) {
+                (Some(screen), Some(screen2)) => {
+                    // println!("compare");
+                    // TODO if tiles.compatible(..., ...)
+                    let c = tiles.change_cost(
+                        this.screens[screen].get(s1x, s1y),
+                        room.screens[screen2].get(s2x, s2y),
+                    );
+                    draw_rectangle(
+                        ((split_r.x+(xo*TILE_SIZE as i32)) as f32 * SCALE) as f32,
+                        ((split_r.y+(yo*TILE_SIZE as i32)) as f32 * SCALE) as f32,
+                        TILE_SIZE as f32 * SCALE,
+                        TILE_SIZE as f32 * SCALE,
+                        Color::new(1.0, 0.0, 0.0, c),
+                    );
+                    c
+                }
+                _ => {
+                    draw_rectangle(
+                        ((split_r.x+(xo*TILE_SIZE as i32)) as f32 * SCALE) as f32,
+                        ((split_r.y+(yo*TILE_SIZE as i32)) as f32 * SCALE) as f32,
+                        TILE_SIZE as f32 * SCALE,
+                        TILE_SIZE as f32 * SCALE,
+                        Color::new(1.0, 0.0, 1.0, 1.0)
+                    );
+
+                    0.0
+                },
+            };
+        }
+        if cost > threshold {
+            break;
+        }
+    }
+    assert!(
+        any1 > 0,
+        "a1 {:?}-{:?} {:?} {:?}",
+        r,
+        (x, y),
+        room.region(),
+        cost
+    );
+    assert!(
+        any2 > 0,
+        "a2 {:?}-{:?} {:?} {:?}",
+        r,
+        (x, y),
+        room.region(),
+        cost
+    );
+    cost
 }
