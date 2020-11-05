@@ -256,13 +256,13 @@ impl MappyState {
                                 "Temp merge {} with {:?}: {}@{:?}",
                                 room_id, metaroom, cost, posn
                             );
-                            println!(
-                                "RR:{:?}\nMRR:{:?}",
-                                self.current_room.as_ref().unwrap().region(),
-                                self.metarooms
-                                    .metaroom(metaroom.0)
-                                    .region(&(*self.rooms.read().unwrap()))
-                            )
+                            // println!(
+                            //     "RR:{:?}\nMRR:{:?}",
+                            //     self.current_room.as_ref().unwrap().region(),
+                            //     self.metarooms
+                            //         .metaroom(metaroom.0)
+                            //         .region(&(*self.rooms.read().unwrap()))
+                            // )
                         }
                     }
                     MergePhase::Finalize => {
@@ -602,9 +602,6 @@ pub fn merge_cost(
         rect
     };
 
-    // if room.id == 3 {
-    // dbg!(ar, br);
-    // }
     let xover = (br.w as i32 / 2).min(ar.w as i32 / 2);
     let yover = (br.h as i32 / 2).min(ar.h as i32 / 2);
     let left = br.x + xover - (ar.w as i32);
@@ -616,10 +613,18 @@ pub fn merge_cost(
         for x in left..right {
             let mut cost = 0.0;
             for r in metaroom.iter() {
-                let tiles = tiles.read().unwrap();
                 let rooms = rooms.read().unwrap();
                 let room_b = &rooms[r.0];
                 let (rxo, rxy) = r.1;
+                let rbr = Rect {
+                    x: rxo,
+                    y: rxy,
+                    ..room_b.region()
+                };
+                if !rbr.overlaps(&Rect { x, y, ..ar }) {
+                    continue;
+                }
+                let tiles = tiles.read().unwrap();
                 cost += room.merge_cost_at(
                     x,
                     y,
@@ -630,9 +635,6 @@ pub fn merge_cost(
                     threshold * num_rooms as f32 - cost,
                 ) / num_rooms as f32;
 
-                if room.id == 3 && x == 0 && metaroom[0].0 == 0 && y == 0 {
-                    println!("3-0 {},{} : {}", x, y, cost);
-                }
                 if cost >= threshold {
                     break;
                 }

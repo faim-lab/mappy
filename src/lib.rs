@@ -32,6 +32,12 @@ impl Rect {
     pub fn contains(&self, x: i32, y: i32) -> bool {
         self.x <= x && x < self.x + self.w as i32 && self.y <= y && y < self.y + self.h as i32
     }
+    pub fn overlaps(&self, r: &Rect) -> bool {
+        self.x < (r.x + r.w as i32)
+            && r.x < (self.x + self.w as i32)
+            && self.y < (r.y + r.h as i32)
+            && r.y < (self.y + self.h as i32)
+    }
     pub fn union(&self, other: &Rect) -> Rect {
         let x0 = self.x.min(other.x);
         let y0 = self.y.min(other.y);

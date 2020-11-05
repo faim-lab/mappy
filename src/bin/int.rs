@@ -372,8 +372,8 @@ zxcvbnm,./ for debug displays"
                     .iter()
                     .map(|(room_id, pos)| (&rooms[*room_id], pos))
                     .collect();
-                let x = 132;
-                let y = -16;
+                let x = 0;
+                let y = 0;
                 let mut cost = 0.0;
                 for (room_b, (rxo, rxy)) in regs.iter() {
                     let tiles = mappy.tiles.read().unwrap();

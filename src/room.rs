@@ -29,7 +29,8 @@ impl Room {
             )],
             seen_changes: HashSet::new(),
             top_left: (screen.region.x, screen.region.y),
-            bottom_right: (screen.region.x + 32, screen.region.y + 32),
+            // TODO hacky, probably not right
+            bottom_right: (screen.region.x + 1, screen.region.y + 1),
         };
         if screen.region.w != 0 && screen.region.h != 0 {
             ret.register_screen(&screen, db);
@@ -61,7 +62,10 @@ impl Room {
         }
     }
     pub fn get(&self, x: i32, y: i32) -> TileChange {
-        self.screens[self.get_screen_for(x, y).unwrap_or_else(|| panic!("bad {:?} {:?}",self.region(), (x,y)))].get(x, y)
+        self.screens[self
+            .get_screen_for(x, y)
+            .unwrap_or_else(|| panic!("bad {:?} {:?}", self.region(), (x, y)))]
+        .get(x, y)
     }
 
     pub fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
