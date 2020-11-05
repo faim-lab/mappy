@@ -227,7 +227,7 @@ impl TileDB {
         self.change_arena.get(tc)
     }
     pub fn gfx_iter(&self) -> impl Iterator<Item = &TileGfx> {
-        self.gfx.keys()
+        self.gfx_arena.iter().map(|(_id, t)| t)
     }
     pub fn gfx_count(&self) -> usize {
         self.gfx.len()
