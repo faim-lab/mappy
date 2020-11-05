@@ -543,7 +543,3 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
         ty,
     )
 }
-
-// fn tile_to_screen_f32(pos:(i32,i32), mappy:MappyState) -> (f32,f32) {
-
-// }
