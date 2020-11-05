@@ -25,7 +25,7 @@ impl Room {
                     w: 32,
                     h: 32,
                 },
-                &db.get_initial_change(),
+                db.get_initial_change(),
             )],
             seen_changes: HashSet::new(),
             top_left: (screen.region.x, screen.region.y),
@@ -60,6 +60,11 @@ impl Room {
         for s in self.screens.iter_mut() {
             s.reregister_at(s.region.x + xoff, s.region.y + yoff);
         }
+    }
+    pub fn finalize(mut self, initial: TileChange) -> Self {
+        self.reregister_at(0, 0);
+        self.screens = vec![Screen::combine(self.screens, initial)];
+        self
     }
     pub fn get(&self, x: i32, y: i32) -> TileChange {
         self.screens[self
@@ -112,7 +117,7 @@ impl Room {
             .is_none());
         self.screens.push(Screen::new(
             Rect::new(sx, sy, r0.w, r0.h),
-            &db.get_initial_change(),
+            db.get_initial_change(),
         ));
 
         //println!("Added region {:?}", self.screens.last().unwrap().region);

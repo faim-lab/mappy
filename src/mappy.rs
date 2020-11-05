@@ -73,7 +73,7 @@ impl MappyState {
     pub fn new(w: usize, h: usize) -> Self {
         let db = TileDB::new();
         let t0 = db.get_initial_tile();
-        let s0 = Screen::new(Rect::new(0, 0, 0, 0), &t0);
+        let s0 = Screen::new(Rect::new(0, 0, 0, 0), t0);
         let (room_merge_tx, room_merge_rx) = unbounded();
         let room_merge_tx = Arc::new(room_merge_tx);
         MappyState {
@@ -151,7 +151,7 @@ impl MappyState {
         self.change_count = 0;
         let s0 = Screen::new(
             Rect::new(0, 0, 0, 0),
-            &self.tiles.read().unwrap().get_initial_tile(),
+            self.tiles.read().unwrap().get_initial_tile(),
         );
         self.current_screen = s0.clone();
         self.last_control_screen = s0;
@@ -294,7 +294,7 @@ impl MappyState {
                 println!("Room end {}", old_room.id);
                 old_room
             };
-            old_room.reregister_at(0, 0);
+            old_room = old_room.finalize(self.tiles.read().unwrap().get_initial_change());
             self.kickoff_merge_calc(old_room.clone(), MergePhase::Finalize);
             self.rooms.write().unwrap().push(old_room);
         } else if start_new {
@@ -350,7 +350,7 @@ impl MappyState {
                 region.w / (TILE_SIZE as u32),
                 region.h / (TILE_SIZE as u32),
             ),
-            &tiles.get_initial_tile(),
+            tiles.get_initial_tile(),
         );
         for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
             for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
