@@ -349,12 +349,18 @@ zxcvbnm,./ for debug displays"
             }
         }
 
-        if is_mouse_button_down(MouseButton::Left)
-            && mappy.current_room.is_some()
-        {
+        if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
             let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
             if shifted {
-                println!("{},{}  csr {:?}\nsr {:?}\nsc {:?}\ncrr {:?}",tx,ty,mappy.current_screen.region,mappy.split_region(),mappy.scroll,mappy.current_room.as_ref().unwrap().region());
+                println!(
+                    "{},{}  csr {:?}\nsr {:?}\nsc {:?}\ncrr {:?}",
+                    tx,
+                    ty,
+                    mappy.current_screen.region,
+                    mappy.split_region(),
+                    mappy.scroll,
+                    mappy.current_room.as_ref().unwrap().region()
+                );
             }
             let change = mappy.current_room.as_ref().unwrap().get(tx, ty);
             let tiles = mappy.tiles.read().unwrap();
@@ -444,6 +450,7 @@ zxcvbnm,./ for debug displays"
         // }
     }
     mappy.finish();
+    println!("{}",mappy.timers);
     //mappy.dump_tiles(Path::new("out/"));
 }
 
@@ -538,8 +545,5 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let y = (y / SCALE) as i32;
     let tx = (x + mappy.scroll.0) / TILE_SIZE as i32;
     let ty = (y + mappy.scroll.1) / TILE_SIZE as i32;
-    (
-        tx,
-        ty,
-    )
+    (tx, ty)
 }

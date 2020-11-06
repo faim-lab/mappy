@@ -5,6 +5,7 @@ use crate::room::Room;
 use crate::screen::Screen;
 use crate::sprites::{self, SpriteData, SpriteTrack, SPRITE_COUNT};
 use crate::tile::{TileDB, TileGfx, TileGfxId, TILE_SIZE};
+use crate::time::Timers;
 use crate::{Rect, Time};
 use image::{ImageBuffer, Rgb};
 use libloading::Symbol;
@@ -33,6 +34,20 @@ enum MergePhase {
     Finalize,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Timing {
+    FBRead,
+    Scroll,
+    Track,
+    ReadScreen,
+    Control,
+    Register,
+    FinalizeRoom,
+    MergeCalc,
+    FinishMerge,
+}
+impl crate::time::TimerID for Timing {}
+
 pub struct MappyState {
     latch: ScrollLatch,
     pub tiles: Arc<RwLock<TileDB>>,
@@ -59,6 +74,7 @@ pub struct MappyState {
     maybe_control_change_time: Time,
     pub last_control: Time,
     pub last_controlled_scroll: (i32, i32),
+    pub timers: Timers<Timing>,
 }
 
 impl MappyState {
@@ -116,6 +132,7 @@ impl MappyState {
             metarooms: Merges::new(),
             room_merge_rx,
             room_merge_tx,
+            timers: Timers::new(),
         }
     }
 
@@ -168,7 +185,10 @@ impl MappyState {
 
     pub fn process_screen(&mut self, emu: &mut Emulator) {
         // Read new data from emulator
+        let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
+        t.stop();
+        let t = self.timers.timer(Timing::Scroll).start();
         self.get_changes(&emu);
 
         // What can we learn from hardware screen splitting operations?
@@ -187,13 +207,20 @@ impl MappyState {
             self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0) as i32,
             self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1) as i32,
         );
-
+        t.stop();
+        let t = self.timers.timer(Timing::ReadScreen).start();
         // Update current screen tile grid
         self.read_current_screen();
+        t.stop();
 
+        let t = self.timers.timer(Timing::Track).start();
         sprites::get_sprites(&emu, &mut self.live_sprites);
         // Relate current sprites to previous sprites
         self.track_sprites();
+        t.stop();
+
+        // Blob sprites together
+        //self.blob_sprites();
 
         // Do we have control?
         let had_control = self.has_control;
@@ -224,10 +251,12 @@ impl MappyState {
                 // }
                 self.finalize_current_room(true);
             } else {
+                let t = self.timers.timer(Timing::Register).start();
                 self.current_room
                     .as_mut()
                     .unwrap()
                     .register_screen(&self.current_screen, &mut self.tiles.write().unwrap());
+                t.stop();
             }
         } else if had_control {
             // dbg!("control loss", self.current_screen.region);
@@ -267,7 +296,9 @@ impl MappyState {
                     }
                     MergePhase::Finalize => {
                         //let room_meta = self.metarooms.insert(room_id);
+                        let t = self.timers.timer(Timing::FinishMerge).start();
                         self.metarooms.merge_new_room(room_id, &metas);
+                        t.stop();
                     }
                 }
             }
@@ -275,6 +306,7 @@ impl MappyState {
     }
     fn finalize_current_room(&mut self, start_new: bool) {
         // if we have control now and didn't before and the room changed significantly since then...
+        let t = self.timers.timer(Timing::FinalizeRoom).start();
         if self.current_room.is_some() {
             let mut old_room = if start_new {
                 let id = {
@@ -306,15 +338,18 @@ impl MappyState {
                 &mut self.tiles.write().unwrap(),
             ));
         }
+        t.stop();
     }
     fn kickoff_merge_calc(&self, room: Room, phase: MergePhase) {
         let tiles = Arc::clone(&self.tiles);
         let rooms = Arc::clone(&self.rooms);
         let mrs = self.metarooms.clone();
         let tx = Arc::clone(&self.room_merge_tx);
+        let timer = self.timers.timer(Timing::MergeCalc);
         THREADS_WAITING.fetch_add(1, Ordering::SeqCst);
         // TODO only do this if the current room histogram is different from last merge-checked room histogram
         spawn_fifo(move || {
+            let timer = timer.start();
             let merges = mrs
                 .metarooms()
                 .collect::<Vec<_>>()
@@ -334,6 +369,7 @@ impl MappyState {
                     }
                 })
                 .collect();
+            timer.stop();
             tx.send(DoMerge(phase, room.id, merges))
                 .expect("Couldn't send merge message");
             THREADS_WAITING.fetch_sub(1, Ordering::SeqCst);
@@ -385,6 +421,7 @@ impl MappyState {
         if self.now.0 % CONTROL_CHECK_INTERVAL != 0 {
             return;
         }
+        let t = self.timers.timer(Timing::Control).start();
         // every A frames...
         // We'll start with the expensive version and later try the cheaper version if that's too slow.
         // Expensive version:
@@ -464,6 +501,8 @@ impl MappyState {
         if self.has_control {
             self.last_control.0 = self.now.0 + 1;
         }
+
+        t.stop();
     }
 
     const CREATE_COST: u32 = 20;
