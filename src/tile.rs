@@ -147,8 +147,8 @@ impl Tile for TileChange {}
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct TileChangeData {
-    from: TileGfxId,
-    to: TileGfxId,
+    pub from: TileGfxId,
+    pub to: TileGfxId,
     successors: Vec<(TileGfxId, usize)>,
     count: usize,
 }

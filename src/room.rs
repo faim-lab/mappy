@@ -191,8 +191,8 @@ impl Room {
         let mut any1 = 0;
         let mut any2 = 0;
         let r = self.region();
-        let r2x = r2xo + x;
-        let r2y = r2yo + y;
+        let r2x = x-r2xo;
+        let r2y = y-r2yo;
         let mut cost = 0.0;
         //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
         for yo in 0..(r.h as i32) {
@@ -282,17 +282,17 @@ mod tests {
     #[test]
     fn test_get_screen_for() {
         let mut db = TileDB::new();
-        let r0 = Rect::new(5, 5, 20, 20);
-        let mut r = Room::new(0, &Screen::new(r0, &db.get_initial_tile()), &mut db);
+        let r0 = Rect::new(5, 5, 32, 32);
+        let mut r = Room::new(0, &Screen::new(r0, db.get_initial_tile()), &mut db);
         r.get_screen_for_or_add(5, 5, &db);
         assert_eq!(r.screens[r.get_screen_for(5, 5).unwrap()].region, r0);
         assert_eq!(r.screens.len(), 1);
-        r.get_screen_for_or_add(24, 24, &db);
+        r.get_screen_for_or_add(36, 36, &db);
         assert_eq!(r.screens[r.get_screen_for(24, 24).unwrap()].region, r0);
         assert_eq!(r.screens.len(), 1);
-        r.get_screen_for_or_add(25, 25, &db);
+        r.get_screen_for_or_add(37, 37, &db);
         assert_eq!(
-            r.screens[r.get_screen_for(25, 25).unwrap()].region,
+            r.screens[r.get_screen_for(37, 37).unwrap()].region,
             Rect::new(r0.x + r0.w as i32, r0.y + r0.h as i32, r0.w, r0.h)
         );
         assert_eq!(r.screens.len(), 2);
@@ -321,7 +321,7 @@ mod tests {
     fn test_get_screen_for_2() {
         let mut db = TileDB::new();
         let r0 = Rect::new(2, 29, 29, 27);
-        let mut r = Room::new(0, &Screen::new(r0, &db.get_initial_tile()), &mut db);
+        let mut r = Room::new(0, &Screen::new(r0, db.get_initial_tile()), &mut db);
         r.get_screen_for_or_add(-56, 29, &db);
         r.get_screen_for_or_add(-27, 29, &db);
         assert_eq!(r.screens.len(), 3);
@@ -331,16 +331,18 @@ mod tests {
     fn test_register() {
         use crate::tile::{TileGfx, TILE_NUM_PX};
         let mut db = TileDB::new();
-        let r0 = Rect::new(5, 5, 20, 20);
+        let r0 = Rect::new(5, 5, 32, 32);
         let t0 = db.get_initial_tile();
         let t1 = db.get_tile(TileGfx([1; TILE_NUM_PX]));
-        let s = Screen::new(r0, &t1);
+        let s = Screen::new(r0, t1);
         let mut r = Room::new(0, &s, &mut db);
 
         assert_eq!(r.screens.len(), 1);
         for y in s.region.y..(s.region.y + s.region.h as i32) {
             for x in s.region.x..(s.region.x + s.region.w as i32) {
-                let atile = r.screens[r.get_screen_for(x, y).unwrap()].get(x, y);
+                let atile = db
+                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()].get(x, y))
+                    .unwrap();
                 assert_eq!(atile.from, t0);
                 assert_eq!(atile.to, t1);
             }
@@ -349,7 +351,9 @@ mod tests {
         assert_eq!(r.screens.len(), 1);
         for y in s.region.y..(s.region.y + s.region.h as i32) {
             for x in s.region.x..(s.region.x + s.region.w as i32) {
-                let atile = r.screens[r.get_screen_for(x, y).unwrap()].get(x, y);
+                let atile = db
+                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()].get(x, y))
+                    .unwrap();
                 assert_eq!(atile.from, t0);
                 assert_eq!(atile.to, t1);
             }
@@ -358,14 +362,16 @@ mod tests {
         let t2 = db.get_tile(TileGfx([2; TILE_NUM_PX]));
         let s = Screen::new(
             Rect::new(r0.x - r0.w as i32 / 2, r0.y + r0.h as i32 / 2, r0.w, r0.h),
-            &t2,
+            t2,
         );
         r.register_screen(&s, &mut db);
 
         assert_eq!(r.screens.len(), 4);
         for y in s.region.y..(s.region.y + s.region.h as i32) {
             for x in s.region.x..(s.region.x + s.region.w as i32) {
-                let atile = r.screens[r.get_screen_for(x, y).unwrap()].get(x, y);
+                let atile = db
+                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()].get(x, y))
+                    .unwrap();
                 if x < r0.x || y >= r0.y + (r0.h as i32) {
                     assert_eq!(atile.from, t0);
                     assert_eq!(atile.to, t2);

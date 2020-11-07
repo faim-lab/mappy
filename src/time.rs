@@ -144,15 +144,15 @@ impl<T: TimerID> std::fmt::Display for Timers<T> {
             //count, min, mean, 95p, max
             let stats = self.queries(vec![
                 TimerQuery::Count(t),
-                TimerQuery::Min(t),
                 TimerQuery::Mean(t),
                 TimerQuery::Percentile(t, 95),
+                TimerQuery::Percentile(t, 99),
                 TimerQuery::Max(t),
                 TimerQuery::Sum(t)
             ]);
             write!(
                 f,
-                "{:?}({}) {} -- {} -- p95 {} -- {} :: {}\n",
+                "{:?}({}) mean {} -- p95 {} -- p99 {} -- max {} :: net {}\n",
                 t, stats[0], stats[1]*1000.0, stats[2]*1000.0, stats[3]*1000.0, stats[4]*1000.0, stats[5]*1000.0
             )?;
         }

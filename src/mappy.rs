@@ -24,6 +24,8 @@ use std::sync::{
     Arc, RwLock,
 };
 
+const DO_TEMP_MERGE_CHECKS:bool = true;
+
 static THREADS_WAITING: AtomicUsize = AtomicUsize::new(0);
 
 // Merge room ID into metarooms with given scores
@@ -232,23 +234,6 @@ impl MappyState {
                     > Self::SCREEN_ROOM_CHANGE_DIFF)
                 || self.current_room.is_none()
             {
-                // if let Some(r) = self.current_room.as_ref() {
-                //     assert!(
-                //         r.id < 3,
-                //         "Too many! {} - {}, diff {}\nr {:?} -- {:?}",
-                //         self.now.0,
-                //         last_control_time.0,
-                //         self.current_screen.difference(&self.last_control_screen),
-                //         self.current_screen.region,
-                //         self.last_control_screen.region
-                //     );
-                // } else {
-                //     assert!(
-                //         self.rooms.read().unwrap().len() <= 3,
-                //         "Strange none screen! {}",
-                //         self.now.0
-                //     );
-                // }
                 self.finalize_current_room(true);
             } else {
                 let t = self.timers.timer(Timing::Register).start();
@@ -262,7 +247,7 @@ impl MappyState {
             // dbg!("control loss", self.current_screen.region);
             self.last_control_screen.copy_from(&self.current_screen);
         }
-        if self.current_room.is_some() && self.now.0 % 300 == 0 {
+        if DO_TEMP_MERGE_CHECKS && self.current_room.is_some() && self.now.0 % 300 == 0 && THREADS_WAITING.load(Ordering::SeqCst) == 0 {
             //spawn room merge thing with self.room_merge_tx
             self.kickoff_merge_calc(
                 self.current_room.as_ref().unwrap().clone(),
@@ -323,10 +308,11 @@ impl MappyState {
                     .unwrap()
             } else {
                 let old_room = self.current_room.take().unwrap();
-                println!("Room end {}", old_room.id);
+                println!("Room end {}: {:?}", old_room.id, old_room.region());
                 old_room
             };
             old_room = old_room.finalize(self.tiles.read().unwrap().get_initial_change());
+            dbg!(old_room.region());
             self.kickoff_merge_calc(old_room.clone(), MergePhase::Finalize);
             self.rooms.write().unwrap().push(old_room);
         } else if start_new {
@@ -634,9 +620,18 @@ pub fn merge_cost(
     let ar = room.region();
     let br = {
         let rooms = rooms.read().unwrap();
-        let mut rect = rooms[metaroom[0].0].region();
-        for r in metaroom.iter().skip(1) {
-            rect = rect.union(&rooms[r.0].region());
+        let (rid, (x, y)) = metaroom[0];
+        let mut rect = Rect {
+            x,
+            y,
+            ..rooms[rid].region()
+        };
+        for &(rid, (x, y)) in metaroom.iter().skip(1) {
+            rect = rect.union(&Rect {
+                x,
+                y,
+                ..rooms[rid].region()
+            });
         }
         rect
     };

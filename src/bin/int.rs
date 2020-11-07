@@ -160,6 +160,11 @@ zxcvbnm,./ for debug displays"
             std::fs::create_dir_all("out/tiles").unwrap();
             mappy.dump_tiles(Path::new("out/tiles"));
         }
+        // if is_key_pressed(KeyCode::M) {
+        //      std::fs::remove_dir_all("out/rooms").unwrap_or(());
+        //      std::fs::create_dir_all("out/rooms").unwrap();
+        //      mappy.dump_rooms(Path::new("out/rooms"));
+        //  }
 
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let numkey = {
