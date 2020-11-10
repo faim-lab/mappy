@@ -88,10 +88,10 @@ impl MappyState {
     // 400 tiles are different (out of 32*30 = 960)
     const SCREEN_ROOM_CHANGE_DIFF: f32 = 400.0;
 
-    const BLOB_THRESHOLD:f32 = 1.0;
-    const BLOB_LOOKBACK:usize = 30;
+    const BLOB_THRESHOLD: f32 = 1.0;
+    const BLOB_LOOKBACK: usize = 30;
 
-    // 4 is a hack until the animation cycling thing is fixed and fractional scores are OK
+    // This is just an arbitrary value, not sure what a good one is!
     pub const ROOM_MERGE_THRESHOLD: f32 = 10.0;
 
     pub fn new(w: usize, h: usize) -> Self {
@@ -616,11 +616,26 @@ impl MappyState {
         // group track IDs together if they...
         //    tend to be touching
         //    tend to move in the same direction
-        let mut unassigned_tracks:Vec<_> = (0..self.live_tracks.len()).collect();
+        let mut unassigned_tracks: Vec<_> = (0..self.live_tracks.len()).collect();
         let mut assigned_tracks = Vec::with_capacity(self.live_tracks.len());
         unassigned_tracks.retain(|tx| {
             //find the blob t is best for
-            if let Some((bi,score)) = self.live_blobs.iter().enumerate().map(|(bi,b)| (bi,b.blob_score(&self.live_tracks[*tx], &self.live_tracks, Self::BLOB_LOOKBACK))).min_by(|(_b1,s1),(_b2,s2)| s1.partial_cmp(s2).unwrap()) {
+            if let Some((bi, score)) = self
+                .live_blobs
+                .iter()
+                .enumerate()
+                .map(|(bi, b)| {
+                    (
+                        bi,
+                        b.blob_score(
+                            &self.live_tracks[*tx],
+                            &self.live_tracks,
+                            Self::BLOB_LOOKBACK,
+                        ),
+                    )
+                })
+                .min_by(|(_b1, s1), (_b2, s2)| s1.partial_cmp(s2).unwrap())
+            {
                 if score < Self::BLOB_THRESHOLD {
                     assigned_tracks.push((*tx, bi));
                     // assign
@@ -642,25 +657,41 @@ impl MappyState {
             }
         }
         // for all assigned_tracks, push this track onto the blob
-        for (tx,bx) in assigned_tracks {
+        for (tx, bx) in assigned_tracks {
             self.live_blobs[bx].use_track(self.live_tracks[tx].id);
         }
 
         let mut blobbed = vec![];
         // for all still unassigned tracks, if any pair can be merged create a blob with them and see if any other unassigned tracks could merge in.
-        for (txi,&tx) in unassigned_tracks.iter().enumerate() {
-            if blobbed.contains(&txi) { continue; }
-            for (tyi,&ty) in unassigned_tracks.iter().enumerate().skip(txi+1) {
-                if blobbed.contains(&tyi) { continue; }
-                if SpriteBlob::blob_score_pair(&self.live_tracks[tx], &self.live_tracks[ty], Self::BLOB_LOOKBACK) < Self::BLOB_THRESHOLD {
-                    let mut blob = SpriteBlob::new(self.dead_blobs.len()+self.live_blobs.len());
+        for (txi, &tx) in unassigned_tracks.iter().enumerate() {
+            if blobbed.contains(&txi) {
+                continue;
+            }
+            for (tyi, &ty) in unassigned_tracks.iter().enumerate().skip(txi + 1) {
+                if blobbed.contains(&tyi) {
+                    continue;
+                }
+                if SpriteBlob::blob_score_pair(
+                    &self.live_tracks[tx],
+                    &self.live_tracks[ty],
+                    Self::BLOB_LOOKBACK,
+                ) < Self::BLOB_THRESHOLD
+                {
+                    let mut blob = SpriteBlob::new(self.dead_blobs.len() + self.live_blobs.len());
                     blob.use_track(self.live_tracks[tx].id);
                     blob.use_track(self.live_tracks[ty].id);
                     blobbed.push(txi);
                     blobbed.push(tyi);
-                    for (tzi, &tz) in unassigned_tracks.iter().enumerate().skip(tyi+1) {
-                        if blobbed.contains(&tzi) { continue; }
-                        if blob.blob_score(&self.live_tracks[tz], &self.live_tracks, Self::BLOB_LOOKBACK) < Self::BLOB_THRESHOLD {
+                    for (tzi, &tz) in unassigned_tracks.iter().enumerate().skip(tyi + 1) {
+                        if blobbed.contains(&tzi) {
+                            continue;
+                        }
+                        if blob.blob_score(
+                            &self.live_tracks[tz],
+                            &self.live_tracks,
+                            Self::BLOB_LOOKBACK,
+                        ) < Self::BLOB_THRESHOLD
+                        {
                             blob.use_track(self.live_tracks[tz].id);
                             blobbed.push(tzi);
                         }
