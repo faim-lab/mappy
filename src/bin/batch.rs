@@ -6,7 +6,7 @@ fn main() {
     use std::env;
     let mut emu = Emulator::create(
         Path::new("cores/fceumm_libretro"),
-        Path::new("roms/mario.nes"),
+        Path::new("roms/zelda.nes"),
     );
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -22,7 +22,7 @@ fn main() {
     let start = Instant::now();
     for (_i, input_pair) in inputs.iter().enumerate() {
         emu.run(*input_pair);
-        mappy.process_screen(&emu);
+        mappy.process_screen(&mut emu);
         // if i > 280 && i % 60 == 0 {
         // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
         // println!("Known tiles: {:?}", mappy.tiles.gfx_count());

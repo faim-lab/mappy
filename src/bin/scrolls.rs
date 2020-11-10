@@ -1,13 +1,14 @@
 use macroquad::*;
 use mappy::MappyState;
 use mappy::TILE_SIZE;
-use retro_rs::{Buttons, Emulator};
+use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 
 use std::io::{Read, Write};
 use std::path::Path;
-use std::time::Instant;
+// use std::time::Instant;
 
 const SCALE: f32 = 3.;
+const OUTPUT_INTERVAL: u64 = 19;
 
 fn window_conf() -> Conf {
     Conf {
@@ -19,61 +20,36 @@ fn window_conf() -> Conf {
     }
 }
 
-use argh::FromArgs;
-
-#[derive(FromArgs, PartialEq, Debug)]
-/// A command with positional arguments.
-struct Args {
-    #[argh(positional)]
-    /// won't allow Path, REMEMBER to turn String to Path later on!!
-    romfile: String,
-    #[argh(option, short = 'r')]
-    /// replay
-    replay: Option<String>,
-    #[argh(option, short = 's')]
-    /// save
-    save: Option<String>,
-}
-
 fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
-    let start = Instant::now();
-    for (frames, inp) in inputs.iter().enumerate() {
+    // let start = Instant::now();
+    for inp in inputs.iter() {
         emu.run(*inp);
         mappy.process_screen(emu);
-        if frames % 300 == 0 {
-            println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-            println!("Known tiles: {:?}", mappy.tiles.gfx_count());
-            println!(
-                "Net: {:} for {:} inputs, avg {:}",
-                start.elapsed().as_secs_f64(),
-                frames,
-                start.elapsed().as_secs_f64() / (frames as f64)
-            );
-        }
     }
 }
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    use chrono::Local;
     use std::env;
-    // running cargo run --bin int help will give instructions
-    let args: Args = argh::from_env();
-    let romfile: &str = &args.romfile;
-    dbg!(&args);
-
-    // creates path using romfile
-    let romname = Path::new(romfile);
-    // throws error if not a file
-    let rom = romname.file_stem().expect("No file name!");
-
-    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), romname);
+    let romfile = Path::new("roms/zelda.nes");
+    // "mario3"
+    let romname = romfile.file_stem().expect("No file name!");
+    let date_str = format!("{}", Local::now().format("%Y-%m-%d-%H-%M-%S"));
+    let image_folder = Path::new("images/")
+        .join(Path::new(&romname))
+        .join(Path::new(&date_str));
+    std::fs::create_dir_all(image_folder.clone()).unwrap_or_else(|_err| {});
+    let csv_path = Path::new("images/")
+        .join(Path::new(&romname))
+        .join(Path::new(&(date_str + ".csv")));
+    let mut csv = std::fs::File::create(csv_path).expect("Couldn't create CSV file");
+    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
-    let mut start_state = vec![0; emu.save_size()];
-    emu.save(&mut start_state);
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
     // So reset it afterwards
-    emu.load(&start_state);
+    emu.reset();
 
     assert_eq!((w, h), (256, 240));
 
@@ -86,40 +62,34 @@ async fn main() {
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
-
     let mut replay_index: usize = 0;
-    let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 300];
+    let speeds: [usize; 10] = [0, 1, 5, 15, 30, 60, 120, 240, 600, 6000];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
     let mut save_buf: Vec<u8> = Vec::with_capacity(emu.save_size());
     let args: Vec<_> = env::args().collect();
     let mut mappy = MappyState::new(w, h);
-    // let args: Vec<_> = env::args().collect();
-
-    // if let Some(input_path) = args.replay && let Some(save_path) = args.save {
-    // }
-    if let Some(input_path) = args.replay {
-        mappy::read_fm2(&mut replay_inputs, &Path::new(&input_path));
+    if args.len() > 1 {
+        mappy::read_fm2(&mut replay_inputs, &Path::new(&args[1]));
+        replay(&mut emu, &mut mappy, &replay_inputs);
+        inputs.extend(replay_inputs.drain(..));
     }
+    let mut sx = 0;
+    let mut sy = 0;
 
-    if let Some(save_path) = args.save {
-        mappy::save_fm2(&mut save_buf, &Path::new(&save_path))
-    }
+    // let start = Instant::now();
+    //     println!(
+    //         "Instructions
+    // op changes playback speed (O for 0fps, P for 60fps)
+    // wasd for directional movement
+    // gh for select/start
+    // j for run/throw fireball (when fiery)
+    // k for jump
+    // # for load inputs #
+    // shift-# for dump inputs #
 
-    match result {}
-    let start = Instant::now();
-    println!(
-        "Instructions
-op change playback speed (O for 0fps, P for 60fps)
-wasd for directional movement
-gh for select/start
-j for NES \"b\" button
-k for NES \"a\" button
-# for load inputs #
-shift-# for dump inputs #
-
-zxcvbnm,./ for debug displays"
-    );
+    // zxcvbnm,./ for debug displays"
+    //     );
     loop {
         // let frame_start = Instant::now();
         if is_key_down(KeyCode::Escape) {
@@ -143,14 +113,14 @@ zxcvbnm,./ for debug displays"
                 speed - 1
             };
 
-            println!("Speed {:?}", speed);
+        // println!("Speed {:?}", speed);
         } else if is_key_pressed(KeyCode::P) {
             speed = if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {
                 6
             } else {
                 (speed + 1).min(speeds.len() - 1)
             };
-            println!("Speed {:?}", speed);
+            // println!("Speed {:?}", speed);
         }
         if is_key_pressed(KeyCode::Z) {
             draw_grid = !draw_grid;
@@ -196,10 +166,10 @@ zxcvbnm,./ for debug displays"
             ));
             if shifted {
                 mappy::write_fm2(&inputs, &path);
-                println!("Dumped {}", n);
+            // println!("Dumped {}", n);
             } else {
                 // TODO clear mappy too?
-                emu.load(&start_state);
+                emu.reset();
                 frame_counter = 0;
                 inputs.clear();
                 replay_inputs.clear();
@@ -255,25 +225,23 @@ zxcvbnm,./ for debug displays"
                 emu.copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
             }
-            let had_control = mappy.has_control;
-            let old_control_time = mappy.last_control;
             mappy.process_screen(&mut emu);
             frame_counter += 1;
-            if mappy.has_control && !had_control {
-                println!(
-                    "Lost control for {} frames",
-                    mappy.now.0 - old_control_time.0
-                );
-            }
-            if frame_counter % 300 == 0 {
-                // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-                // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
-                println!(
-                    "Net: {:} for {:} inputs, avg {:}",
-                    start.elapsed().as_secs_f64(),
-                    frame_counter,
-                    start.elapsed().as_secs_f64() / (frame_counter as f64)
-                );
+            if frame_counter % OUTPUT_INTERVAL == 0 {
+                let fb_out = emu.create_imagebuffer();
+                fb_out
+                    .unwrap()
+                    .save(format!("{}/{}.png", image_folder.display(), frame_counter))
+                    .unwrap();
+                println!("{},{}", mappy.scroll.0 - sx, mappy.scroll.1 - sy);
+                csv.write_fmt(format_args!(
+                    "{},{}\n",
+                    mappy.scroll.0 - sx,
+                    mappy.scroll.1 - sy
+                ))
+                .expect("Couldn't write scroll data to csv");
+                sx = mappy.scroll.0;
+                sy = mappy.scroll.1;
             }
             accum -= 1.0;
         }
