@@ -1,8 +1,11 @@
 use crate::framebuffer::Framebuffer;
+// use crate::metaroom::Metaroom;
+use crate::metaroom::{Merges, MetaroomID};
 use crate::room::Room;
 use crate::screen::Screen;
-use crate::sprites::{self, SpriteData, SpriteTrack, SPRITE_COUNT};
+use crate::sprites::{self, SpriteBlob, SpriteData, SpriteTrack, SPRITE_COUNT};
 use crate::tile::{TileDB, TileGfx, TileGfxId, TILE_SIZE};
+use crate::time::Timers;
 use crate::{Rect, Time};
 use image::{ImageBuffer, Rgb};
 use libloading::Symbol;
@@ -14,9 +17,43 @@ mod splits;
 use splits::Split;
 mod matching;
 
+use crossbeam::channel::{unbounded, Receiver, Sender};
+use rayon::{prelude::*, spawn_fifo};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, RwLock,
+};
+
+const DO_TEMP_MERGE_CHECKS: bool = true;
+
+static THREADS_WAITING: AtomicUsize = AtomicUsize::new(0);
+
+// Merge room ID into metarooms with given scores
+struct DoMerge(MergePhase, usize, Vec<(MetaroomID, (i32, i32), f32)>);
+
+enum MergePhase {
+    Intermediate,
+    Finalize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum Timing {
+    FBRead,
+    Scroll,
+    Track,
+    Blob,
+    ReadScreen,
+    Control,
+    Register,
+    FinalizeRoom,
+    MergeCalc,
+    FinishMerge,
+}
+impl crate::time::TimerID for Timing {}
+
 pub struct MappyState {
     latch: ScrollLatch,
-    pub tiles: TileDB,
+    pub tiles: Arc<RwLock<TileDB>>,
     pub grid_align: (u8, u8),
     pub scroll: (i32, i32),
     pub has_control: bool,
@@ -24,33 +61,48 @@ pub struct MappyState {
     pub live_sprites: [SpriteData; SPRITE_COUNT],
     pub live_tracks: Vec<SpriteTrack>,
     dead_tracks: Vec<SpriteTrack>,
-    // last_inputs: [Buttons; INPUT_MEM],
+    pub live_blobs: Vec<SpriteBlob>,
+    dead_blobs: Vec<SpriteBlob>,
     pub current_screen: Screen<TileGfxId>,
     last_control_screen: Screen<TileGfxId>,
     fb: Framebuffer,
     state_buffer: Vec<u8>,
     changes: Vec<ScrollChange>,
     change_count: u32,
-    pub current_room: Room,
-    rooms: Vec<Room>,
+    pub current_room: Option<Room>,
+    pub rooms: Arc<RwLock<Vec<Room>>>,
+    pub metarooms: Merges,
+    room_merge_tx: Arc<Sender<DoMerge>>,
+    room_merge_rx: Receiver<DoMerge>,
     pub now: Time,
     maybe_control: bool,
     maybe_control_change_time: Time,
     pub last_control: Time,
     pub last_controlled_scroll: (i32, i32),
+    pub timers: Timers<Timing>,
 }
 
 impl MappyState {
-    const CONTROL_ROOM_CHANGE_THRESHOLD: usize = 60;
+    // 45 frames of no control
+    const CONTROL_ROOM_CHANGE_THRESHOLD: usize = 45;
+    // 400 tiles are different (out of 32*30 = 960)
     const SCREEN_ROOM_CHANGE_DIFF: f32 = 400.0;
+
+    const BLOB_THRESHOLD: f32 = 1.0;
+    const BLOB_LOOKBACK: usize = 30;
+
+    // This is just an arbitrary value, not sure what a good one is!
+    pub const ROOM_MERGE_THRESHOLD: f32 = 10.0;
+
     pub fn new(w: usize, h: usize) -> Self {
-        let mut db = TileDB::new();
+        let db = TileDB::new();
         let t0 = db.get_initial_tile();
-        let s0 = Screen::new(Rect::new(0, 0, 0, 0), &t0);
-        let room = Room::new(0, &s0, &mut db);
+        let s0 = Screen::new(Rect::new(0, 0, 0, 0), t0);
+        let (room_merge_tx, room_merge_rx) = unbounded();
+        let room_merge_tx = Arc::new(room_merge_tx);
         MappyState {
             latch: ScrollLatch::default(),
-            tiles: db,
+            tiles: Arc::new(RwLock::new(db)),
             grid_align: (0, 0),
             scroll: (0, 0),
             has_control: false,
@@ -77,22 +129,77 @@ impl MappyState {
             live_tracks: Vec::with_capacity(SPRITE_COUNT),
             // just for the current room
             dead_tracks: Vec::with_capacity(128),
+            live_blobs: vec![],
+            dead_blobs: vec![],
             // last_inputs: [Buttons::new(); INPUT_MEM],
             fb: Framebuffer::new(w, h),
             changes: Vec::with_capacity(32000),
             change_count: 0,
             current_screen: s0.clone(),
             last_control_screen: s0,
-            current_room: room,
-            rooms: vec![],
+            current_room: None,
+            rooms: Arc::new(RwLock::new(vec![])),
+            metarooms: Merges::new(),
+            room_merge_rx,
+            room_merge_tx,
+            timers: Timers::new(),
+        }
+    }
+
+    pub fn handle_reset(&mut self) {
+        self.finalize_current_room(false);
+        self.latch = ScrollLatch::default();
+        self.grid_align = (0, 0);
+        self.scroll = (0, 0);
+        self.has_control = false;
+        self.splits = [(
+            Split {
+                scanline: 0,
+                scroll_x: 0,
+                scroll_y: 0,
+            },
+            Split {
+                scanline: 240,
+                scroll_x: 0,
+                scroll_y: 0,
+            },
+        )];
+        self.now = Time(0);
+        self.last_control = Time(0);
+        self.maybe_control = false;
+        self.maybe_control_change_time = Time(0);
+        self.last_controlled_scroll = (0, 0);
+        self.live_sprites
+            .iter_mut()
+            .for_each(|s| *s = SpriteData::default());
+        self.live_tracks.clear();
+        self.dead_tracks.clear();
+        self.changes.clear();
+        self.change_count = 0;
+        let s0 = Screen::new(
+            Rect::new(0, 0, 0, 0),
+            self.tiles.read().unwrap().get_initial_tile(),
+        );
+        self.current_screen = s0.clone();
+        self.last_control_screen = s0;
+    }
+    // TODO return a "finalized mappy"
+    pub fn finish(&mut self) {
+        self.finalize_current_room(false);
+        self.process_merges();
+        while THREADS_WAITING.load(Ordering::SeqCst) != 0 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            self.process_merges();
         }
     }
 
     pub fn process_screen(&mut self, emu: &mut Emulator) {
         // Read new data from emulator
+        let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
+        t.stop();
+        let t = self.timers.timer(Timing::Scroll).start();
         self.get_changes(&emu);
-        sprites::get_sprites(&emu, &mut self.live_sprites);
 
         // What can we learn from hardware screen splitting operations?
         let (lo, hi, latch) = splits::get_main_split(&self.changes, self.latch, &self.fb);
@@ -110,46 +217,166 @@ impl MappyState {
             self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0) as i32,
             self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1) as i32,
         );
-
-        // Relate current sprites to previous sprites
-        self.track_sprites();
-
+        t.stop();
+        let t = self.timers.timer(Timing::ReadScreen).start();
         // Update current screen tile grid
         self.read_current_screen();
+        t.stop();
+
+        let t = self.timers.timer(Timing::Track).start();
+        sprites::get_sprites(&emu, &mut self.live_sprites);
+        // Relate current sprites to previous sprites
+        self.track_sprites();
+        t.stop();
+
+        let t = self.timers.timer(Timing::Blob).start();
+        self.blob_sprites();
+        t.stop();
 
         // Do we have control?
         let had_control = self.has_control;
         let last_control_time = self.last_control;
         self.determine_control(emu);
         if self.has_control {
-            if self.current_room.id == 0 {
-                self.current_room = Room::new(1, &self.current_screen, &mut self.tiles);
-            } else if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
+            if (self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
                 && self.current_screen.difference(&self.last_control_screen)
-                    > Self::SCREEN_ROOM_CHANGE_DIFF
+                    > Self::SCREEN_ROOM_CHANGE_DIFF)
+                || self.current_room.is_none()
             {
-                // if we have control now and didn't before and the room changed significantly since then...
-                let id = self.current_room.id + 1;
-                let old_room = std::mem::replace(
-                    &mut self.current_room,
-                    Room::new(id, &self.current_screen, &mut self.tiles),
-                );
-                println!("Room change {}", id);
-                self.rooms.push(old_room);
+                self.finalize_current_room(true);
             } else {
+                let t = self.timers.timer(Timing::Register).start();
                 self.current_room
-                    .register_screen(&self.current_screen, &mut self.tiles);
+                    .as_mut()
+                    .unwrap()
+                    .register_screen(&self.current_screen, &mut self.tiles.write().unwrap());
+                t.stop();
             }
         } else if had_control {
             // dbg!("control loss", self.current_screen.region);
             self.last_control_screen.copy_from(&self.current_screen);
         }
-
+        if DO_TEMP_MERGE_CHECKS
+            && self.current_room.is_some()
+            && self.now.0 % 300 == 0
+            && THREADS_WAITING.load(Ordering::SeqCst) == 0
+        {
+            //spawn room merge thing with self.room_merge_tx
+            self.kickoff_merge_calc(
+                self.current_room.as_ref().unwrap().clone(),
+                MergePhase::Intermediate,
+            );
+        }
+        self.process_merges();
         // Update `now`
         self.now.0 += 1;
     }
+    fn process_merges(&mut self) {
+        if !self.room_merge_rx.is_empty() {
+            //let mut metarooms = self.metarooms.write().unwrap();
+            while let Ok(DoMerge(phase, room_id, metas)) = self.room_merge_rx.try_recv() {
+                match phase {
+                    MergePhase::Intermediate => {
+                        for (metaroom, posn, cost) in metas {
+                            //metarooms[meta].merge_room(room_id, posn, cost);
+                            println!(
+                                "Temp merge {} with {:?}: {}@{:?}",
+                                room_id, metaroom, cost, posn
+                            );
+                            // println!(
+                            //     "RR:{:?}\nMRR:{:?}",
+                            //     self.current_room.as_ref().unwrap().region(),
+                            //     self.metarooms
+                            //         .metaroom(metaroom.0)
+                            //         .region(&(*self.rooms.read().unwrap()))
+                            // )
+                        }
+                    }
+                    MergePhase::Finalize => {
+                        //let room_meta = self.metarooms.insert(room_id);
+                        let t = self.timers.timer(Timing::FinishMerge).start();
+                        self.metarooms.merge_new_room(room_id, &metas);
+                        t.stop();
+                    }
+                }
+            }
+        }
+    }
+    fn finalize_current_room(&mut self, start_new: bool) {
+        // if we have control now and didn't before and the room changed significantly since then...
+        let t = self.timers.timer(Timing::FinalizeRoom).start();
+        if self.current_room.is_some() {
+            let mut old_room = if start_new {
+                let id = {
+                    let cur = self.current_room.as_ref().unwrap();
+                    cur.id + 1
+                };
+                println!("Enter room {}", id);
+                self.current_room
+                    .replace(Room::new(
+                        id,
+                        &self.current_screen,
+                        &mut self.tiles.write().unwrap(),
+                    ))
+                    .unwrap()
+            } else {
+                let old_room = self.current_room.take().unwrap();
+                println!("Room end {}: {:?}", old_room.id, old_room.region());
+                old_room
+            };
+            old_room = old_room.finalize(self.tiles.read().unwrap().get_initial_change());
+            dbg!(old_room.region());
+            self.kickoff_merge_calc(old_room.clone(), MergePhase::Finalize);
+            self.rooms.write().unwrap().push(old_room);
+        } else if start_new {
+            let id = self.rooms.read().unwrap().len();
+            println!("Room refresh {}", id);
+            self.current_room.replace(Room::new(
+                id,
+                &self.current_screen,
+                &mut self.tiles.write().unwrap(),
+            ));
+        }
+        t.stop();
+    }
+    fn kickoff_merge_calc(&self, room: Room, phase: MergePhase) {
+        let tiles = Arc::clone(&self.tiles);
+        let rooms = Arc::clone(&self.rooms);
+        let mrs = self.metarooms.clone();
+        let tx = Arc::clone(&self.room_merge_tx);
+        let timer = self.timers.timer(Timing::MergeCalc);
+        THREADS_WAITING.fetch_add(1, Ordering::SeqCst);
+        // TODO only do this if the current room histogram is different from last merge-checked room histogram
+        spawn_fifo(move || {
+            let timer = timer.start();
+            let merges = mrs
+                .metarooms()
+                .collect::<Vec<_>>()
+                .into_par_iter()
+                .filter_map(|metaroom| {
+                    // TODO make sure room has significant histogram overlap with at least one room in metaroom
+                    if let Some((p, c)) = merge_cost(
+                        &room,
+                        &metaroom.registrations,
+                        &rooms,
+                        &tiles,
+                        Self::ROOM_MERGE_THRESHOLD,
+                    ) {
+                        Some((metaroom.id, p, c))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            timer.stop();
+            tx.send(DoMerge(phase, room.id, merges))
+                .expect("Couldn't send merge message");
+            THREADS_WAITING.fetch_sub(1, Ordering::SeqCst);
+        });
+    }
 
     fn read_current_screen(&mut self) {
+        let mut tiles = self.tiles.write().unwrap();
         let region = self.split_region();
         self.current_screen = Screen::new(
             Rect::new(
@@ -158,7 +385,7 @@ impl MappyState {
                 region.w / (TILE_SIZE as u32),
                 region.h / (TILE_SIZE as u32),
             ),
-            &self.tiles.get_initial_tile(),
+            tiles.get_initial_tile(),
         );
         for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
             for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
@@ -177,7 +404,7 @@ impl MappyState {
                 // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
                 // }
                 self.current_screen.set(
-                    self.tiles.get_tile(tile),
+                    tiles.get_tile(tile),
                     (self.scroll.0 + x) / (TILE_SIZE as i32),
                     (self.scroll.1 + y) / (TILE_SIZE as i32),
                 );
@@ -186,13 +413,23 @@ impl MappyState {
     }
 
     fn determine_control(&mut self, emu: &mut Emulator) {
+<<<<<<< HEAD
         if self.now.0 % 7 != 0 {
             return;
         }
+=======
+        // should be long enough to fight momentum
+        const CONTROL_CHECK_K: usize = 17;
+        // should be odd
+        const CONTROL_CHECK_INTERVAL: usize = 7;
+        if self.now.0 % CONTROL_CHECK_INTERVAL != 0 {
+            return;
+        }
+        let t = self.timers.timer(Timing::Control).start();
+>>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
         // every A frames...
         // We'll start with the expensive version and later try the cheaper version if that's too slow.
         // Expensive version:
-        const K: usize = 10;
         // Save state S.
         if self.state_buffer.is_empty() {
             self.state_buffer = vec![0; emu.save_size()];
@@ -200,25 +437,40 @@ impl MappyState {
         emu.save(&mut self.state_buffer);
         // Apply down-left and b input for K frames
         // TODO: in mario 3 on the level select screen simultaneous presses sometimes cause no movement.  Consider random or alternating down and left and b presses?
-        let down_left_b = Buttons::new().down(true).left(true).b(true);
-        for _ in 0..K {
-            emu.run([down_left_b, Buttons::default()]);
+        let down_left = Buttons::new()
+            .down(true)
+            .left(true)
+            .b(self.now.0 % 2 == 0)
+            .a(self.now.0 % 2 == 1);
+        for _ in 0..CONTROL_CHECK_K {
+            emu.run([down_left, Buttons::default()]);
         }
+        // What can we learn from hardware screen splitting operations?
+        self.get_changes(&emu);
+        let latch = self.latch;
+        let (dl_splits, _latch) = splits::get_splits(&self.changes, latch);
         // Store positions of all sprites P1
         let mut sprites_dlb = [SpriteData::default(); SPRITE_COUNT];
         sprites::get_sprites(emu, &mut sprites_dlb);
         // Load state S.
         emu.load(&self.state_buffer);
         // Apply up-right and a input for K frames
-        let up_right_a = Buttons::new().up(true).right(true).a(true);
-        for _ in 0..K {
-            emu.run([up_right_a, Buttons::default()]);
+        let up_right = Buttons::new()
+            .up(true)
+            .right(true)
+            .a(self.now.0 % 2 == 0)
+            .b(self.now.0 % 2 == 1);
+        for _ in 0..CONTROL_CHECK_K {
+            emu.run([up_right, Buttons::default()]);
         }
+        self.get_changes(&emu);
+        let latch = self.latch;
+        let (ur_splits, _latch) = splits::get_splits(&self.changes, latch);
         // Store positions of all sprites P2
         let mut sprites_ura = [SpriteData::default(); SPRITE_COUNT];
         sprites::get_sprites(emu, &mut sprites_ura);
-        // If P1 != P2, we have control; otherwise we do not
-        if sprites_dlb != sprites_ura {
+        // If P1 != P2 or scroll different, we have control; otherwise we do not
+        if sprites_dlb != sprites_ura || dl_splits != ur_splits {
             if !self.maybe_control {
                 self.maybe_control_change_time = self.now;
             }
@@ -227,7 +479,8 @@ impl MappyState {
             self.maybe_control = false;
         }
         self.has_control = self.maybe_control
-            && (self.has_control || (self.now.0 - self.maybe_control_change_time.0 > K));
+            && (self.has_control
+                || (self.now.0 - self.maybe_control_change_time.0 > CONTROL_CHECK_K));
         // Load state S.
         emu.load(&self.state_buffer);
 
@@ -253,6 +506,8 @@ impl MappyState {
         if self.has_control {
             self.last_control.0 = self.now.0 + 1;
         }
+
+        t.stop();
     }
 
     const CREATE_COST: u32 = 20;
@@ -279,9 +534,31 @@ impl MappyState {
         use matching::{greedy_match, Match, MatchTo, Target};
         let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
+        let live_blobs = &mut self.live_blobs;
+        let mut dead_blob_ids = vec![];
         self.live_tracks.retain(|t| {
             if now.0 - t.last_observation_time().0 > Self::DESTROY_COAST {
+                let id = t.id;
+                // TODO this clone shouldn't be necessary
                 dead_tracks.push(t.clone());
+                // mark t as dead in all blobs using t;
+                // if the blob is empty kill it
+                for b in live_blobs.iter_mut() {
+                    b.kill_track(id);
+                    if b.is_dead() {
+                        dead_blob_ids.push(b.id);
+                    }
+                }
+                false
+            } else {
+                true
+            }
+        });
+        let dead_blobs = &mut self.dead_blobs;
+        self.live_blobs.retain(|b| {
+            if dead_blob_ids.contains(&b.id) {
+                // TODO this clone shouldn't be necessary
+                dead_blobs.push(b.clone());
                 false
             } else {
                 true
@@ -325,6 +602,7 @@ impl MappyState {
                     // println!("Create new {:?}", new);
                     _new_count += 1;
                     self.live_tracks.push(SpriteTrack::new(
+                        self.live_tracks.len() + self.dead_tracks.len(),
                         self.now,
                         self.scroll,
                         self.live_sprites[new],
@@ -337,6 +615,101 @@ impl MappyState {
                     self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[new]);
                 }
             }
+        }
+    }
+
+    fn blob_sprites(&mut self) {
+        // group track IDs together if they...
+        //    tend to be touching
+        //    tend to move in the same direction
+        let mut unassigned_tracks: Vec<_> = (0..self.live_tracks.len()).collect();
+        let mut assigned_tracks = Vec::with_capacity(self.live_tracks.len());
+        unassigned_tracks.retain(|tx| {
+            //find the blob t is best for
+            if let Some((bi, score)) = self
+                .live_blobs
+                .iter()
+                .enumerate()
+                .map(|(bi, b)| {
+                    (
+                        bi,
+                        b.blob_score(
+                            &self.live_tracks[*tx],
+                            &self.live_tracks,
+                            Self::BLOB_LOOKBACK,
+                        ),
+                    )
+                })
+                .min_by(|(_b1, s1), (_b2, s2)| s1.partial_cmp(s2).unwrap())
+            {
+                if score < Self::BLOB_THRESHOLD {
+                    assigned_tracks.push((*tx, bi));
+                    // assign
+                    false
+                } else {
+                    // remain unassigned
+                    true
+                }
+            } else {
+                // remain unassigned
+                true
+            }
+        });
+        // find all unassigned live tracks; if any belonged to a blob, remove it from the blob
+        for &tx in unassigned_tracks.iter() {
+            let id = self.live_tracks[tx].id;
+            for b in self.live_blobs.iter_mut() {
+                b.forget_track(id);
+            }
+        }
+        // for all assigned_tracks, push this track onto the blob
+        for (tx, bx) in assigned_tracks {
+            self.live_blobs[bx].use_track(self.live_tracks[tx].id);
+        }
+
+        let mut blobbed = vec![];
+        // for all still unassigned tracks, if any pair can be merged create a blob with them and see if any other unassigned tracks could merge in.
+        for (txi, &tx) in unassigned_tracks.iter().enumerate() {
+            if blobbed.contains(&txi) {
+                continue;
+            }
+            for (tyi, &ty) in unassigned_tracks.iter().enumerate().skip(txi + 1) {
+                if blobbed.contains(&tyi) {
+                    continue;
+                }
+                if SpriteBlob::blob_score_pair(
+                    &self.live_tracks[tx],
+                    &self.live_tracks[ty],
+                    Self::BLOB_LOOKBACK,
+                ) < Self::BLOB_THRESHOLD
+                {
+                    let mut blob = SpriteBlob::new(self.dead_blobs.len() + self.live_blobs.len());
+                    blob.use_track(self.live_tracks[tx].id);
+                    blob.use_track(self.live_tracks[ty].id);
+                    blobbed.push(txi);
+                    blobbed.push(tyi);
+                    for (tzi, &tz) in unassigned_tracks.iter().enumerate().skip(tyi + 1) {
+                        if blobbed.contains(&tzi) {
+                            continue;
+                        }
+                        if blob.blob_score(
+                            &self.live_tracks[tz],
+                            &self.live_tracks,
+                            Self::BLOB_LOOKBACK,
+                        ) < Self::BLOB_THRESHOLD
+                        {
+                            blob.use_track(self.live_tracks[tz].id);
+                            blobbed.push(tzi);
+                        }
+                    }
+                    self.live_blobs.push(blob);
+                }
+            }
+        }
+
+        // update centroids of all blobs
+        for b in self.live_blobs.iter_mut() {
+            b.update_position(self.now, &self.live_tracks);
         }
     }
 
@@ -363,7 +736,7 @@ impl MappyState {
     }
     pub fn dump_tiles(&self, root: &Path) {
         let mut buf = vec![0_u8; TILE_SIZE * TILE_SIZE * 3];
-        for (ti, tile) in self.tiles.gfx_iter().enumerate() {
+        for (ti, tile) in self.tiles.read().unwrap().gfx_iter().enumerate() {
             tile.write_rgb888(&mut buf);
             let img: ImageBuffer<Rgb<u8>, _> =
                 ImageBuffer::from_raw(TILE_SIZE as u32, TILE_SIZE as u32, &buf[..])
@@ -371,4 +744,87 @@ impl MappyState {
             img.save(root.join(format!("t{:}.png", ti))).unwrap();
         }
     }
+}
+
+pub fn merge_cost(
+    room: &Room,
+    metaroom: &[(usize, (i32, i32))],
+    rooms: &RwLock<Vec<Room>>,
+    tiles: &RwLock<TileDB>,
+    mut threshold: f32,
+) -> Option<((i32, i32), f32)> {
+    let mut best = None;
+    let ar = room.region();
+    let br = {
+        let rooms = rooms.read().unwrap();
+        let (rid, (x, y)) = metaroom[0];
+        let mut rect = Rect {
+            x,
+            y,
+            ..rooms[rid].region()
+        };
+        for &(rid, (x, y)) in metaroom.iter().skip(1) {
+            rect = rect.union(&Rect {
+                x,
+                y,
+                ..rooms[rid].region()
+            });
+        }
+        rect
+    };
+
+    let xover = (br.w as i32 / 2).min(ar.w as i32 / 2);
+    let yover = (br.h as i32 / 2).min(ar.h as i32 / 2);
+    let left = br.x + xover - (ar.w as i32);
+    let right = (br.x + br.w as i32) - xover;
+    let top = br.y + yover - (ar.h as i32);
+    let bot = (br.y + br.h as i32) - yover;
+    let num_rooms = metaroom.len();
+    for y in top..bot {
+        for x in left..right {
+            let mut cost = 0.0;
+            for r in metaroom.iter() {
+                let rooms = rooms.read().unwrap();
+                let room_b = &rooms[r.0];
+                let (rxo, rxy) = r.1;
+                let rbr = Rect {
+                    x: rxo,
+                    y: rxy,
+                    ..room_b.region()
+                };
+                if !rbr.overlaps(&Rect { x, y, ..ar }) {
+                    continue;
+                }
+                let tiles = tiles.read().unwrap();
+                cost += room.merge_cost_at(
+                    x,
+                    y,
+                    rxo,
+                    rxy,
+                    room_b,
+                    &tiles,
+                    threshold * num_rooms as f32 - cost,
+                ) / num_rooms as f32;
+
+                if cost >= threshold {
+                    break;
+                }
+            }
+            if cost < threshold {
+                threshold = cost;
+                best = Some(((x, y), cost));
+            }
+        }
+    }
+    // dbg!(self.id, best);
+    best
+    // for each registration of room.region() onto full, calculate difference across the rooms I have (going a row within each existing room at a time seems good, think about cache effects).  we want to take the best difference and throw away ones that get too bad.  One possibility is to go a row (or a room already in the metaroom, or a room/row combo) at a time and put that into a bnb kind of framework... since we want to find the best one.
+    // min_by might work...? but it calculates everything.  I'd like to filter_map and then min_by maybe, or have the min_by sometimes choose to dump in the threshold value + 1.0
+
+    // go through full, registering room at different offsets; bailing out each difference calculation once it gets too big (check every row or col or something).
+    // see how room's set of seen changes intersects with each r in self.rooms's... if empty skip it
+    // get cost of registering room onto it at best posn
+    //   (this is the weighted average of cost of registering at posn wrt all other rooms in the metaroom)
+    //      cost of registering ra in rb at posn is just existing room difference but with rects aligned appropriately and out of bounds spots ignored (also maybe taking change cycles into account)
+    //   bail out if cost exceeds ROOM_MERGE_THRESHOLD
 }

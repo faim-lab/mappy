@@ -1,6 +1,5 @@
 use macroquad::*;
-use mappy::MappyState;
-use mappy::TILE_SIZE;
+use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
 
 use std::io::{Read, Write};
@@ -42,7 +41,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
         mappy.process_screen(emu);
         if frames % 300 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-            println!("Known tiles: {:?}", mappy.tiles.gfx_count());
+            println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
             println!(
                 "Net: {:} for {:} inputs, avg {:}",
                 start.elapsed().as_secs_f64(),
@@ -56,6 +55,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
 #[macroquad::main(window_conf)]
 async fn main() {
     use std::env;
+<<<<<<< HEAD
     // running cargo run --bin int help will give instructions
     let args: Args = argh::from_env();
     let romfile: &str = &args.romfile;
@@ -65,11 +65,20 @@ async fn main() {
     let romname = Path::new(romfile);
     // throws error if not a file
     let rom = romname.file_stem().expect("No file name!");
+=======
+    let args: Vec<_> = env::args().collect();
+
+    let romfile = Path::new(args[1].as_str());
+    // "mario3"
+    let romname = romfile.file_stem().expect("No file name!");
+>>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
 
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), romname);
     // Have to run emu for one frame before we can get the framebuffer size
     let mut start_state = vec![0; emu.save_size()];
+    let mut save_buf = vec![0; emu.save_size()];
     emu.save(&mut start_state);
+    emu.save(&mut save_buf);
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
     // So reset it afterwards
@@ -83,6 +92,7 @@ async fn main() {
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
+    let mut draw_merge_diff: Option<usize> = None;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
@@ -91,9 +101,8 @@ async fn main() {
     let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 300];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
-    let mut save_buf: Vec<u8> = Vec::with_capacity(emu.save_size());
-    let args: Vec<_> = env::args().collect();
     let mut mappy = MappyState::new(w, h);
+<<<<<<< HEAD
     // let args: Vec<_> = env::args().collect();
 
     // if let Some(input_path) = args.replay && let Some(save_path) = args.save {
@@ -104,6 +113,12 @@ async fn main() {
 
     if let Some(save_path) = args.save {
         mappy::save_fm2(&mut save_buf, &Path::new(&save_path))
+=======
+    if args.len() > 2 {
+        mappy::read_fm2(&mut replay_inputs, &Path::new(&args[2]));
+        replay(&mut emu, &mut mappy, &replay_inputs);
+        inputs.extend(replay_inputs.drain(..));
+>>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
     }
 
     match result {}
@@ -161,6 +176,38 @@ zxcvbnm,./ for debug displays"
         if is_key_pressed(KeyCode::C) {
             draw_live_tracks = !draw_live_tracks;
         }
+        if is_key_pressed(KeyCode::V) {
+            draw_merge_diff = match draw_merge_diff {
+                None => None,
+                Some(0) => None,
+                Some(n) => Some(n - 1),
+            };
+            println!("Diff vs {:?}", draw_merge_diff);
+        }
+        if is_key_pressed(KeyCode::B) {
+            draw_merge_diff = match draw_merge_diff {
+                None => Some(0),
+                Some(n) => {
+                    if mappy.metarooms.len() == n + 1 {
+                        Some(n)
+                    } else {
+                        Some(n + 1)
+                    }
+                }
+            };
+            println!("Diff vs {:?}", draw_merge_diff);
+        }
+
+        if is_key_pressed(KeyCode::N) {
+            std::fs::remove_dir_all("out/tiles").unwrap_or(());
+            std::fs::create_dir_all("out/tiles").unwrap();
+            mappy.dump_tiles(Path::new("out/tiles"));
+        }
+        // if is_key_pressed(KeyCode::M) {
+        //      std::fs::remove_dir_all("out/rooms").unwrap_or(());
+        //      std::fs::create_dir_all("out/rooms").unwrap();
+        //      mappy.dump_rooms(Path::new("out/rooms"));
+        //  }
 
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let numkey = {
@@ -200,6 +247,7 @@ zxcvbnm,./ for debug displays"
             } else {
                 // TODO clear mappy too?
                 emu.load(&start_state);
+                mappy.handle_reset();
                 frame_counter = 0;
                 inputs.clear();
                 replay_inputs.clear();
@@ -224,8 +272,9 @@ zxcvbnm,./ for debug displays"
                 romname.to_str().expect("rom name not a valid utf-8 string")
             ));
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
-            assert_eq!(file.read_to_end(&mut save_buf).unwrap(), emu.save_size());
+            file.read_exact(&mut save_buf).unwrap();
             emu.load(&save_buf);
+            mappy.handle_reset();
         }
 
         // f/s * s = how many frames
@@ -347,6 +396,58 @@ zxcvbnm,./ for debug displays"
                 }
             }
         }
+
+        if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
+            let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
+            if shifted {
+                println!(
+                    "{},{}  csr {:?}\nsr {:?}\nsc {:?}\ncrr {:?}",
+                    tx,
+                    ty,
+                    mappy.current_screen.region,
+                    mappy.split_region(),
+                    mappy.scroll,
+                    mappy.current_room.as_ref().unwrap().region()
+                );
+            }
+            let change = mappy.current_room.as_ref().unwrap().get(tx, ty);
+            let tiles = mappy.tiles.read().unwrap();
+            let change_data = tiles.get_change_by_id(change);
+            // todo print screen tile gfx at this position
+            println!("{},{} -- {:?},{:?}", tx, ty, change, change_data);
+        }
+        if let Some(mr) = draw_merge_diff {
+            let cur = &mappy.current_room;
+            if let Some(cur) = cur {
+                let mr = mappy.metarooms.metaroom(mr);
+                let regs = &mr.registrations;
+                let rooms = mappy.rooms.read().unwrap();
+                let regs: Vec<_> = regs
+                    .iter()
+                    .map(|(room_id, pos)| (&rooms[*room_id], pos))
+                    .collect();
+                let x = 0;
+                let y = 0;
+                let mut cost = 0.0;
+                for (room_b, (rxo, rxy)) in regs.iter() {
+                    let tiles = mappy.tiles.read().unwrap();
+                    cost += debug_merge_cost_at(
+                        (mappy.scroll.0 - 8, mappy.scroll.1 - 32),
+                        cur,
+                        x,
+                        y,
+                        *rxo,
+                        *rxy,
+                        room_b,
+                        &tiles,
+                        MappyState::ROOM_MERGE_THRESHOLD * regs.len() as f32 - cost,
+                    ) / regs.len() as f32;
+                }
+                if frame_counter % 3 == 0 {
+                    println!("Cost: {}@{:?}\n{:?} -- {:?}\n", cost, (x,y),cur.region(), mappy::Rect{x:regs[0].1.0, y:regs[0].1.1, ..regs[0].0.region()});
+                }
+            }
+        }
         if draw_live_tracks {
             for track in mappy.live_tracks.iter() {
                 let col = Color::new(
@@ -396,5 +497,101 @@ zxcvbnm,./ for debug displays"
         //     ::std::thread::sleep(frame_interval - elapsed);
         // }
     }
+    mappy.finish();
+    println!("{}",mappy.timers);
     //mappy.dump_tiles(Path::new("out/"));
+}
+
+fn debug_merge_cost_at(
+    scroll: (i32, i32),
+    this: &Room,
+    x: i32,
+    y: i32,
+    r2xo: i32,
+    r2yo: i32,
+    room: &Room,
+    tiles: &TileDB,
+    threshold: f32,
+) -> f32 {
+    let mut any1 = 0;
+    let mut any2 = 0;
+    let r = this.region();
+    let r2x = r2xo + x;
+    let r2y = r2yo + y;
+    let mut cost = 0.0;
+    //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
+    for yo in 0..(r.h as i32) {
+        for xo in 0..(r.w as i32) {
+            // TODO make this more cache friendly, should be able to read a row at a time; room could be a different data structure?
+            let s1x = r.x + xo;
+            let s1y = r.y + yo;
+            let screen = this.get_screen_for(s1x, s1y);
+            let s2x = r2x + xo;
+            let s2y = r2y + yo;
+            let screen2 = room.get_screen_for(s2x, s2y);
+            any1 += if screen.is_some() { 1 } else { 0 };
+            any2 += if screen2.is_some() { 1 } else { 0 };
+            assert!(
+                screen.is_some(),
+                "r1 {:?}\noff {},{}\nr2 {:?}\noff {},{}\nat {},{}\nposns {:?} -vs- {:?}",
+                this.region(),
+                x,
+                y,
+                room.region(),
+                r2x,
+                r2y,
+                xo,
+                yo,
+                (s1x, s1y),
+                (s2x, s2y)
+            );
+            cost += match (screen, screen2) {
+                (Some(screen), Some(screen2)) => {
+                    // println!("compare");
+                    // TODO if tiles.compatible(..., ...)
+                    let c = tiles.change_cost(
+                        this.screens[screen].get(s1x, s1y),
+                        room.screens[screen2].get(s2x, s2y),
+                    );
+                    draw_rectangle(
+                        (((xo * TILE_SIZE as i32) - scroll.0) as f32 * SCALE) as f32,
+                        (((yo * TILE_SIZE as i32) - scroll.1) as f32 * SCALE) as f32,
+                        TILE_SIZE as f32 * SCALE,
+                        TILE_SIZE as f32 * SCALE,
+                        Color::new(1.0, 0.0, 0.0, c),
+                    );
+                    c
+                }
+                _ => 0.0,
+            };
+        }
+        if cost > threshold {
+            break;
+        }
+    }
+    assert!(
+        any1 > 0,
+        "a1 {:?}-{:?} {:?} {:?}",
+        r,
+        (x, y),
+        room.region(),
+        cost
+    );
+    assert!(
+        any2 > 0,
+        "a2 {:?}-{:?} {:?} {:?}",
+        r,
+        (x, y),
+        room.region(),
+        cost
+    );
+    cost
+}
+
+fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
+    let x = (x / SCALE) as i32;
+    let y = (y / SCALE) as i32;
+    let tx = (x + mappy.scroll.0) / TILE_SIZE as i32;
+    let ty = (y + mappy.scroll.1) / TILE_SIZE as i32;
+    (tx, ty)
 }

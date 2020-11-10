@@ -170,6 +170,7 @@ async fn main() {
             } else {
                 // TODO clear mappy too?
                 emu.reset();
+                mappy.handle_reset();
                 frame_counter = 0;
                 inputs.clear();
                 replay_inputs.clear();
@@ -196,6 +197,7 @@ async fn main() {
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
             assert_eq!(file.read_to_end(&mut save_buf).unwrap(), emu.save_size());
             emu.load(&save_buf);
+            mappy.handle_reset();
         }
 
         // f/s * s = how many frames
@@ -233,7 +235,12 @@ async fn main() {
                     .unwrap()
                     .save(format!("{}/{}.png", image_folder.display(), frame_counter))
                     .unwrap();
-                println!("{},{}", mappy.scroll.0 - sx, mappy.scroll.1 - sy);
+                println!(
+                    "{},{},{}",
+                    frame_counter,
+                    mappy.scroll.0 - sx,
+                    mappy.scroll.1 - sy
+                );
                 csv.write_fmt(format_args!(
                     "{},{}\n",
                     mappy.scroll.0 - sx,
@@ -364,5 +371,6 @@ async fn main() {
         //     ::std::thread::sleep(frame_interval - elapsed);
         // }
     }
+    mappy.finish();
     //mappy.dump_tiles(Path::new("out/"));
 }

@@ -106,12 +106,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c478836e029dcef17fb47c89023448c64f781a046e0300e257ad8225ae59afab"
 
 [[package]]
+name = "const_fn"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce90df4c658c62f12d78f7508cf92f9173e5184a539c10bfe54a3107b3ffd0f2"
+
+[[package]]
 name = "crc32fast"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81156fece84ab6a9f2afdb109ce3ae577e42b1228441eded99bd77f627953b1a"
 dependencies = [
+<<<<<<< HEAD
  "cfg-if 1.0.0",
+=======
+ "cfg-if 0.1.10",
+]
+
+[[package]]
+name = "crossbeam"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd01a6eb3daaafa260f6fc94c3a6c36390abc2080e38e3e34ced87393fb77d80"
+dependencies = [
+ "cfg-if 1.0.0",
+ "crossbeam-channel",
+ "crossbeam-deque",
+ "crossbeam-epoch",
+ "crossbeam-queue",
+ "crossbeam-utils",
+>>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
 ]
 
 [[package]]
@@ -147,6 +171,16 @@ dependencies = [
  "lazy_static",
  "memoffset",
  "scopeguard",
+]
+
+[[package]]
+name = "crossbeam-queue"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b2a58563f049aa3bae172bc4120f093b5901161c629f280a1f40ba55317d774"
+dependencies = [
+ "cfg-if 1.0.0",
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -308,7 +342,11 @@ version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1090080fe06ec2648d0da3881d9453d97e71a45f00eb179af7fdd7e3f686fdb0"
 dependencies = [
+<<<<<<< HEAD
  "cfg-if 1.0.0",
+=======
+ "cfg-if 0.1.10",
+>>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
  "winapi",
 ]
 
@@ -352,12 +390,14 @@ version = "0.1.0"
 dependencies = [
  "argh",
  "chrono",
+ "crossbeam",
  "id-arena",
  "image 0.21.3",
  "itertools",
  "libc",
  "libloading",
  "macroquad",
+ "rayon",
  "retro-rs",
  "uuid",
 ]

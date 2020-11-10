@@ -77,12 +77,14 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
 // TODO return list of overlapping sprites
 pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[SpriteData]) -> bool {
     for s in sprites.iter().filter(|s| s.is_valid()) {
+        // a1 < b2
+        // a2 < b1
         if x <= s.x as usize + s.width() as usize
             && s.x as usize <= x + w
-            // this is because a sprite is drawn on the scanline -after- its y value? I think?
-            && y <= (s.y+1) as usize + s.height() as usize
-            // could be s.y+1 but we'll keep it more generous just to be safe
-            && s.y as usize <= y + h
+            // this +1 is because a sprite is drawn on the scanline -after- its y value? I think?
+            && y <= s.y as usize + s.height() as usize + 1
+            // could be s.y but we'll keep it more generous just to be safe
+            && s.y as usize <= y + h + 1
         {
             return true;
         }
@@ -93,8 +95,12 @@ pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[Spr
 #[derive(Clone)]
 pub struct At(pub Time, pub (i32, i32), pub SpriteData);
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct TrackID(usize);
+
 #[derive(Clone)]
 pub struct SpriteTrack {
+    pub id: TrackID,
     pub positions: Vec<At>,
     // TODO measure against vecs or even arrays?
     pub patterns: HashSet<u8>,
@@ -103,8 +109,9 @@ pub struct SpriteTrack {
 }
 
 impl SpriteTrack {
-    pub fn new(t: Time, scroll: (i32, i32), sd: SpriteData) -> Self {
+    pub fn new(id: usize, t: Time, scroll: (i32, i32), sd: SpriteData) -> Self {
         let mut ret = Self {
+            id: TrackID(id),
             positions: vec![],
             patterns: HashSet::new(),
             tables: HashSet::new(),
@@ -131,6 +138,10 @@ impl SpriteTrack {
         let At(_, (sx, sy), sd) = &self.positions[0];
         (sx + sd.x as i32, sy + sd.y as i32)
     }
+    pub fn current_point(&self) -> (i32, i32) {
+        let At(_, (sx, sy), sd) = &self.positions.last().unwrap();
+        (sx + sd.x as i32, sy + sd.y as i32)
+    }
     pub fn seen_pattern(&self, pat: u8) -> bool {
         self.patterns.contains(&pat)
     }
@@ -139,5 +150,77 @@ impl SpriteTrack {
     }
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlobID(usize);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpriteBlob {
+    pub id: BlobID,
+    pub positions: Vec<(Time, i32, i32)>,
+    pub live_tracks: Vec<TrackID>,
+    pub dead_tracks: Vec<TrackID>,
+}
+
+impl SpriteBlob {
+    pub fn new(id: usize) -> Self {
+        Self {
+            id: BlobID(id),
+            positions: vec![],
+            live_tracks: vec![],
+            dead_tracks: vec![],
+        }
+    }
+    pub fn contains_live_track(&self, ti: TrackID) -> bool {
+        self.live_tracks.contains(&ti)
+    }
+    pub fn forget_track(&mut self, ti: TrackID) {
+        if let Some(p) = self.live_tracks.iter().position(|&t| t == ti) {
+            self.live_tracks.swap_remove(p);
+        }
+    }
+    pub fn kill_track(&mut self, t: TrackID) {
+        if let Some(idx) = self.live_tracks.iter().position(|ti| *ti == t) {
+            self.live_tracks.swap_remove(idx);
+            self.dead_tracks.push(t);
+        }
+    }
+    pub fn is_dead(&self) -> bool {
+        self.live_tracks.is_empty()
+    }
+    pub fn blob_score_pair(t1: &SpriteTrack, t2: &SpriteTrack, lookback: usize) -> f32 {
+        // closeness score: 0 if touching over lookback and diff ID, 100 otherwise; use min among all self.live tracks with id != t.id
+        // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
+        // closeness + moving
+        100.0
+    }
+    pub fn blob_score(&self, t: &SpriteTrack, all_tracks: &[SpriteTrack], lookback: usize) -> f32 {
+        // closeness score: 0 if touching, 100 otherwise; use min among all self.live tracks with id != t.id
+        // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
+        // closeness + moving
+        // return min blob score of all of self.live_tracks with id != t.id
+        100.0
+    }
+    pub fn use_track(&mut self, t: TrackID) {
+        // add to live if not present
+        if !self.live_tracks.contains(&t) {
+            self.live_tracks.push(t);
+        }
+    }
+    pub fn update_position(&mut self, t: Time, tracks: &[SpriteTrack]) {
+        let tl = self.live_tracks.len() as i32;
+        self.positions.push(
+            self.live_tracks
+                .iter()
+                .fold((t, 0, 0), |(t, ax, ay), &tid| {
+                    let (bx, by) = tracks
+                        .iter()
+                        .find(|&tk| tk.id == tid)
+                        .unwrap()
+                        .current_point();
+                    (t, ax + bx / tl, ay + by / tl)
+                }),
+        );
     }
 }

@@ -8,19 +8,38 @@ pub struct Screen<T: Tile> {
 }
 
 impl<T: Tile> Screen<T> {
-    pub fn new(region: Rect, tile: &T) -> Self {
+    pub fn new(region: Rect, tile: T) -> Self {
         Self {
             region,
-            tiles: vec![*tile; region.w as usize * region.h as usize].into_boxed_slice(),
+            tiles: vec![tile; region.w as usize * region.h as usize].into_boxed_slice(),
         }
     }
     #[inline(always)]
-    pub fn get(&self, x: i32, y: i32) -> &T {
-        &self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize]
+    pub fn get(&self, x: i32, y: i32) -> T {
+        self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize]
     }
     #[inline(always)]
     pub fn set(&mut self, t: T, x: i32, y: i32) {
         self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize] = t;
+    }
+    pub fn combine(screens: Vec<Screen<T>>, init: T) -> Screen<T> {
+        let mut r = screens[0].region;
+        for Screen { region, .. } in screens.iter().skip(1) {
+            r = r.union(&region);
+        }
+        let mut s = Screen::new(r, init);
+        for s2 in screens {
+            for y in s2.region.y..(s2.region.y + s2.region.h as i32) {
+                for x in s2.region.x..(s2.region.x + s2.region.w as i32) {
+                    s.set(s2.get(x, y), x, y);
+                }
+            }
+        }
+        s
+    }
+    pub fn reregister_at(&mut self, x: i32, y: i32) {
+        self.region.x = x;
+        self.region.y = y;
     }
     pub fn copy_from(&mut self, s: &Self) {
         if self.region.w != s.region.w || self.region.h != s.region.h {

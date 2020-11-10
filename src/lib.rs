@@ -1,10 +1,13 @@
 #![allow(clippy::many_single_char_names)]
 mod framebuffer;
 mod mappy;
-mod room;
+mod metaroom;
+pub mod room;
 mod screen;
 mod sprites;
-mod tile;
+pub mod tile;
+pub mod time;
+mod uf;
 pub use crate::mappy::*;
 use retro_rs::Buttons;
 pub use sprites::At;
@@ -29,6 +32,12 @@ impl Rect {
     #[inline(always)]
     pub fn contains(&self, x: i32, y: i32) -> bool {
         self.x <= x && x < self.x + self.w as i32 && self.y <= y && y < self.y + self.h as i32
+    }
+    pub fn overlaps(&self, r: &Rect) -> bool {
+        self.x < (r.x + r.w as i32)
+            && r.x < (self.x + self.w as i32)
+            && self.y < (r.y + r.h as i32)
+            && r.y < (self.y + self.h as i32)
     }
     pub fn union(&self, other: &Rect) -> Rect {
         let x0 = self.x.min(other.x);
