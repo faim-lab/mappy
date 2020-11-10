@@ -3,7 +3,7 @@ use crate::framebuffer::Framebuffer;
 use crate::metaroom::{Merges, MetaroomID};
 use crate::room::Room;
 use crate::screen::Screen;
-use crate::sprites::{self, SpriteData, SpriteTrack, SPRITE_COUNT};
+use crate::sprites::{self, SpriteBlob, SpriteData, SpriteTrack, SPRITE_COUNT};
 use crate::tile::{TileDB, TileGfx, TileGfxId, TILE_SIZE};
 use crate::time::Timers;
 use crate::{Rect, Time};
@@ -24,7 +24,7 @@ use std::sync::{
     Arc, RwLock,
 };
 
-const DO_TEMP_MERGE_CHECKS:bool = true;
+const DO_TEMP_MERGE_CHECKS: bool = true;
 
 static THREADS_WAITING: AtomicUsize = AtomicUsize::new(0);
 
@@ -41,6 +41,7 @@ pub enum Timing {
     FBRead,
     Scroll,
     Track,
+    Blob,
     ReadScreen,
     Control,
     Register,
@@ -60,6 +61,8 @@ pub struct MappyState {
     pub live_sprites: [SpriteData; SPRITE_COUNT],
     pub live_tracks: Vec<SpriteTrack>,
     dead_tracks: Vec<SpriteTrack>,
+    pub live_blobs: Vec<SpriteBlob>,
+    dead_blobs: Vec<SpriteBlob>,
     pub current_screen: Screen<TileGfxId>,
     last_control_screen: Screen<TileGfxId>,
     fb: Framebuffer,
@@ -84,6 +87,9 @@ impl MappyState {
     const CONTROL_ROOM_CHANGE_THRESHOLD: usize = 45;
     // 400 tiles are different (out of 32*30 = 960)
     const SCREEN_ROOM_CHANGE_DIFF: f32 = 400.0;
+
+    const BLOB_THRESHOLD:f32 = 1.0;
+    const BLOB_LOOKBACK:usize = 30;
 
     // 4 is a hack until the animation cycling thing is fixed and fractional scores are OK
     pub const ROOM_MERGE_THRESHOLD: f32 = 10.0;
@@ -123,6 +129,8 @@ impl MappyState {
             live_tracks: Vec::with_capacity(SPRITE_COUNT),
             // just for the current room
             dead_tracks: Vec::with_capacity(128),
+            live_blobs: vec![],
+            dead_blobs: vec![],
             // last_inputs: [Buttons::new(); INPUT_MEM],
             fb: Framebuffer::new(w, h),
             changes: Vec::with_capacity(32000),
@@ -221,8 +229,9 @@ impl MappyState {
         self.track_sprites();
         t.stop();
 
-        // Blob sprites together
-        //self.blob_sprites();
+        let t = self.timers.timer(Timing::Blob).start();
+        self.blob_sprites();
+        t.stop();
 
         // Do we have control?
         let had_control = self.has_control;
@@ -247,7 +256,11 @@ impl MappyState {
             // dbg!("control loss", self.current_screen.region);
             self.last_control_screen.copy_from(&self.current_screen);
         }
-        if DO_TEMP_MERGE_CHECKS && self.current_room.is_some() && self.now.0 % 300 == 0 && THREADS_WAITING.load(Ordering::SeqCst) == 0 {
+        if DO_TEMP_MERGE_CHECKS
+            && self.current_room.is_some()
+            && self.now.0 % 300 == 0
+            && THREADS_WAITING.load(Ordering::SeqCst) == 0
+        {
             //spawn room merge thing with self.room_merge_tx
             self.kickoff_merge_calc(
                 self.current_room.as_ref().unwrap().clone(),
@@ -515,9 +528,31 @@ impl MappyState {
         use matching::{greedy_match, Match, MatchTo, Target};
         let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
+        let live_blobs = &mut self.live_blobs;
+        let mut dead_blob_ids = vec![];
         self.live_tracks.retain(|t| {
             if now.0 - t.last_observation_time().0 > Self::DESTROY_COAST {
+                let id = t.id;
+                // TODO this clone shouldn't be necessary
                 dead_tracks.push(t.clone());
+                // mark t as dead in all blobs using t;
+                // if the blob is empty kill it
+                for b in live_blobs.iter_mut() {
+                    b.kill_track(id);
+                    if b.is_dead() {
+                        dead_blob_ids.push(b.id);
+                    }
+                }
+                false
+            } else {
+                true
+            }
+        });
+        let dead_blobs = &mut self.dead_blobs;
+        self.live_blobs.retain(|b| {
+            if dead_blob_ids.contains(&b.id) {
+                // TODO this clone shouldn't be necessary
+                dead_blobs.push(b.clone());
                 false
             } else {
                 true
@@ -561,6 +596,7 @@ impl MappyState {
                     // println!("Create new {:?}", new);
                     _new_count += 1;
                     self.live_tracks.push(SpriteTrack::new(
+                        self.live_tracks.len() + self.dead_tracks.len(),
                         self.now,
                         self.scroll,
                         self.live_sprites[new],
@@ -573,6 +609,70 @@ impl MappyState {
                     self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[new]);
                 }
             }
+        }
+    }
+
+    fn blob_sprites(&mut self) {
+        // group track IDs together if they...
+        //    tend to be touching
+        //    tend to move in the same direction
+        let mut unassigned_tracks:Vec<_> = (0..self.live_tracks.len()).collect();
+        let mut assigned_tracks = Vec::with_capacity(self.live_tracks.len());
+        unassigned_tracks.retain(|tx| {
+            //find the blob t is best for
+            if let Some((bi,score)) = self.live_blobs.iter().enumerate().map(|(bi,b)| (bi,b.blob_score(&self.live_tracks[*tx], &self.live_tracks, Self::BLOB_LOOKBACK))).min_by(|(_b1,s1),(_b2,s2)| s1.partial_cmp(s2).unwrap()) {
+                if score < Self::BLOB_THRESHOLD {
+                    assigned_tracks.push((*tx, bi));
+                    // assign
+                    false
+                } else {
+                    // remain unassigned
+                    true
+                }
+            } else {
+                // remain unassigned
+                true
+            }
+        });
+        // find all unassigned live tracks; if any belonged to a blob, remove it from the blob
+        for &tx in unassigned_tracks.iter() {
+            let id = self.live_tracks[tx].id;
+            for b in self.live_blobs.iter_mut() {
+                b.forget_track(id);
+            }
+        }
+        // for all assigned_tracks, push this track onto the blob
+        for (tx,bx) in assigned_tracks {
+            self.live_blobs[bx].use_track(self.live_tracks[tx].id);
+        }
+
+        let mut blobbed = vec![];
+        // for all still unassigned tracks, if any pair can be merged create a blob with them and see if any other unassigned tracks could merge in.
+        for (txi,&tx) in unassigned_tracks.iter().enumerate() {
+            if blobbed.contains(&txi) { continue; }
+            for (tyi,&ty) in unassigned_tracks.iter().enumerate().skip(txi+1) {
+                if blobbed.contains(&tyi) { continue; }
+                if SpriteBlob::blob_score_pair(&self.live_tracks[tx], &self.live_tracks[ty], Self::BLOB_LOOKBACK) < Self::BLOB_THRESHOLD {
+                    let mut blob = SpriteBlob::new(self.dead_blobs.len()+self.live_blobs.len());
+                    blob.use_track(self.live_tracks[tx].id);
+                    blob.use_track(self.live_tracks[ty].id);
+                    blobbed.push(txi);
+                    blobbed.push(tyi);
+                    for (tzi, &tz) in unassigned_tracks.iter().enumerate().skip(tyi+1) {
+                        if blobbed.contains(&tzi) { continue; }
+                        if blob.blob_score(&self.live_tracks[tz], &self.live_tracks, Self::BLOB_LOOKBACK) < Self::BLOB_THRESHOLD {
+                            blob.use_track(self.live_tracks[tz].id);
+                            blobbed.push(tzi);
+                        }
+                    }
+                    self.live_blobs.push(blob);
+                }
+            }
+        }
+
+        // update centroids of all blobs
+        for b in self.live_blobs.iter_mut() {
+            b.update_position(self.now, &self.live_tracks);
         }
     }
 
