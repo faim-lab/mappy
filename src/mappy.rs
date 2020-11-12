@@ -413,11 +413,6 @@ impl MappyState {
     }
 
     fn determine_control(&mut self, emu: &mut Emulator) {
-<<<<<<< HEAD
-        if self.now.0 % 7 != 0 {
-            return;
-        }
-=======
         // should be long enough to fight momentum
         const CONTROL_CHECK_K: usize = 17;
         // should be odd
@@ -426,7 +421,6 @@ impl MappyState {
             return;
         }
         let t = self.timers.timer(Timing::Control).start();
->>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
         // every A frames...
         // We'll start with the expensive version and later try the cheaper version if that's too slow.
         // Expensive version:

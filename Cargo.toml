@@ -14,12 +14,9 @@ macroquad = { git = "https://github.com/not-fl3/macroquad", rev="31cff5d89ed17a6
 id-arena = { version="2.2.1", features=["rayon"] }
 uuid = { version="0.8.1", features=["v4"] }
 chrono = "0.4"
-<<<<<<< HEAD
 argh = "0.1.3" 
-=======
 crossbeam = "0.8.0"
 rayon="1.5.0"
->>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
 
 [profile.dev]
 opt-level = 3

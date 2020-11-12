@@ -55,7 +55,6 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
 #[macroquad::main(window_conf)]
 async fn main() {
     use std::env;
-<<<<<<< HEAD
     // running cargo run --bin int help will give instructions
     let args: Args = argh::from_env();
     let romfile: &str = &args.romfile;
@@ -65,13 +64,6 @@ async fn main() {
     let romname = Path::new(romfile);
     // throws error if not a file
     let rom = romname.file_stem().expect("No file name!");
-=======
-    let args: Vec<_> = env::args().collect();
-
-    let romfile = Path::new(args[1].as_str());
-    // "mario3"
-    let romname = romfile.file_stem().expect("No file name!");
->>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
 
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), romname);
     // Have to run emu for one frame before we can get the framebuffer size
@@ -102,7 +94,6 @@ async fn main() {
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
     let mut mappy = MappyState::new(w, h);
-<<<<<<< HEAD
     // let args: Vec<_> = env::args().collect();
 
     // if let Some(input_path) = args.replay && let Some(save_path) = args.save {
@@ -113,12 +104,6 @@ async fn main() {
 
     if let Some(save_path) = args.save {
         mappy::save_fm2(&mut save_buf, &Path::new(&save_path))
-=======
-    if args.len() > 2 {
-        mappy::read_fm2(&mut replay_inputs, &Path::new(&args[2]));
-        replay(&mut emu, &mut mappy, &replay_inputs);
-        inputs.extend(replay_inputs.drain(..));
->>>>>>> 312b81b7aedd6b47fd1dd06ea4d0297d571ca5c4
     }
 
     match result {}
