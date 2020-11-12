@@ -1,7 +1,6 @@
 use macroquad::*;
 use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
-
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
@@ -61,11 +60,11 @@ async fn main() {
     dbg!(&args);
 
     // creates path using romfile
-    let romname = Path::new(romfile);
+    let rompath = Path::new(romfile);
     // throws error if not a file
-    let rom = romname.file_stem().expect("No file name!");
+    let romname = rompath.file_stem().expect("No file name!");
 
-    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), romname);
+    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), rompath);
     // Have to run emu for one frame before we can get the framebuffer size
     let mut start_state = vec![0; emu.save_size()];
     let mut save_buf = vec![0; emu.save_size()];
@@ -249,6 +248,8 @@ zxcvbnm,./ for debug displays"
                 romname.to_str().expect("rom name not a valid utf-8 string")
             ));
             emu.save(&mut save_buf);
+            // debug print the save_path before it crashes
+            println!("{}", save_path.display());
             //write it out to the file
             let mut file = std::fs::File::create(save_path).expect("Couldn't create save file!");
             file.write_all(&save_buf)
@@ -502,14 +503,28 @@ zxcvbnm,./ for debug displays"
                     1.,
                 );
                 let (_time, x, y) = blob.positions.last().unwrap();
+                // debug print what is going on...
+                // println!(
+                //     "About to draw a circle at ({}, {})",
+                //     (x - mappy.scroll.0) as f32 * SCALE,
+                //     (y - mappy.scroll.0) as f32 * SCALE
+                // );
+                // println!("The number of tracks is: {}", blob.live_tracks.len());
+                // let score = blob.blob_score(
+                //     &mappy.live_tracks[*tx],
+                //     &mappy.live_tracks,
+                //     30 as usize,
+                //     mappy.now,
+                // );
+                // println!("The blob's score is {}", score);
                 draw_circle(
                     (x - mappy.scroll.0) as f32 * SCALE,
-                    (y - mappy.scroll.0) as f32 * SCALE,
+                    (y - mappy.scroll.1) as f32 * SCALE,
                     8.0 * SCALE,
                     col,
                 );
             }
-            println!("{}", mappy.live_blobs.len());
+            // println!("The number of blobs is: {}", mappy.live_blobs.len());
         }
         next_frame().await;
         // let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);

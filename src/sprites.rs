@@ -2,7 +2,6 @@ use crate::Rect;
 use crate::Time;
 use retro_rs::Emulator;
 use std::collections::HashSet;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct SpriteData {
     pub index: u8,
@@ -120,6 +119,8 @@ pub struct SpriteTrack {
     pub patterns: HashSet<u8>,
     pub tables: HashSet<u8>,
     pub attrs: HashSet<u8>,
+    // pub total_moves: usize,
+    // pub continuous_moves: usize,
 }
 
 impl SpriteTrack {
@@ -189,6 +190,74 @@ impl SpriteTrack {
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
     }
+    pub fn distance(&self, index1: usize, index2: usize) -> f32 {
+        // this function should calculate the distance between two positions
+        let At(_, (sx, sy), sd) = &self.positions[index1];
+        let At(_, (sx2, sy2), sd2) = &self.positions[index2];
+        let (x, x2) = (sx + sd.x as i32, sx2 + sd2.x as i32);
+        let (y, y2) = (sy + sd.y as i32, sy2 + sd2.y as i32);
+
+        let dx = x2 - x;
+        let dy = y2 - y;
+
+        let dist = (dx * dx + dy * dy) as f32;
+        dist.sqrt()
+    }
+    pub fn move_count(&self) -> i32 {
+        // this function calculates the number of moves of a track.
+        // iterate through the positions property
+        // calculate the distance between a position and the position one index after it
+        // if the distance is greater than 0 then we consider the track position to have moved.
+        // increment counter
+        let mut count = 0;
+
+        for i in 0..(self.positions.len() - 1) {
+            let dist = Self::distance(self, i, i + 1);
+            // when do we increment count??
+            if dist > 0.0 {
+                count = count + 1;
+            }
+        }
+
+        return count as i32;
+    }
+    pub fn continuous_move_ratio(&self, threshold: usize) -> f32 {
+        // this function computes the ratio that looks at the changes in the tracks' position over time.
+
+        // 0 - 10 stationary track: the positions rarely move
+        // ex: a green pipe
+        // we get this score if the track has a low move count
+
+        // 11 - 69 discretely warping: the positions jump in big jumps
+        // ex: a scoreboard jumping from position to position
+        // we get this score if the track has a relatively high move count but we deduct points in these scenarios:
+        // .. the distance between the two positions surpass a given threshold
+        // .. the distances between two positions consistantly jump in 8+ pixels.
+        //
+
+        // 70 - 100 if continuously moving: goomba, fireballs,
+        let total_positions = self.positions.len() - 1; // total position changes
+        let mut move_count = self.move_count(); // total moves or actual changes in distance
+
+        for i in 0..total_positions {
+            let At(_, (sx, sy), sd) = &self.positions[i];
+            let At(_, (sx2, sy2), sd2) = &self.positions[i + 1];
+            let x1 = sx + sd.x as i32;
+            let x2 = sx2 + sd2.x as i32;
+            let y1 = sy + sd.y as i32;
+            let y2 = sy2 + sd2.y as i32;
+            let dispx = x1 - x2;
+            let dispy = y1 - y2;
+            let distance = ((dispx * dispx + dispy * dispy) as f32).sqrt();
+
+            // if the position move in 8+ pixel jumps than decrease the move count
+            if distance > threshold as f32 {
+                move_count = move_count - 1;
+            }
+        }
+
+        return move_count as f32 / total_positions as f32;
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -234,8 +303,10 @@ impl SpriteBlob {
         let mut closeness = 0; // default not touching
         let mut same_spd = 0; // number of frames where they are moving at the same speed
         if t1.id != t2.id {
+            // early return if now is younger than lookback
             // bad score if one of the tracks is younger than now.0 - lookback
-            if now.0 - lookback < t1.first_observation_time().0
+            if now.0 < lookback
+                || now.0 - lookback < t1.first_observation_time().0
                 || now.0 - lookback < t2.first_observation_time().0
             {
                 // TO DO fix
@@ -322,8 +393,10 @@ impl SpriteBlob {
                         .find(|&tk| tk.id == tid)
                         .unwrap()
                         .current_point();
+                    // println!("Current position at ({},{})", bx, by);
                     (t, ax + bx / tl, ay + by / tl)
                 }),
         );
+        // let mut score = blob_score_pair(t1: &SpriteTrack, t2: &SpriteTrack, lookback: usize, now: Time)
     }
 }

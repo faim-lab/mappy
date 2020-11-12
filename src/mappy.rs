@@ -553,11 +553,13 @@ impl MappyState {
                 }
                 false
             } else {
+                let cont_move_ratio = t.continuous_move_ratio(8);
+                println!("{}", cont_move_ratio);
                 true
             }
         });
 
-        // push a clone of the blob to dead blob vec 
+        // push a clone of the blob to dead blob vec
         let dead_blobs = &mut self.dead_blobs;
         self.live_blobs.retain(|b| {
             if dead_blob_ids.contains(&b.id) {
@@ -647,6 +649,7 @@ impl MappyState {
                 })
                 .min_by(|(_b1, s1), (_b2, s2)| s1.partial_cmp(s2).unwrap())
             {
+                // println!("The blob's score is {}", score);
                 if score < Self::BLOB_THRESHOLD {
                     assigned_tracks.push((*tx, bi));
                     // assign
