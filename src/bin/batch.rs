@@ -53,4 +53,7 @@ fn main() {
     mappy.dump_tiles(Path::new("out/"));
 
     
+    println!("{}", mappy.timers);
+    mappy.dump_map(Path::new("out/map.dot"));
+    // mappy.dump_tiles(Path::new("out/tiles"));
 }
