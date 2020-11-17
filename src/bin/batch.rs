@@ -36,6 +36,9 @@ fn main() {
         let fb = emu.create_imagebuffer();
         fb.unwrap().save(format!("out_{}.png", file_i)).unwrap();
     }
+
+    mappy.dump_current_room(Path::new("/outputs/output.png"));
+
     mappy.finish();
 
     println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
@@ -47,5 +50,7 @@ fn main() {
         start.elapsed().as_secs_f64() / (all_inputs as f64)
     );
     println!("{}",mappy.timers);
-    // mappy.dump_tiles(Path::new("out/"));
+    mappy.dump_tiles(Path::new("out/"));
+
+    
 }

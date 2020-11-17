@@ -464,7 +464,7 @@ impl MappyState {
         let mut sprites_ura = [SpriteData::default(); SPRITE_COUNT];
         sprites::get_sprites(emu, &mut sprites_ura);
         // If P1 != P2 or scroll different, we have control; otherwise we do not
-        if sprites_dlb != sprites_ura || dl_splits != ur_splits {
+        if !(sprites_dlb == sprites_ura) || dl_splits != ur_splits {
             if !self.maybe_control {
                 self.maybe_control_change_time = self.now;
             }
@@ -738,6 +738,29 @@ impl MappyState {
             img.save(root.join(format!("t{:}.png", ti))).unwrap();
         }
     }
+
+    pub fn dump_current_room(&self, path: &Path) {
+        let room = self.current_room.as_ref().unwrap();
+        let region = room.region();
+        let tiles = self.tiles.read().unwrap();
+        let mut buf = vec![0_u8; TILE_SIZE * (region.w as usize) * TILE_SIZE * (region.h as usize) * 3];
+        for y in region.y..(region.y+region.h as i32) {
+            for x in region.x..(region.x+region.w as i32) {
+                    let tile = room.get(x,y);
+                    let tile_change_data_db = tiles.get_change_by_id(tile);
+                    let to_tile_gfx_id = tile_change_data_db.unwrap().to;
+                    let corresponding_tile_gfx = tiles.get_tile_by_id(to_tile_gfx_id);
+                    corresponding_tile_gfx.unwrap().write_rgb888_at(((x - (region.x)) * (TILE_SIZE as i32)) as usize,
+                    ((y - (region.y)) * (TILE_SIZE as i32)) as usize, &mut buf, ((region.w as i32) * (TILE_SIZE as i32)) as usize);
+                    println!("{},{} : {}", x, y, (((region.w as i32) * (TILE_SIZE as i32)) as usize));
+            }
+        }
+        let img =
+        ImageBuffer::<Rgb<u8>, _>::from_raw(region.w * TILE_SIZE as u32, region.h * TILE_SIZE as u32, &buf[..])
+            .expect("Couldn't create image buffer");
+        img.save(path).unwrap();
+    }
+
 }
 
 pub fn merge_cost(
