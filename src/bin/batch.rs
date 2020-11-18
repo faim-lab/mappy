@@ -37,7 +37,7 @@ fn main() {
         fb.unwrap().save(format!("out_{}.png", file_i)).unwrap();
     }
 
-    mappy.dump_current_room(Path::new("/outputs/output.png"));
+    mappy.dump_current_room(Path::new("current_room.png"));
 
     mappy.finish();
 
@@ -49,10 +49,9 @@ fn main() {
         all_inputs,
         start.elapsed().as_secs_f64() / (all_inputs as f64)
     );
-    println!("{}",mappy.timers);
+    println!("{}", mappy.timers);
     mappy.dump_tiles(Path::new("out/"));
 
-    
     println!("{}", mappy.timers);
     mappy.dump_map(Path::new("out/map.dot"));
     // mappy.dump_tiles(Path::new("out/tiles"));

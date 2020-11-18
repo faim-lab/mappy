@@ -735,20 +735,34 @@ impl MappyState {
         }
     }
     pub fn dump_map(&self, dotfile: &Path) {
+        use std::collections::BTreeMap;
         use std::fs;
         use std::io::Write;
         use tabbycat::attributes::*;
         use tabbycat::{AttrList, Edge, GraphBuilder, GraphType, Identity, StmtList};
-        use std::collections::BTreeMap;
         let rooms = &self.rooms.read().unwrap();
-        let node_labels:BTreeMap<usize,String> = self.metarooms.metarooms().map(|mr| {let r = mr.region(rooms); (mr.id.0,format!("{},{}<>{},{}\n",r.x,r.y,r.w,r.h) + &mr.registrations.iter().map(|(ri,pos)| format!("{}@{},{}",ri,pos.0,pos.1)).collect::<Vec<_>>().join("\n"))}).collect();
+        let node_labels: BTreeMap<usize, String> = self
+            .metarooms
+            .metarooms()
+            .map(|mr| {
+                let r = mr.region(rooms);
+                (
+                    mr.id.0,
+                    format!("{},{}<>{},{}\n", r.x, r.y, r.w, r.h)
+                        + &mr
+                            .registrations
+                            .iter()
+                            .map(|(ri, pos)| format!("{}@{},{}", ri, pos.0, pos.1))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                )
+            })
+            .collect();
         let mut all_stmts = StmtList::new();
         for mr in self.metarooms.metarooms() {
             let mut stmts = StmtList::new();
             let mr_ident = Identity::from(mr.id.0);
-            let mut attrs = AttrList::new().add_pair(label(
-                &node_labels[&mr.id.0]
-            ));
+            let mut attrs = AttrList::new().add_pair(label(&node_labels[&mr.id.0]));
             if let Some(_) = mr
                 .registrations
                 .iter()
@@ -804,24 +818,30 @@ impl MappyState {
         let room = self.current_room.as_ref().unwrap();
         let region = room.region();
         let tiles = self.tiles.read().unwrap();
-        let mut buf = vec![0_u8; TILE_SIZE * (region.w as usize) * TILE_SIZE * (region.h as usize) * 3];
-        for y in region.y..(region.y+region.h as i32) {
-            for x in region.x..(region.x+region.w as i32) {
-                    let tile = room.get(x,y);
-                    let tile_change_data_db = tiles.get_change_by_id(tile);
-                    let to_tile_gfx_id = tile_change_data_db.unwrap().to;
-                    let corresponding_tile_gfx = tiles.get_tile_by_id(to_tile_gfx_id);
-                    corresponding_tile_gfx.unwrap().write_rgb888_at(((x - (region.x)) * (TILE_SIZE as i32)) as usize,
-                    ((y - (region.y)) * (TILE_SIZE as i32)) as usize, &mut buf, ((region.w as i32) * (TILE_SIZE as i32)) as usize);
-                    println!("{},{} : {}", x, y, (((region.w as i32) * (TILE_SIZE as i32)) as usize));
+        let mut buf =
+            vec![0_u8; TILE_SIZE * (region.w as usize) * TILE_SIZE * (region.h as usize) * 3];
+        for y in region.y..(region.y + region.h as i32) {
+            for x in region.x..(region.x + region.w as i32) {
+                let tile = room.get(x, y);
+                let tile_change_data_db = tiles.get_change_by_id(tile);
+                let to_tile_gfx_id = tile_change_data_db.unwrap().to;
+                let corresponding_tile_gfx = tiles.get_tile_by_id(to_tile_gfx_id);
+                corresponding_tile_gfx.unwrap().write_rgb888_at(
+                    ((x - (region.x)) * (TILE_SIZE as i32)) as usize,
+                    ((y - (region.y)) * (TILE_SIZE as i32)) as usize,
+                    &mut buf,
+                    ((region.w as i32) * (TILE_SIZE as i32)) as usize,
+                );
             }
         }
-        let img =
-        ImageBuffer::<Rgb<u8>, _>::from_raw(region.w * TILE_SIZE as u32, region.h * TILE_SIZE as u32, &buf[..])
-            .expect("Couldn't create image buffer");
+        let img = ImageBuffer::<Rgb<u8>, _>::from_raw(
+            region.w * TILE_SIZE as u32,
+            region.h * TILE_SIZE as u32,
+            &buf[..],
+        )
+        .expect("Couldn't create image buffer");
         img.save(path).unwrap();
     }
-
 }
 
 pub fn merge_cost(
