@@ -1,6 +1,6 @@
 use crate::framebuffer::Framebuffer;
 // use crate::metaroom::Metaroom;
-use crate::metaroom::{Merges, MetaroomID};
+use crate::metaroom::{Merges, Metaroom, MetaroomID};
 use crate::room::Room;
 use crate::screen::Screen;
 use crate::sprites::{self, SpriteBlob, SpriteData, SpriteTrack, SPRITE_COUNT};
@@ -734,13 +734,18 @@ impl MappyState {
             get_changes_fn(self.changes.as_mut_ptr(), self.change_count);
         }
     }
-    pub fn dump_map(&self, dotfile: &Path) {
+    pub fn dump_map(&self, dotfolder: &Path) {
         use std::collections::BTreeMap;
         use std::fs;
-        use std::io::Write;
         use tabbycat::attributes::*;
         use tabbycat::{AttrList, Edge, GraphBuilder, GraphType, Identity, StmtList};
         let rooms = &self.rooms.read().unwrap();
+        let gname = "map".to_string();
+        let node_image_paths: BTreeMap<usize, String> = self
+            .metarooms
+            .metarooms()
+            .map(|mr| (mr.id.0, format!("mr_{}.png", mr.id.0)))
+            .collect();
         let node_labels: BTreeMap<usize, String> = self
             .metarooms
             .metarooms()
@@ -762,13 +767,18 @@ impl MappyState {
         for mr in self.metarooms.metarooms() {
             let mut stmts = StmtList::new();
             let mr_ident = Identity::from(mr.id.0);
-            let mut attrs = AttrList::new().add_pair(label(&node_labels[&mr.id.0]));
+            self.dump_metaroom(&mr, Path::new(&node_image_paths[&mr.id.0].clone()));
+            let mut attrs = AttrList::new()
+                .add_pair(xlabel(&node_labels[&mr.id.0]))
+                .add_pair(image(&node_image_paths[&mr.id.0]));
             if let Some(_) = mr
                 .registrations
                 .iter()
                 .find(|(rid, _pos)| *rid == 0 || self.resets.contains(rid))
             {
-                attrs = attrs.add_pair(shape(Shape::Doublecircle));
+                attrs = attrs.add_pair(shape(Shape::Box));
+            } else {
+                attrs = attrs.add_pair(shape(Shape::Plain))
             }
             stmts = stmts.add_node(mr_ident.clone(), None, Some(attrs));
             let mut out_to = vec![];
@@ -797,11 +807,11 @@ impl MappyState {
         let graph = GraphBuilder::default()
             .graph_type(GraphType::DiGraph)
             .strict(false)
-            .id(Identity::id("map").unwrap())
+            .id(Identity::id(&gname).unwrap())
             .stmts(all_stmts)
             .build()
             .unwrap();
-        fs::write(dotfile, graph.to_string()).unwrap();
+        fs::write(dotfolder.join(Path::new("graph.dot")), graph.to_string()).unwrap();
     }
     pub fn dump_tiles(&self, root: &Path) {
         let mut buf = vec![0_u8; TILE_SIZE * TILE_SIZE * 3];
@@ -814,12 +824,9 @@ impl MappyState {
         }
     }
 
-    pub fn dump_current_room(&self, path: &Path) {
-        let room = self.current_room.as_ref().unwrap();
+    pub fn dump_room(&self, room: &Room, at: (u32, u32), tiles_wide: u32, buf: &mut [u8]) {
         let region = room.region();
         let tiles = self.tiles.read().unwrap();
-        let mut buf =
-            vec![0_u8; TILE_SIZE * (region.w as usize) * TILE_SIZE * (region.h as usize) * 3];
         for y in region.y..(region.y + region.h as i32) {
             for x in region.x..(region.x + region.w as i32) {
                 let tile = room.get(x, y);
@@ -827,12 +834,43 @@ impl MappyState {
                 let to_tile_gfx_id = tile_change_data_db.unwrap().to;
                 let corresponding_tile_gfx = tiles.get_tile_by_id(to_tile_gfx_id);
                 corresponding_tile_gfx.unwrap().write_rgb888_at(
-                    ((x - (region.x)) * (TILE_SIZE as i32)) as usize,
-                    ((y - (region.y)) * (TILE_SIZE as i32)) as usize,
-                    &mut buf,
-                    ((region.w as i32) * (TILE_SIZE as i32)) as usize,
+                    ((x + at.0 as i32 - region.x) * (TILE_SIZE as i32)) as usize,
+                    ((y + at.1 as i32 - region.y) * (TILE_SIZE as i32)) as usize,
+                    buf,
+                    tiles_wide as usize * TILE_SIZE,
                 );
             }
+        }
+    }
+
+    pub fn dump_current_room(&self, path: &Path) {
+        let room = self.current_room.as_ref().unwrap();
+        let region = room.region();
+        let mut buf =
+            vec![0_u8; TILE_SIZE * (region.w as usize) * TILE_SIZE * (region.h as usize) * 3];
+        self.dump_room(room, (0, 0), region.w, &mut buf);
+        let img = ImageBuffer::<Rgb<u8>, _>::from_raw(
+            region.w * TILE_SIZE as u32,
+            region.h * TILE_SIZE as u32,
+            &buf[..],
+        )
+        .expect("Couldn't create image buffer");
+        img.save(path).unwrap();
+    }
+
+    pub fn dump_metaroom(&self, mr: &Metaroom, path: &Path) {
+        // need to dump every room into the same image.
+        // so, first get net region of metaroom and build the image buffer.
+        // then offset every reg so that the toppiest leftiest reg is at 0,0.
+        let rooms = self.rooms.read().unwrap();
+        let region = mr.region(&rooms);
+        let mut buf =
+            vec![0_u8; TILE_SIZE * (region.w as usize) * TILE_SIZE * (region.h as usize) * 3];
+        for (room_i, pos) in mr.registrations.iter() {
+            assert!(pos.0 - region.x >= 0);
+            assert!(pos.1 - region.y >= 0);
+            let new_pos = ((pos.0 - region.x) as u32, (pos.1 - region.y) as u32);
+            self.dump_room(&rooms[*room_i], new_pos, region.w, &mut buf);
         }
         let img = ImageBuffer::<Rgb<u8>, _>::from_raw(
             region.w * TILE_SIZE as u32,
