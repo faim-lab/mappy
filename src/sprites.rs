@@ -142,6 +142,13 @@ impl SpriteTrack {
         let At(_, (sx, sy), sd) = &self.positions.last().unwrap();
         (sx + sd.x as i32, sy + sd.y as i32)
     }
+    pub fn point_at(&self, t: Time) -> Option<(i32, i32)> {
+        self.positions
+            .iter()
+            .rev()
+            .find(|At(t0, _, _)| t0 < &t)
+            .map(|At(_, (sx, sy), sd)| (sx + sd.x as i32, sy + sd.y as i32))
+    }
     pub fn seen_pattern(&self, pat: u8) -> bool {
         self.patterns.contains(&pat)
     }

@@ -767,7 +767,7 @@ impl MappyState {
         for mr in self.metarooms.metarooms() {
             let mut stmts = StmtList::new();
             let mr_ident = Identity::from(mr.id.0);
-            self.dump_metaroom(&mr, Path::new(&node_image_paths[&mr.id.0].clone()));
+            self.dump_metaroom(&mr, &dotfolder.join(Path::new(&node_image_paths[&mr.id.0].clone())));
             let mut attrs = AttrList::new()
                 .add_pair(xlabel(&node_labels[&mr.id.0]))
                 .add_pair(image(&node_image_paths[&mr.id.0]));
