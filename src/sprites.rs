@@ -261,9 +261,14 @@ impl SpriteBlob {
                 //    let dx2 = (dispx2^2 + dispy2^2).sqrt();
                 //    let speed2 = dx2;
 
-                // TODO fix this
-                let mut vec1 = vec![dispx, dispy];
-                let mut vec2 = vec![dispx2, dispy2];
+                // TODO fix this make it an actual vec
+                let mut vec1 = Vec::new();
+                vec1.push(dispx);
+                vec1.push(dispy);
+
+                let mut vec2 = Vec::new();
+                vec2.push(dispx);
+                vec2.push(dispy);
 
                 // TODO do something to increment the number of frames that share the same speed
                 // i.e. do we want to look at speed? or same velocity?
