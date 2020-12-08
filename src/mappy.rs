@@ -80,6 +80,8 @@ pub struct MappyState {
     pub last_control: Time,
     pub last_controlled_scroll: (i32, i32),
     pub timers: Timers<Timing>,
+    // which rooms were terminated by resets?
+    pub resets: Vec<usize>,
 }
 
 impl MappyState {
@@ -143,10 +145,14 @@ impl MappyState {
             room_merge_rx,
             room_merge_tx,
             timers: Timers::new(),
+            resets: vec![],
         }
     }
 
     pub fn handle_reset(&mut self) {
+        if let Some(cr) = self.current_room.as_ref() {
+            self.resets.push(cr.id);
+        }
         self.finalize_current_room(false);
         self.latch = ScrollLatch::default();
         self.grid_align = (0, 0);
@@ -727,6 +733,75 @@ impl MappyState {
                 .resize_with(self.change_count as usize, Default::default);
             get_changes_fn(self.changes.as_mut_ptr(), self.change_count);
         }
+    }
+    pub fn dump_map(&self, dotfile: &Path) {
+        use std::collections::BTreeMap;
+        use std::fs;
+        use std::io::Write;
+        use tabbycat::attributes::*;
+        use tabbycat::{AttrList, Edge, GraphBuilder, GraphType, Identity, StmtList};
+        let rooms = &self.rooms.read().unwrap();
+        let node_labels: BTreeMap<usize, String> = self
+            .metarooms
+            .metarooms()
+            .map(|mr| {
+                let r = mr.region(rooms);
+                (
+                    mr.id.0,
+                    format!("{},{}<>{},{}\n", r.x, r.y, r.w, r.h)
+                        + &mr
+                            .registrations
+                            .iter()
+                            .map(|(ri, pos)| format!("{}@{},{}", ri, pos.0, pos.1))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                )
+            })
+            .collect();
+        let mut all_stmts = StmtList::new();
+        for mr in self.metarooms.metarooms() {
+            let mut stmts = StmtList::new();
+            let mr_ident = Identity::from(mr.id.0);
+            let mut attrs = AttrList::new().add_pair(label(&node_labels[&mr.id.0]));
+            if let Some(_) = mr
+                .registrations
+                .iter()
+                .find(|(rid, _pos)| *rid == 0 || self.resets.contains(rid))
+            {
+                attrs = attrs.add_pair(shape(Shape::Doublecircle));
+            }
+            stmts = stmts.add_node(mr_ident.clone(), None, Some(attrs));
+            let mut out_to = vec![];
+            for (rid, _pos) in mr.registrations.iter() {
+                if self.resets.contains(rid) {
+                    continue;
+                }
+                if let Some(mr2) = self
+                    .metarooms
+                    .metarooms()
+                    .find(|mri| mri.registrations.iter().any(|(mrrid, _)| *mrrid == rid + 1))
+                {
+                    if !out_to.contains(&mr2.id) {
+                        out_to.push(mr2.id);
+                    }
+                }
+            }
+            for mr2_id in out_to {
+                stmts = stmts.add_edge(
+                    Edge::head_node(mr_ident.clone(), None)
+                        .arrow_to_node(Identity::from(mr2_id.0), None),
+                );
+            }
+            all_stmts = all_stmts.extend(stmts);
+        }
+        let graph = GraphBuilder::default()
+            .graph_type(GraphType::DiGraph)
+            .strict(false)
+            .id(Identity::id("map").unwrap())
+            .stmts(all_stmts)
+            .build()
+            .unwrap();
+        fs::write(dotfile, graph.to_string()).unwrap();
     }
     pub fn dump_tiles(&self, root: &Path) {
         let mut buf = vec![0_u8; TILE_SIZE * TILE_SIZE * 3];

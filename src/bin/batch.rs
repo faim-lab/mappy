@@ -47,5 +47,6 @@ fn main() {
         start.elapsed().as_secs_f64() / (all_inputs as f64)
     );
     println!("{}", mappy.timers);
-    // mappy.dump_tiles(Path::new("out/"));
+    mappy.dump_map(Path::new("out/map.dot"));
+    // mappy.dump_tiles(Path::new("out/tiles"));
 }

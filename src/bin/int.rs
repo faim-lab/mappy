@@ -187,6 +187,7 @@ zxcvbnm,./ for debug displays"
             std::fs::remove_dir_all("out/tiles").unwrap_or(());
             std::fs::create_dir_all("out/tiles").unwrap();
             mappy.dump_tiles(Path::new("out/tiles"));
+            mappy.dump_map(Path::new("out/map.dot"));
         }
         // if is_key_pressed(KeyCode::M) {
         //      std::fs::remove_dir_all("out/rooms").unwrap_or(());
@@ -483,7 +484,7 @@ zxcvbnm,./ for debug displays"
         // }
     }
     mappy.finish();
-    println!("{}",mappy.timers);
+    println!("{}", mappy.timers);
     //mappy.dump_tiles(Path::new("out/"));
 }
 

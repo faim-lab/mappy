@@ -191,8 +191,8 @@ impl Room {
         let mut any1 = 0;
         let mut any2 = 0;
         let r = self.region();
-        let r2x = x-r2xo;
-        let r2y = y-r2yo;
+        let r2x = x - r2xo;
+        let r2y = y - r2yo;
         let mut cost = 0.0;
         //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
         for yo in 0..(r.h as i32) {
