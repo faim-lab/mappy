@@ -136,7 +136,7 @@ impl SpriteTrack {
         ret
     }
     // TODO add function that just returns the sprite data q?
-    pub fn get_sprite_data(&self) -> &SpriteData {
+    pub fn getSpriteData(&self) -> &SpriteData {
         return &self.positions[0].2;
     }
     pub fn current_data(&self) -> &SpriteData {
@@ -334,8 +334,8 @@ impl SpriteBlob {
                     vec1.push(dispx2);
                     vec2.push(dispy2);
                 }
-                let rect1 = t1.get_sprite_data().sprite_rect();
-                let rect2 = t2.get_sprite_data().sprite_rect();
+                let rect1 = t1.getSpriteData().sprite_rect();
+                let rect2 = t2.getSpriteData().sprite_rect();
 
                 // closeness will be zero if they do overlap, if they don't overlap then closeness will be set to 100.
                 if !rect1.expand(1).overlaps(&rect2.expand(1)) {
