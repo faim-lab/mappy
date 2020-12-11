@@ -36,12 +36,11 @@ impl TileGfx {
         }
     }
     pub fn write_rgb888_at(&self, x: usize, y: usize, buf: &mut [u8], buf_w: usize) {
-        assert!((x + TILE_SIZE) < buf_w);
-        assert!((y + TILE_SIZE) * buf_w * 3 + (x + TILE_SIZE) * 3 < buf.len());
+        assert!((x + TILE_SIZE) <= buf_w);
         for (row_t, row_b) in self
             .0
             .chunks_exact(TILE_SIZE)
-            .zip(buf[(y * 3 * buf_w)..((y + TILE_SIZE) * buf_w * 3)].chunks_mut(buf_w))
+            .zip(buf[(y * 3 * buf_w)..((y + TILE_SIZE) * buf_w * 3)].chunks_mut(buf_w * 3))
         {
             for (col, dst) in row_t
                 .iter()

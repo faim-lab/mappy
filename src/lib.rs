@@ -7,7 +7,7 @@ mod screen;
 mod sprites;
 pub mod tile;
 pub mod time;
-use crate::mappy::*;
+pub use crate::mappy::*;
 use retro_rs::Buttons;
 pub use sprites::At;
 use std::fs::File;

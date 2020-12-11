@@ -150,9 +150,9 @@ impl<T: TimerID> std::fmt::Display for Timers<T> {
                 TimerQuery::Max(t),
                 TimerQuery::Sum(t),
             ]);
-            write!(
+            writeln!(
                 f,
-                "{:?}({}) mean {} -- p95 {} -- p99 {} -- max {} :: net {}\n",
+                "{:?}({}) mean {} -- p95 {} -- p99 {} -- max {} :: net {}",
                 t,
                 stats[0],
                 stats[1] * 1000.0,

@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
 
-const SCALE: f32 = 3.;
+const SCALE: f32 = 3.0;
 
 fn window_conf() -> Conf {
     Conf {
@@ -430,7 +430,17 @@ zxcvbnm,./ for debug displays"
                     ) / regs.len() as f32;
                 }
                 if frame_counter % 3 == 0 {
-                    println!("Cost: {}@{:?}\n{:?} -- {:?}\n", cost, (x,y),cur.region(), mappy::Rect{x:regs[0].1.0, y:regs[0].1.1, ..regs[0].0.region()});
+                    println!(
+                        "Cost: {}@{:?}\n{:?} -- {:?}\n",
+                        cost,
+                        (x, y),
+                        cur.region(),
+                        mappy::Rect {
+                            x: (regs[0].1).0,
+                            y: (regs[0].1).1,
+                            ..regs[0].0.region()
+                        }
+                    );
                 }
             }
         }

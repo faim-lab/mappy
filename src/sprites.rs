@@ -45,6 +45,7 @@ impl SpriteData {
         (dx * dx + dy * dy).sqrt()
     }
 
+    // a rectangle for the sprites
     pub fn sprite_rect(&self) -> Rect {
         let s_rect = Rect::new(
             self.x as i32,
@@ -170,6 +171,13 @@ impl SpriteTrack {
         // let At(_, (sx, sy), sd) = &self.positions.iter().find(|At(time, _, _)| *time == t);
     }
 
+    pub fn point_at(&self, t: Time) -> Option<(i32, i32)> {
+        self.positions
+            .iter()
+            .rev()
+            .find(|At(t0, _, _)| t0 < &t)
+            .map(|At(_, (sx, sy), sd)| (sx + sd.x as i32, sy + sd.y as i32))
+    }
     pub fn seen_pattern(&self, pat: u8) -> bool {
         self.patterns.contains(&pat)
     }
@@ -222,8 +230,8 @@ impl SpriteBlob {
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
         // closeness + moving
 
-        let closeness = 0; // default not touching
-        let same_spd = 0; // number of frames where they are moving at the same speed
+        let mut closeness = 0; // default not touching
+        let mut same_spd = 0; // number of frames where they are moving at the same speed
         if t1.id != t2.id {
             for n in (now.0 - lookback)..now.0 {
                 // get the positions of the tracks at each frame
@@ -234,7 +242,7 @@ impl SpriteBlob {
 
                 let w = t1.current_data().width(); // t1's width TODO add data_at
                 let h = t2.current_data().height(); // t1's height
-                let &other = t2.current_data(); // sprite data of t2
+                let _other = t2.current_data(); // sprite data of t2
 
                 let rect1 = t1.getSpriteData().sprite_rect();
                 let rect2 = t2.getSpriteData().sprite_rect();
@@ -302,6 +310,7 @@ impl SpriteBlob {
                 Self::blob_score_pair(track, t, lookback, time)
             })
             .min_by(|a, b| a.partial_cmp(b).unwrap());
+
         return x;
     }
     pub fn use_track(&mut self, t: TrackID) {
