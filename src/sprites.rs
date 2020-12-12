@@ -257,7 +257,7 @@ impl SpriteBlob {
                 //        closeness = 100;
                 //    }
 
-                let time_prev = Time(n - 1);
+                // let time_prev = Time(n - 1);
 
                 let dispx = x1 - x1_p;
                 let dispy = y1 - y1_p;
@@ -275,8 +275,8 @@ impl SpriteBlob {
                 vec1.push(dispy);
 
                 let mut vec2 = Vec::new();
-                vec2.push(dispx);
-                vec2.push(dispy);
+                vec2.push(dispx2);
+                vec2.push(dispy2);
 
                 // TODO do something to increment the number of frames that share the same speed
                 // i.e. do we want to look at speed? or same velocity?
