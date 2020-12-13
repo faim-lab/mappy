@@ -16,6 +16,7 @@ use scrolling::*;
 mod splits;
 use splits::Split;
 mod matching;
+use std::fmt;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use rayon::{prelude::*, spawn_fifo};
@@ -80,6 +81,8 @@ pub struct MappyState {
     pub last_control: Time,
     pub last_controlled_scroll: (i32, i32),
     pub timers: Timers<Timing>,
+    // RingBuffer Stuff:
+    pub button_input: RingBuffer<Buttons>,
     // which rooms were terminated by resets?
     pub resets: Vec<usize>,
 }
@@ -96,7 +99,7 @@ impl MappyState {
     // This is just an arbitrary value, not sure what a good one is!
     pub const ROOM_MERGE_THRESHOLD: f32 = 10.0;
 
-    pub fn new(w: usize, h: usize) -> Self {
+    pub fn new(w: usize, h: usize, sz: usize) -> Self { // Added parameter for size of RingBuffer. IDK if that will create a mess
         let db = TileDB::new();
         let t0 = db.get_initial_tile();
         let s0 = Screen::new(Rect::new(0, 0, 0, 0), t0);
@@ -145,6 +148,7 @@ impl MappyState {
             room_merge_rx,
             room_merge_tx,
             timers: Timers::new(),
+            button_input: RingBuffer::new(Buttons::new(), sz),
             resets: vec![],
         }
     }
@@ -199,7 +203,7 @@ impl MappyState {
         }
     }
 
-    pub fn process_screen(&mut self, emu: &mut Emulator) {
+    pub fn process_screen(&mut self, emu: &mut Emulator, input: Buttons) {
         // Read new data from emulator
         let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
@@ -276,6 +280,13 @@ impl MappyState {
         self.process_merges();
         // Update `now`
         self.now.0 += 1;
+
+
+        // Input button_input into a RingBuffer
+        // let mut buttons_ring_buf: RingBuffer<Buttons> = RingBuffer::new(input, sz); <- pushed and printed this previously
+        self.button_input.push(input);
+        println!("{:?}", self.button_input.print());
+
     }
     fn process_merges(&mut self) {
         if !self.room_merge_rx.is_empty() {
@@ -964,3 +975,42 @@ pub fn merge_cost(
     //      cost of registering ra in rb at posn is just existing room difference but with rects aligned appropriately and out of bounds spots ignored (also maybe taking change cycles into account)
     //   bail out if cost exceeds ROOM_MERGE_THRESHOLD
 }
+
+// recording values of type buttons, button presses. Look at button struct in retro.rs
+// in the ringvector, the head jumps to the beginning. There's never a total reset. 
+// get jump to definition
+// usize starts at zero and goes up until how long the ring buffer is and then wraps around
+// now is where the next write is going to happen
+
+// in get, 0 could give you the last thing that was written. 1 could give you the thing before that
+
+
+#[derive(Debug)]
+pub struct RingBuffer<T:Copy + std::fmt::Debug> {
+    pub buf:Vec<T>,
+    pub now:usize
+}
+impl<T:Copy + std::fmt::Debug> RingBuffer<T> {
+    pub fn new(t:T, sz:usize) -> Self {
+        let mut initial_vec: Vec<T> = vec![t];
+        for x in 0..sz {
+            initial_vec.push(t); // Creates a vector containing t, sz times
+        }
+        RingBuffer{
+        buf: initial_vec, 
+        now: 0,
+        }
+    }
+    pub fn print(&self) -> String {
+        format!("{:?} {:?}", self.buf, self.now)
+    }
+    pub fn push(&mut self, t:T) {
+        self.now = (self.now + 1) % self.buf.len();
+        self.buf[self.now] = t;
+    }
+    pub fn get(&self, since:usize) -> T {
+        self.buf[(self.buf.len() - since) - 1]
+    }
+
+}
+

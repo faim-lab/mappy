@@ -1,5 +1,5 @@
 use macroquad::*;
-use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
+use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE, RingBuffer};
 use retro_rs::{Buttons, Emulator};
 
 use std::io::{Read, Write};
@@ -22,7 +22,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
     for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
-        mappy.process_screen(emu);
+        mappy.process_screen(emu, Buttons::new());
         if frames % 300 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
             println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
@@ -72,7 +72,7 @@ async fn main() {
     let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 300];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
-    let mut mappy = MappyState::new(w, h);
+    let mut mappy = MappyState::new(w, h, 4);
     if args.len() > 2 {
         mappy::read_fm2(&mut replay_inputs, &Path::new(&args[2]));
         replay(&mut emu, &mut mappy, &replay_inputs);
@@ -264,7 +264,7 @@ zxcvbnm,./ for debug displays"
             }
             let had_control = mappy.has_control;
             let old_control_time = mappy.last_control;
-            mappy.process_screen(&mut emu);
+            mappy.process_screen(&mut emu, buttons);  // Calling process screen, this is where the RingBuf print happens
             frame_counter += 1;
             if mappy.has_control && !had_control {
                 println!(
