@@ -135,7 +135,7 @@ impl SpriteTrack {
         ret
     }
     // TODO add function that just returns the sprite data q?
-    pub fn getSpriteData(&self) -> &SpriteData {
+    pub fn get_sprite_data(&self) -> &SpriteData {
         return &self.positions[0].2;
     }
     pub fn current_data(&self) -> &SpriteData {
@@ -168,7 +168,6 @@ impl SpriteTrack {
             .find(|At(time, _, _)| *time <= t)
             .unwrap();
         Some((sx + sd.x as i32, sy + sd.y as i32))
-        // let At(_, (sx, sy), sd) = &self.positions.iter().find(|At(time, _, _)| *time == t);
     }
 
     pub fn point_at(&self, t: Time) -> Option<(i32, i32)> {
@@ -234,63 +233,99 @@ impl SpriteBlob {
         let mut same_spd = 0; // number of frames where they are moving at the same speed
         if t1.id != t2.id {
             for n in (now.0 - lookback)..now.0 {
-                // get the positions of the tracks at each frame
-                let Some((x1, y1)) = t1.position_at(Time(n)); // current position
-                let Some((x1_p, y1_p)) = t1.position_at(Time(n - 1));
-                let Some((x2, y2)) = t2.position_at(Time(n)); // current position
-                let Some((x2_p, y2_p)) = t2.position_at(Time(n - 1));
+                let mut vec1 = Vec::new();
+                let mut vec2 = Vec::new();
 
-                let w = t1.current_data().width(); // t1's width TODO add data_at
-                let h = t2.current_data().height(); // t1's height
-                let _other = t2.current_data(); // sprite data of t2
+                if let (Some((x1, y1)), Some((x1_p, y1_p))) =
+                    (t1.position_at(Time(n)), t1.position_at(Time(n - 1)))
+                {
+                    let dispx = x1 - x1_p;
+                    let dispy = y1 - y1_p;
+                    vec1.push(dispx);
+                    vec2.push(dispy);
+                }
 
-                let rect1 = t1.getSpriteData().sprite_rect();
-                let rect2 = t2.getSpriteData().sprite_rect();
+                if let (Some((x2, y2)), Some((x2_p, y2_p))) =
+                    (t2.position_at(Time(n)), t2.position_at(Time(n - 1)))
+                {
+                    let dispx2 = x2 - x2_p;
+                    let dispy2 = y2 - y2_p;
+                    vec1.push(dispx2);
+                    vec2.push(dispy2);
+                }
 
-                // if there is any instance that the two sprites are not touching then closness is set to 100.
+                let rect1 = t1.get_sprite_data().sprite_rect();
+                let rect2 = t2.get_sprite_data().sprite_rect();
+
+                // closeness will be zero if they do overlap, if they don't overlap then closeness will be set to 100.
                 if !rect1.overlaps(&rect2) {
                     closeness = std::cmp::max(closeness, 100);
                 }
 
-                // Note:: change overlapping_sprite parameter for width and height to u8?
-                //    if overlapping_sprite(x1, y1, w.into(), h.into(), &[other]) {
-                //        closeness = 100;
-                //    }
-
-                // let time_prev = Time(n - 1);
-
-                let dispx = x1 - x1_p;
-                let dispy = y1 - y1_p;
-                //    let dx = (dispx^2 + dispy^2).sqrt();
-                //    let speed = dx;
-
-                let dispx2 = x2 - x2_p;
-                let dispy2 = y2 - y2_p;
-                //    let dx2 = (dispx2^2 + dispy2^2).sqrt();
-                //    let speed2 = dx2;
-
-                // TODO fix this make it an actual vec
-                let mut vec1 = Vec::new();
-                vec1.push(dispx);
-                vec1.push(dispy);
-
-                let mut vec2 = Vec::new();
-                vec2.push(dispx2);
-                vec2.push(dispy2);
-
-                // TODO do something to increment the number of frames that share the same speed
-                // i.e. do we want to look at speed? or same velocity?
-                // items may have the same speed but different directions should those be counted as the same blob? or different?
-                // items may be going in the same direction but not necessarily the same blob? f.e. bullets? two concurrent fireballs?
-                if vec1 == vec2 {
+                if vec1[0] == vec2[0] && vec1[1] == vec2[1] {
                     same_spd += 1;
                 }
+
+                // old code
+
+                // // get the positions of the tracks at each frame
+                // let Some((x1, y1)) = t1.position_at(Time(n)); // current position
+                // let Some((x1_p, y1_p)) = t1.position_at(Time(n - 1));
+                // let Some((x2, y2)) = t2.position_at(Time(n)); // current position
+                // let Some((x2_p, y2_p)) = t2.position_at(Time(n - 1));
+
+                // let w = t1.current_data().width(); // t1's width TODO add data_at
+                // let h = t2.current_data().height(); // t1's height
+                // let _other = t2.current_data(); // sprite data of t2
+
+                // let rect1 = t1.getSpriteData().sprite_rect();
+                // let rect2 = t2.getSpriteData().sprite_rect();
+
+                // // if there is any instance that the two sprites are not touching then closness is set to 100.
+                // if !rect1.overlaps(&rect2) {
+                //     closeness = std::cmp::max(closeness, 100);
+                // }
+
+                // // Note:: change overlapping_sprite parameter for width and height to u8?
+                // //    if overlapping_sprite(x1, y1, w.into(), h.into(), &[other]) {
+                // //        closeness = 100;
+                // //    }
+
+                // // let time_prev = Time(n - 1);
+
+                // let dispx = x1 - x1_p;
+                // let dispy = y1 - y1_p;
+                // //    let dx = (dispx^2 + dispy^2).sqrt();
+                // //    let speed = dx;
+
+                // let dispx2 = x2 - x2_p;
+                // let dispy2 = y2 - y2_p;
+                // //    let dx2 = (dispx2^2 + dispy2^2).sqrt();
+                // //    let speed2 = dx2;
+
+                // // TODO fix this make it an actual vec
+                // let mut vec1 = Vec::new();
+                // vec1.push(dispx);
+                // vec1.push(dispy);
+
+                // let mut vec2 = Vec::new();
+                // vec2.push(dispx2);
+                // vec2.push(dispy2);
+
+                // // TODO do something to increment the number of frames that share the same speed
+                // // i.e. do we want to look at speed? or same velocity?
+                // // items may have the same speed but different directions should those be counted as the same blob? or different?
+                // // items may be going in the same direction but not necessarily the same blob? f.e. bullets? two concurrent fireballs?
+                // if vec1 == vec2 {
+                //     same_spd += 1;
+                // }
             }
         }
 
         let moving = 10.0 * (1.0 - same_spd as f32 / lookback as f32);
         return closeness as f32 + moving as f32;
     }
+
     pub fn blob_score(
         &self,
         t: &SpriteTrack,
@@ -302,16 +337,19 @@ impl SpriteBlob {
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
         // closeness + moving
         // return min blob score of all of self.live_tracks with id != t.id
-        let Some(x) = self
+        if let Some(x) = self
             .live_tracks
             .iter()
             .map(|&tid| {
                 let track = all_tracks.iter().find(|track| track.id == tid).unwrap();
                 Self::blob_score_pair(track, t, lookback, time)
             })
-            .min_by(|a, b| a.partial_cmp(b).unwrap());
-
-        return x;
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+        {
+            return x;
+        } else {
+            return 100 as f32;
+        }
     }
     pub fn use_track(&mut self, t: TrackID) {
         // add to live if not present
