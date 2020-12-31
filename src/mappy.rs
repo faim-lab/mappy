@@ -16,7 +16,6 @@ use scrolling::*;
 mod splits;
 use splits::Split;
 mod matching;
-use std::fmt;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use rayon::{prelude::*, spawn_fifo};
@@ -285,7 +284,76 @@ impl MappyState {
         // Input button_input into a RingBuffer
         // let mut buttons_ring_buf: RingBuffer<Buttons> = RingBuffer::new(input, sz); <- pushed and printed this previously
         self.button_input.push(input);
-        println!("{:?}", self.button_input.print());
+        // println!("{:?}", self.button_input.print());
+
+        let mut counter_left: i32 = 0;
+        let mut counter_right: i32 = 0;
+        let mut counter_jump: i32 = 0;
+
+        for n in 0..(self.button_input.get_sz()) {
+            if self.button_input.get(n).get_left() {
+                counter_left += 1
+            }
+            if self.button_input.get(n).get_right() {
+                counter_right += 1
+            }
+            if self.button_input.get(n).get_a() {
+                counter_jump += 1
+            }
+
+            let dominant_input = if counter_right < counter_left && counter_jump < counter_left {
+                1 // left
+            } else if counter_left < counter_right && counter_jump < counter_right {
+                2 //right
+            } else if counter_left < counter_jump && counter_right < counter_jump {
+                3 // jump
+            } else {
+                0 // no input
+            };
+
+            for sprite in self.live_tracks.iter() {
+                // Extracting the position at different points. For position, velocity, and acceleration
+                let pos_1 = sprite.point_at(Time(self.now.0-15+n)); // Current
+                let pos_2 = sprite.point_at(Time(self.now.0-14+n)); // 1 frame back for first velocity (Check these, 
+                let pos_3 = sprite.point_at(Time(self.now.0-10+n)); // 5 frames back                    should it be plus or minus to the 15?)
+                let pos_4 = sprite.point_at(Time(self.now.0-9+n));  // 6 frames back 
+
+                if pos_1.is_some() && pos_2.is_some() && pos_3.is_some() && pos_4.is_some() {
+                    let pos_1_x = pos_1.unwrap().0;
+                    let pos_1_y = pos_1.unwrap().1;
+                    let pos_2_x = pos_2.unwrap().0;
+                    let pos_2_y = pos_2.unwrap().1;
+                    let pos_3_x = pos_3.unwrap().0;
+                    let pos_3_y = pos_3.unwrap().1;
+                    let pos_4_x = pos_4.unwrap().0;
+                    let pos_4_y = pos_4.unwrap().1;
+
+                    let x_per_frame_recent = pos_1_x - pos_2_x;
+                    let x_per_frame_prev   = pos_3_x - pos_4_x;
+                    let y_per_frame_recent = pos_1_y - pos_2_y;
+                    let y_per_frame_prev   = pos_3_y - pos_4_y;
+
+                    let x_accel = x_per_frame_recent - x_per_frame_prev;
+                    let y_accel = y_per_frame_recent - y_per_frame_prev;
+
+                    // Printing out the direction of the acceleration
+                    if pos_1_x % 100 == 0 && x_accel > 0 {
+                        println!("Right")
+                    }
+                    if pos_1_x % 100 == 0 && x_accel < 0 {
+                        println!("Left")
+                    }
+                    if pos_1_y % 100 == 0 && y_accel > 0 {
+                        println!("Jump")
+                    }
+                    // Need to fix the behavior of my acceleration calculations in order to account for drag / deceleration
+
+                    // Then I need to compare my dominant_input variable to the accelerations
+                    // A dominant input of 0 is no input, 1 is left, 2 is right, and 3 is jump.
+                    // I need to figure out the behavior of Mario decelerating when a key is released
+                }
+            }
+        }
 
     }
     fn process_merges(&mut self) {
@@ -540,6 +608,17 @@ impl MappyState {
             + (if old.seen_attrs(new_s.attrs) { 0 } else { 4 })
             + (if new_s.height() == sd2.height() { 0 } else { 8 })
     }
+
+
+    // fn get_sprite_acceleration(&mut self) {
+    //     let now = self.now;
+    //     let dead_tracks = &mut self.dead_tracks;
+    //     let live_blobs = &mut self.live_blobs;
+    //     let mut dead_blob_ids = vec![];
+
+
+
+    // }
 
     fn track_sprites(&mut self) {
         use matching::{greedy_match, Match, MatchTo, Target};
@@ -1010,6 +1089,9 @@ impl<T:Copy + std::fmt::Debug> RingBuffer<T> {
     }
     pub fn get(&self, since:usize) -> T {
         self.buf[(self.buf.len() - since) - 1]
+    }
+    pub fn get_sz(&self) -> usize {
+        self.buf.len()
     }
 
 }

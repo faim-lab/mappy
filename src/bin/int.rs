@@ -1,7 +1,6 @@
 use macroquad::*;
-use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE, RingBuffer};
+use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
-
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
@@ -72,7 +71,7 @@ async fn main() {
     let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 300];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
-    let mut mappy = MappyState::new(w, h, 4);
+    let mut mappy = MappyState::new(w, h, 14);
     if args.len() > 2 {
         mappy::read_fm2(&mut replay_inputs, &Path::new(&args[2]));
         replay(&mut emu, &mut mappy, &replay_inputs);
