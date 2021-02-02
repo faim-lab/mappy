@@ -158,6 +158,9 @@ impl SpriteTrack {
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
     }
+    pub fn to_string(&self) -> String {
+        format!("{:?} {:?}", self.id, self.patterns)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
