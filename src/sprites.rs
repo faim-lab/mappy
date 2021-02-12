@@ -77,6 +77,7 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
 // TODO return list of overlapping sprites
 pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[SpriteData]) -> bool {
     for s in sprites.iter().filter(|s| s.is_valid()) {
+        // TODO avoid if by rolling into filter?
         // a1 < b2
         // a2 < b1
         if x <= s.x as usize + s.width() as usize

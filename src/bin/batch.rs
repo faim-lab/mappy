@@ -42,7 +42,7 @@ fn main() {
     mappy.finish();
 
     println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
-    println!("Emulation only: 0.316842184 for 867 inputs, avg 0.000234");
+    println!("Emulation only: 7.62524203s for 34,514 inputs, avg 0.000220 per frame");
     println!(
         "Net: {:} for {:} inputs, avg {:} per frame",
         start.elapsed().as_secs_f64(),
