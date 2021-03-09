@@ -1,7 +1,7 @@
 use crate::Time;
-use retro_rs::Emulator;
+use retro_rs::{Buttons, Emulator};
 use std::collections::HashSet;
-
+use crate::mappy::RingBuffer;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct SpriteData {
     pub index: u8,
@@ -106,6 +106,7 @@ pub struct SpriteTrack {
     pub patterns: HashSet<u8>,
     pub tables: HashSet<u8>,
     pub attrs: HashSet<u8>,
+    pub is_avatar: bool,
 }
 
 impl SpriteTrack {
@@ -116,6 +117,7 @@ impl SpriteTrack {
             patterns: HashSet::new(),
             tables: HashSet::new(),
             attrs: HashSet::new(),
+            is_avatar: false,
         };
         ret.update(t, scroll, sd);
         ret
@@ -158,10 +160,86 @@ impl SpriteTrack {
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
     }
-    pub fn to_string(&self) -> String {
-        format!("{:?} {:?}", self.id, self.patterns)
+
+    pub fn get_is_avatar(&self, input: Buttons, current_time: Time) -> bool {
+        let mut button_input = RingBuffer::new(Buttons::new(), 15);
+        // Push button_input into a RingBuffer
+        button_input.push(input);
+
+        // Counters used to determine most common input in current ring buffer:
+        let mut counter_left: i32  = 0;
+        let mut counter_right: i32 = 0;
+        let mut counter_jump: i32  = 0;
+
+        let mut frequency: i32 = 0;
+
+        for n in 0..(button_input.get_sz()) {
+            if button_input.get(n).get_left() {
+                counter_left += 1
+            }
+            if button_input.get(n).get_right() {
+                counter_right += 1
+            }
+            if button_input.get(n).get_a() {
+                counter_jump += 1
+            }
+
+            let dominant_input: i32 =
+            if counter_right < counter_left && counter_jump < counter_left {
+                1 // left
+            } else if counter_left < counter_right && counter_jump < counter_right {
+                2 //right
+            } else if counter_left < counter_jump && counter_right < counter_jump {
+                3 // jump
+            } else {
+                0 // no input
+            };
+            
+            // Extracting the position at different points. For position, velocity, and acceleration
+            let pos_1: Option<(i32, i32)> = self.point_at(Time(current_time.0-15+n));  // 15 frames back
+            let pos_2: Option<(i32, i32)> = self.point_at(Time(current_time.0-12+n)); // 10 frames back
+            let pos_3: Option<(i32, i32)> = self.point_at(Time(current_time.0-2+n)); // 5 frames back
+            let pos_4: Option<(i32, i32)> = self.point_at(Time(current_time.0+n));  // 0 frames back 
+
+            if pos_1.is_some() && pos_2.is_some() && pos_3.is_some() && pos_4.is_some() {
+                // Unwrap and separate the x and y coordinates
+                let pos_1_x: i32 = pos_1.unwrap().0;
+                let pos_1_y: i32 = pos_1.unwrap().1;
+                let pos_2_x: i32 = pos_2.unwrap().0;
+                let pos_2_y: i32 = pos_2.unwrap().1;
+                let pos_3_x: i32 = pos_3.unwrap().0;
+                let pos_3_y: i32 = pos_3.unwrap().1;
+                let pos_4_x: i32 = pos_4.unwrap().0;
+                let pos_4_y: i32 = pos_4.unwrap().1;
+
+                // Velocities:
+                let x_vel_recent: i32 = pos_1_x - pos_2_x;
+                let x_vel_prev: i32   = pos_3_x - pos_4_x;
+                let y_vel_recent: i32 = pos_1_y - pos_2_y;
+                let y_vel_prev: i32   = pos_3_y - pos_4_y;
+
+                // Accelerations:
+                let x_accel: i32 = x_vel_recent - x_vel_prev;
+                let y_accel: i32 = y_vel_recent - y_vel_prev;
+
+                if x_accel < 0 && dominant_input == 2 { // x_vel_recent instead? Should I really be using acceleration?
+                    frequency += 1
+                }
+                if x_accel > 0 && dominant_input == 1 { // x_vel_recent instead? Same question.
+                    frequency += 1
+                }
+                if y_accel > 0 && dominant_input == 3 {
+                    frequency += 1
+                }
+            }
+        }
+        return frequency >= 1 // greater than a threshold value
     }
+    // NEXT: CLEAN UP MAPPY.RS
 }
+    // pub fn to_string(&self) -> String {
+    //     format!("{:?} {:?}", self.id, self.patterns)
+    // }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlobID(usize);
@@ -234,3 +312,4 @@ impl SpriteBlob {
         );
     }
 }
+

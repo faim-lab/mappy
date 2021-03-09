@@ -21,7 +21,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
     for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
-        mappy.process_screen(emu, Buttons::new());
+        mappy.process_screen(emu);
         if frames % 300 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
             println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
@@ -64,6 +64,7 @@ async fn main() {
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
     let mut draw_merge_diff: Option<usize> = None;
+    let mut avatar_indicator = false;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
@@ -71,7 +72,7 @@ async fn main() {
     let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 300];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
-    let mut mappy = MappyState::new(w, h, 14);
+    let mut mappy = MappyState::new(w, h);
     if args.len() > 2 {
         mappy::read_fm2(&mut replay_inputs, &Path::new(&args[2]));
         replay(&mut emu, &mut mappy, &replay_inputs);
@@ -165,6 +166,10 @@ zxcvbnm,./ for debug displays"
         //      std::fs::create_dir_all("out/rooms").unwrap();
         //      mappy.dump_rooms(Path::new("out/rooms"));
         //  }
+
+        if is_key_pressed(KeyCode::M) {
+            avatar_indicator = !avatar_indicator;
+        }
 
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let numkey = {
@@ -263,7 +268,7 @@ zxcvbnm,./ for debug displays"
             }
             let had_control = mappy.has_control;
             let old_control_time = mappy.last_control;
-            mappy.process_screen(&mut emu, buttons);  // Calling process screen, this is where the RingBuf print happens
+            mappy.process_screen(&mut emu);
             frame_counter += 1;
             if mappy.has_control && !had_control {
                 println!(
@@ -453,6 +458,22 @@ zxcvbnm,./ for debug displays"
                             col,
                         );
                     }
+                }
+            }
+        }
+
+        if avatar_indicator {
+            for track in mappy.live_tracks.iter() {
+                if track.get_is_avatar(inputs.last().unwrap()[0], mappy.now) {
+                    let pos: (i32, i32) = track.current_point();
+                    let pos_x: i32 = pos.0 - mappy.scroll.0;
+                    let pos_y: i32 = pos.1 - mappy.scroll.1 + 400;
+                    draw_circle(
+                        pos_x as f32,
+                        pos_y as f32,
+                        SCALE,
+                        DARKBLUE
+                    );
                 }
             }
         }

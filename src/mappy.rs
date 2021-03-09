@@ -80,8 +80,6 @@ pub struct MappyState {
     pub last_control: Time,
     pub last_controlled_scroll: (i32, i32),
     pub timers: Timers<Timing>,
-    // RingBuffer Stuff:
-    pub button_input: RingBuffer<Buttons>,
     // which rooms were terminated by resets?
     pub resets: Vec<usize>,
 }
@@ -98,7 +96,7 @@ impl MappyState {
     // This is just an arbitrary value, not sure what a good one is!
     pub const ROOM_MERGE_THRESHOLD: f32 = 10.0;
 
-    pub fn new(w: usize, h: usize, sz: usize) -> Self { // Added parameter for size of RingBuffer. IDK if that will create a mess
+    pub fn new(w: usize, h: usize) -> Self { // Added parameter for size of RingBuffer. IDK if that will create a mess
         let db = TileDB::new();
         let t0 = db.get_initial_tile();
         let s0 = Screen::new(Rect::new(0, 0, 0, 0), t0);
@@ -147,7 +145,6 @@ impl MappyState {
             room_merge_rx,
             room_merge_tx,
             timers: Timers::new(),
-            button_input: RingBuffer::new(Buttons::new(), sz),
             resets: vec![],
         }
     }
@@ -202,7 +199,7 @@ impl MappyState {
         }
     }
 
-    pub fn process_screen(&mut self, emu: &mut Emulator, input: Buttons) {
+    pub fn process_screen(&mut self, emu: &mut Emulator) {
         // Read new data from emulator
         let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
@@ -279,80 +276,6 @@ impl MappyState {
         self.process_merges();
         // Update `now`
         self.now.0 += 1;
-
-        // AVATAR IDENTIFICATION:
-        // First, push button_input into a RingBuffer
-        self.button_input.push(input); 
-
-        // Counters used to determine most common input in current ring buffer:
-        let mut counter_left: i32  = 0;
-        let mut counter_right: i32 = 0;
-        let mut counter_jump: i32  = 0;
-
-        for n in 0..(self.button_input.get_sz()) {
-            if self.button_input.get(n).get_left() {
-                counter_left += 1
-            }
-            if self.button_input.get(n).get_right() {
-                counter_right += 1
-            }
-            if self.button_input.get(n).get_a() {
-                counter_jump += 1
-            }
-
-            let dominant_input: i32 =
-            if counter_right < counter_left && counter_jump < counter_left {
-                1 // left
-            } else if counter_left < counter_right && counter_jump < counter_right {
-                2 //right
-            } else if counter_left < counter_jump && counter_right < counter_jump {
-                3 // jump
-            } else {
-                0 // no input
-            };
-
-            for sprite in self.live_tracks.iter() {
-                // Extracting the position at different points. For position, velocity, and acceleration
-                let pos_1: Option<(i32, i32)> = sprite.point_at(Time(self.now.0-15+n));  // 15 frames back
-                let pos_2: Option<(i32, i32)> = sprite.point_at(Time(self.now.0-10+n)); // 10 frames back
-                let pos_3: Option<(i32, i32)> = sprite.point_at(Time(self.now.0-5+n)); // 5 frames back
-                let pos_4: Option<(i32, i32)> = sprite.point_at(Time(self.now.0+n));  // 0 frames back 
-
-                if pos_1.is_some() && pos_2.is_some() && pos_3.is_some() && pos_4.is_some() {
-                    // Unwrap and separate the x and y coordinates
-                    let pos_1_x: i32 = pos_1.unwrap().0;
-                    let pos_1_y: i32 = pos_1.unwrap().1;
-                    let pos_2_x: i32 = pos_2.unwrap().0;
-                    let pos_2_y: i32 = pos_2.unwrap().1;
-                    let pos_3_x: i32 = pos_3.unwrap().0;
-                    let pos_3_y: i32 = pos_3.unwrap().1;
-                    let pos_4_x: i32 = pos_4.unwrap().0;
-                    let pos_4_y: i32 = pos_4.unwrap().1;
-
-                    // Velocities:
-                    let x_per_frame_recent: i32 = pos_1_x - pos_2_x;
-                    let x_per_frame_prev: i32   = pos_3_x - pos_4_x;
-                    let y_per_frame_recent: i32 = pos_1_y - pos_2_y;
-                    let y_per_frame_prev: i32   = pos_3_y - pos_4_y;
-
-                    // Accelerations:
-                    let x_accel: i32 = x_per_frame_recent - x_per_frame_prev;
-                    let y_accel: i32 = y_per_frame_recent - y_per_frame_prev;
-
-                    // Print relevant info from sprite tracks:
-                    if self.now.0 % 100 == 0 {
-                        if (x_accel < 0 && dominant_input == 2) ||
-                           (x_accel > 0 && dominant_input == 1) ||
-                           (y_accel > 0 && dominant_input == 3) {
-                           println!("{:?}", sprite.to_string())
-                        }
-                    }
-                    // How could drag / deceleration be accounted for?
-                    // Print sprite that matches most commonly?
-                    // Testing with other games?
-                }
-            }
-        }
 
     }
     fn process_merges(&mut self) {
@@ -459,7 +382,8 @@ impl MappyState {
         });
     }
 
-    fn read_current_screen(&mut self) {
+    fn read_current_screen(&mut self) { // if a clear sprite is overlapping a tile, then just place that tile
+                                        // overlapping sprite check. See if it's a tile that's already been seen
         let mut tiles = self.tiles.write().unwrap();
         let region = self.split_region();
         self.current_screen = Screen::new(
