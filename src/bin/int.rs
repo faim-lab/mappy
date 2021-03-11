@@ -465,18 +465,19 @@ zxcvbnm,./ for debug displays"
         if avatar_indicator {
             for track in mappy.live_tracks.iter() {
                 if track.get_is_avatar(inputs.last().unwrap()[0], mappy.now) {
-                    let pos: (i32, i32) = track.current_point();
-                    let pos_x: i32 = pos.0 - mappy.scroll.0;
-                    let pos_y: i32 = pos.1 - mappy.scroll.1 + 400;
+                    let mappy::At(_, (sx0, sy0), sd0) = track.positions.last().unwrap();
+                    let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
+                    let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
                     draw_circle(
-                        pos_x as f32,
-                        pos_y as f32,
-                        SCALE,
+                        x0 as f32 * SCALE,
+                        y0 as f32 * SCALE,
+                        4.0,
                         DARKBLUE
                     );
                 }
             }
         }
+        
         next_frame().await;
         // let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);
         // // let frame_interval = Duration::new(0, 1);

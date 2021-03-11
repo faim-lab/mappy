@@ -183,56 +183,109 @@ impl SpriteTrack {
             if button_input.get(n).get_a() {
                 counter_jump += 1
             }
-
-            let dominant_input: i32 =
-            if counter_right < counter_left && counter_jump < counter_left {
-                1 // left
-            } else if counter_left < counter_right && counter_jump < counter_right {
-                2 //right
-            } else if counter_left < counter_jump && counter_right < counter_jump {
-                3 // jump
-            } else {
-                0 // no input
-            };
-            
-            // Extracting the position at different points. For position, velocity, and acceleration
-            let pos_1: Option<(i32, i32)> = self.point_at(Time(current_time.0-15+n));  // 15 frames back
-            let pos_2: Option<(i32, i32)> = self.point_at(Time(current_time.0-12+n)); // 10 frames back
-            let pos_3: Option<(i32, i32)> = self.point_at(Time(current_time.0-2+n)); // 5 frames back
-            let pos_4: Option<(i32, i32)> = self.point_at(Time(current_time.0+n));  // 0 frames back 
-
-            if pos_1.is_some() && pos_2.is_some() && pos_3.is_some() && pos_4.is_some() {
-                // Unwrap and separate the x and y coordinates
-                let pos_1_x: i32 = pos_1.unwrap().0;
-                let pos_1_y: i32 = pos_1.unwrap().1;
-                let pos_2_x: i32 = pos_2.unwrap().0;
-                let pos_2_y: i32 = pos_2.unwrap().1;
-                let pos_3_x: i32 = pos_3.unwrap().0;
-                let pos_3_y: i32 = pos_3.unwrap().1;
-                let pos_4_x: i32 = pos_4.unwrap().0;
-                let pos_4_y: i32 = pos_4.unwrap().1;
-
-                // Velocities:
-                let x_vel_recent: i32 = pos_1_x - pos_2_x;
-                let x_vel_prev: i32   = pos_3_x - pos_4_x;
-                let y_vel_recent: i32 = pos_1_y - pos_2_y;
-                let y_vel_prev: i32   = pos_3_y - pos_4_y;
-
-                // Accelerations:
-                let x_accel: i32 = x_vel_recent - x_vel_prev;
-                let y_accel: i32 = y_vel_recent - y_vel_prev;
-
-                if x_accel < 0 && dominant_input == 2 { // x_vel_recent instead? Should I really be using acceleration?
-                    frequency += 1
-                }
-                if x_accel > 0 && dominant_input == 1 { // x_vel_recent instead? Same question.
-                    frequency += 1
-                }
-                if y_accel > 0 && dominant_input == 3 {
-                    frequency += 1
-                }
-            }
         }
+
+        let dominant_input: i32 =
+        if counter_right < counter_left && counter_jump < counter_left {
+            1 // left
+        } else if counter_left < counter_right && counter_jump < counter_right {
+            2 //right
+        } else if counter_left < counter_jump && counter_right < counter_jump {
+            3 // jump
+        } else {
+            0 // no input
+        };
+        
+        // Extracting the position at different points. For position, velocity, and acceleration
+        let pos_1: Option<(i32, i32)> = self.point_at(Time(current_time.0-15));  // 15 frames back
+        let pos_2: Option<(i32, i32)> = self.point_at(Time(current_time.0-13)); // 13 frames back
+        let pos_3: Option<(i32, i32)> = self.point_at(Time(current_time.0-11)); // 11 frames back
+        let pos_4: Option<(i32, i32)> = self.point_at(Time(current_time.0-9));  // 9 frames back
+        let pos_5: Option<(i32, i32)> = self.point_at(Time(current_time.0-7));  // 7 frames back
+        let pos_6: Option<(i32, i32)> = self.point_at(Time(current_time.0-5)); // 5 frames back
+        let pos_7: Option<(i32, i32)> = self.point_at(Time(current_time.0-3)); // 3 frames back
+        let pos_8: Option<(i32, i32)> = self.point_at(Time(current_time.0-1));  // 1 frames back 
+
+        if pos_1.is_some() && pos_2.is_some() && pos_3.is_some() && pos_4.is_some() &&
+           pos_5.is_some() && pos_6.is_some() && pos_7.is_some() && pos_8.is_some() {
+            // Unwrap and separate the x and y coordinates
+            let pos_1_x: i32 = pos_1.unwrap().0;
+            let pos_1_y: i32 = pos_1.unwrap().1;
+            let pos_2_x: i32 = pos_2.unwrap().0;
+            let pos_2_y: i32 = pos_2.unwrap().1;
+            let pos_3_x: i32 = pos_3.unwrap().0;
+            let pos_3_y: i32 = pos_3.unwrap().1;
+            let pos_4_x: i32 = pos_4.unwrap().0;
+            let pos_4_y: i32 = pos_4.unwrap().1;
+            let pos_5_x: i32 = pos_5.unwrap().0; // new ones from here
+            let pos_5_y: i32 = pos_5.unwrap().1;
+            let pos_6_x: i32 = pos_6.unwrap().0;
+            let pos_6_y: i32 = pos_6.unwrap().1;
+            let pos_7_x: i32 = pos_7.unwrap().0;
+            let pos_7_y: i32 = pos_7.unwrap().1;
+            let pos_8_x: i32 = pos_8.unwrap().0;
+            let pos_8_y: i32 = pos_8.unwrap().1;
+
+            let x_vel_1: i32 = pos_1_x - pos_2_x; // Velocities
+            let x_vel_2: i32 = pos_3_x - pos_4_x;
+            let x_vel_3: i32 = pos_5_x - pos_6_x;
+            let x_vel_4: i32 = pos_7_x - pos_8_x;
+            let y_vel_1: i32 = pos_1_y - pos_2_y;
+            let y_vel_2: i32 = pos_3_y - pos_4_y;
+            let y_vel_3: i32 = pos_5_y - pos_6_y;
+            let y_vel_4: i32 = pos_7_y - pos_8_y;
+
+            let x_accel_1: i32 = x_vel_1 - x_vel_2; // Accelerations
+            let x_accel_2: i32 = x_vel_3 - x_vel_4;
+            let y_accel_1: i32 = y_vel_1 - y_vel_2;
+            let y_accel_2: i32 = y_vel_3 - y_vel_4;
+
+            // // what to put in this get parameter is questionable
+            // if x_accel_1 > 0 && (button_input.get(10).get_right() || button_input.get(8).get_right()) { 
+            //     frequency += 1
+            // }
+            // if x_accel_1 < 0 && (button_input.get(10).get_left() || button_input.get(8).get_left()) {
+            //     frequency += 1
+            // }
+            // if x_accel_2 > 0 && (button_input.get(3).get_right() || button_input.get(0).get_right()) {
+            //     frequency += 1
+            // }
+            // if x_accel_2 < 0 && (button_input.get(3).get_left() || button_input.get(0).get_left()) {
+            //     frequency += 1
+            // }
+
+            // Velocities:
+            let x_vel_recent: i32 = pos_6_x - pos_4_x;
+            let x_vel_prev: i32   = pos_3_x - pos_1_x;
+            let y_vel_recent: i32 = pos_6_y - pos_4_y;
+            let y_vel_prev: i32   = pos_3_y - pos_1_y;
+
+            // Accelerations:
+            let x_accel: i32 = x_vel_recent - x_vel_prev;
+            let y_accel: i32 = y_vel_recent - y_vel_prev;
+
+            // if x_vel_recent < 0 && dominant_input == 2 { // determine avatar via velocity
+            //     frequency += 1
+            // }
+            // if x_vel_recent > 0 && dominant_input == 1 {
+            //     frequency += 1
+            // }
+            // if y_vel_recent > 0 && dominant_input == 3 {
+            //     frequency += 1
+            // }
+
+            if x_accel > 0 && dominant_input == 2 { // determine avatar via acceleration
+                frequency += 1
+            }
+            if x_accel < 0 && dominant_input == 1 {
+                frequency += 1
+            }
+            if y_accel < 0 && dominant_input == 3 {
+                frequency += 1
+            }
+
+        }
+        // println!("{}", frequency);
         return frequency >= 1 // greater than a threshold value
     }
     // NEXT: CLEAN UP MAPPY.RS

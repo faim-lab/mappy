@@ -1016,6 +1016,5 @@ impl<T:Copy + std::fmt::Debug> RingBuffer<T> {
     pub fn get_sz(&self) -> usize {
         self.buf.len()
     }
-
 }
 
