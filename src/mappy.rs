@@ -199,7 +199,7 @@ impl MappyState {
         }
     }
 
-    pub fn process_screen(&mut self, emu: &mut Emulator) {
+    pub fn process_screen(&mut self, emu: &mut Emulator, input: Buttons) {
         // Read new data from emulator
         let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
@@ -232,7 +232,7 @@ impl MappyState {
         let t = self.timers.timer(Timing::Track).start();
         sprites::get_sprites(&emu, &mut self.live_sprites);
         // Relate current sprites to previous sprites
-        self.track_sprites();
+        self.track_sprites(input);
         t.stop();
 
         let t = self.timers.timer(Timing::Blob).start();
@@ -543,7 +543,7 @@ impl MappyState {
 
     // }
 
-    fn track_sprites(&mut self) {
+    fn track_sprites(&mut self, input: Buttons) {
         use matching::{greedy_match, Match, MatchTo, Target};
         let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
@@ -628,6 +628,10 @@ impl MappyState {
                     self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[new]);
                 }
             }
+        }
+        // avatar identification related:
+        for track in self.live_tracks.iter_mut() {
+            track.determine_avatar(self.now, input);
         }
     }
 

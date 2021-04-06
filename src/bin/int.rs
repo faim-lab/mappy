@@ -21,7 +21,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
     for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
-        mappy.process_screen(emu);
+        mappy.process_screen(emu, inputs.last().unwrap()[0]);
         if frames % 300 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
             println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
@@ -268,7 +268,7 @@ zxcvbnm,./ for debug displays"
             }
             let had_control = mappy.has_control;
             let old_control_time = mappy.last_control;
-            mappy.process_screen(&mut emu);
+            mappy.process_screen(&mut emu, inputs.last().unwrap()[0]);
             frame_counter += 1;
             if mappy.has_control && !had_control {
                 println!(
@@ -464,7 +464,7 @@ zxcvbnm,./ for debug displays"
 
         if avatar_indicator {
             for track in mappy.live_tracks.iter() {
-                if track.get_is_avatar(inputs.last().unwrap()[0], mappy.now) {
+                if track.get_is_avatar() {
                     let mappy::At(_, (sx0, sy0), sd0) = track.positions.last().unwrap();
                     let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
                     let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;

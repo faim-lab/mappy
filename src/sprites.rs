@@ -106,7 +106,8 @@ pub struct SpriteTrack {
     pub patterns: HashSet<u8>,
     pub tables: HashSet<u8>,
     pub attrs: HashSet<u8>,
-    pub is_avatar: bool,
+    pub positive_hits: i32,
+    pub negative_hits: i32,
 }
 
 impl SpriteTrack {
@@ -117,7 +118,8 @@ impl SpriteTrack {
             patterns: HashSet::new(),
             tables: HashSet::new(),
             attrs: HashSet::new(),
-            is_avatar: false,
+            positive_hits: 0,
+            negative_hits: 0,
         };
         ret.update(t, scroll, sd);
         ret
@@ -161,18 +163,14 @@ impl SpriteTrack {
         self.attrs.contains(&attrs)
     }
 
-    pub fn get_is_avatar(&self, input: Buttons, current_time: Time) -> bool {
+    pub fn determine_avatar(&mut self, current_time: Time, input: Buttons) {
         let mut button_input = RingBuffer::new(Buttons::new(), 15);
-        // Push button_input into a RingBuffer
-        button_input.push(input);
+        button_input.push(input); // Push button_input into a RingBuffer
 
         // Counters used to determine most common input in current ring buffer:
         let mut counter_left: i32  = 0;
         let mut counter_right: i32 = 0;
         let mut counter_jump: i32  = 0;
-
-        let mut frequency: i32 = 0;
-
         for n in 0..(button_input.get_sz()) {
             if button_input.get(n).get_left() {
                 counter_left += 1
@@ -196,103 +194,94 @@ impl SpriteTrack {
             0 // no input
         };
         
-        // Extracting the position at different points. For position, velocity, and acceleration
-        let pos_1: Option<(i32, i32)> = self.point_at(Time(current_time.0-15));  // 15 frames back
-        let pos_2: Option<(i32, i32)> = self.point_at(Time(current_time.0-13)); // 13 frames back
-        let pos_3: Option<(i32, i32)> = self.point_at(Time(current_time.0-11)); // 11 frames back
-        let pos_4: Option<(i32, i32)> = self.point_at(Time(current_time.0-9));  // 9 frames back
-        let pos_5: Option<(i32, i32)> = self.point_at(Time(current_time.0-7));  // 7 frames back
-        let pos_6: Option<(i32, i32)> = self.point_at(Time(current_time.0-5)); // 5 frames back
-        let pos_7: Option<(i32, i32)> = self.point_at(Time(current_time.0-3)); // 3 frames back
-        let pos_8: Option<(i32, i32)> = self.point_at(Time(current_time.0-1));  // 1 frames back 
+        let mut velocities: Vec<(i32, i32)> = Vec::new();
+        for i in 0..15 { // <- this should be 14 since there is nothing previous to the 15th?
+            let pos: Option<(i32, i32)>      = self.point_at(Time(current_time.0-i));
+            let pos_prev: Option<(i32, i32)> = self.point_at(Time(current_time.0-i-4));
 
-        if pos_1.is_some() && pos_2.is_some() && pos_3.is_some() && pos_4.is_some() &&
-           pos_5.is_some() && pos_6.is_some() && pos_7.is_some() && pos_8.is_some() {
-            // Unwrap and separate the x and y coordinates
-            let pos_1_x: i32 = pos_1.unwrap().0;
-            let pos_1_y: i32 = pos_1.unwrap().1;
-            let pos_2_x: i32 = pos_2.unwrap().0;
-            let pos_2_y: i32 = pos_2.unwrap().1;
-            let pos_3_x: i32 = pos_3.unwrap().0;
-            let pos_3_y: i32 = pos_3.unwrap().1;
-            let pos_4_x: i32 = pos_4.unwrap().0;
-            let pos_4_y: i32 = pos_4.unwrap().1;
-            let pos_5_x: i32 = pos_5.unwrap().0; // new ones from here
-            let pos_5_y: i32 = pos_5.unwrap().1;
-            let pos_6_x: i32 = pos_6.unwrap().0;
-            let pos_6_y: i32 = pos_6.unwrap().1;
-            let pos_7_x: i32 = pos_7.unwrap().0;
-            let pos_7_y: i32 = pos_7.unwrap().1;
-            let pos_8_x: i32 = pos_8.unwrap().0;
-            let pos_8_y: i32 = pos_8.unwrap().1;
+            if pos.is_some() && pos_prev.is_some() {
+                let pos_x: i32      = pos.unwrap().0;
+                let pos_y: i32      = pos.unwrap().1;
+                let pos_x_prev: i32 = pos_prev.unwrap().0;
+                let pos_y_prev: i32 = pos_prev.unwrap().1;
+            
+                let x_vel: i32 = pos_x - pos_x_prev;
+                let y_vel: i32 = pos_y - pos_y_prev;
 
-            let x_vel_1: i32 = pos_1_x - pos_2_x; // Velocities
-            let x_vel_2: i32 = pos_3_x - pos_4_x;
-            let x_vel_3: i32 = pos_5_x - pos_6_x;
-            let x_vel_4: i32 = pos_7_x - pos_8_x;
-            let y_vel_1: i32 = pos_1_y - pos_2_y;
-            let y_vel_2: i32 = pos_3_y - pos_4_y;
-            let y_vel_3: i32 = pos_5_y - pos_6_y;
-            let y_vel_4: i32 = pos_7_y - pos_8_y;
-
-            let x_accel_1: i32 = x_vel_1 - x_vel_2; // Accelerations
-            let x_accel_2: i32 = x_vel_3 - x_vel_4;
-            let y_accel_1: i32 = y_vel_1 - y_vel_2;
-            let y_accel_2: i32 = y_vel_3 - y_vel_4;
-
-            // // what to put in this get parameter is questionable
-            // if x_accel_1 > 0 && (button_input.get(10).get_right() || button_input.get(8).get_right()) { 
-            //     frequency += 1
-            // }
-            // if x_accel_1 < 0 && (button_input.get(10).get_left() || button_input.get(8).get_left()) {
-            //     frequency += 1
-            // }
-            // if x_accel_2 > 0 && (button_input.get(3).get_right() || button_input.get(0).get_right()) {
-            //     frequency += 1
-            // }
-            // if x_accel_2 < 0 && (button_input.get(3).get_left() || button_input.get(0).get_left()) {
-            //     frequency += 1
-            // }
-
-            // Velocities:
-            let x_vel_recent: i32 = pos_6_x - pos_4_x;
-            let x_vel_prev: i32   = pos_3_x - pos_1_x;
-            let y_vel_recent: i32 = pos_6_y - pos_4_y;
-            let y_vel_prev: i32   = pos_3_y - pos_1_y;
-
-            // Accelerations:
-            let x_accel: i32 = x_vel_recent - x_vel_prev;
-            let y_accel: i32 = y_vel_recent - y_vel_prev;
-
-            // if x_vel_recent < 0 && dominant_input == 2 { // determine avatar via velocity
-            //     frequency += 1
-            // }
-            // if x_vel_recent > 0 && dominant_input == 1 {
-            //     frequency += 1
-            // }
-            // if y_vel_recent > 0 && dominant_input == 3 {
-            //     frequency += 1
-            // }
-
-            if x_accel > 0 && dominant_input == 2 { // determine avatar via acceleration
-                frequency += 1
+                velocities.push((x_vel, y_vel));
             }
-            if x_accel < 0 && dominant_input == 1 {
-                frequency += 1
-            }
-            if y_accel < 0 && dominant_input == 3 {
-                frequency += 1
-            }
-
         }
-        // println!("{}", frequency);
-        return frequency >= 1 // greater than a threshold value
+
+        let mut accelerations: Vec<(i32, i32)> = Vec::new();
+        for i in 0..(velocities.len()) {
+            if (velocities.get(velocities.len() - i)).is_some() &&
+               (velocities.get(velocities.len() - i - 1)).is_some() {
+
+                let x_vel: i32 = velocities.get(velocities.len() - i).unwrap().0;
+                let y_vel: i32 = velocities.get(velocities.len() - i).unwrap().1;
+
+                let x_vel_prev: i32 = velocities.get(velocities.len() - i - 1).unwrap().0;
+                let y_vel_prev: i32 = velocities.get(velocities.len() - i - 1).unwrap().1;
+
+                let x_accel: i32 = x_vel - x_vel_prev;
+                let y_accel: i32 = y_vel - y_vel_prev;
+                accelerations.push((x_accel, y_accel));
+            }
+        }
+
+        // TOTAL OF VELOCITIES
+        let mut total_vel_x: i32 = 0;
+        let mut total_vel_y: i32 = 0;
+        for i in 0..(velocities.len()) {
+            total_vel_x += velocities.get(i).unwrap().0;
+            total_vel_y += velocities.get(i).unwrap().1;
+        }
+
+        // TOTAL OF ACCELERATIONS
+        let mut total_accels_x: i32 = 0;
+        let mut total_accels_y: i32 = 0;
+        for i in 0..(accelerations.len()) {
+            total_accels_x += accelerations.get(i).unwrap().0;
+            total_accels_y += accelerations.get(i).unwrap().1;
+        }
+        // In the following code, we use the totals of recent velocities and 
+        // accelerations as a kind of average.
+
+        // Positive velocity evidence:
+        if (total_vel_x < 0 && dominant_input == 2) ||
+           (total_vel_x > 0 && dominant_input == 1) ||
+           (total_vel_y > 0 && dominant_input == 3) {
+            self.positive_hits += 1
+        }
+        // Negative velocity evidence:
+        if (total_vel_x > 0 && dominant_input == 2) ||
+           (total_vel_x < 0 && dominant_input == 1) ||
+           (total_vel_y < 0 && dominant_input == 3) {
+            self.negative_hits += 1
+        }
+        // The case that the sprite is unmoving and there is an input (still using velocity):
+        if (total_vel_x == 0 || total_vel_y == 0) &&
+           (dominant_input == 3 || dominant_input == 3 || dominant_input == 3) {
+            self.negative_hits += 1
+        }
+        // Positive acceleration evidence (stronger than velocity evidence):
+        if (total_accels_x < 0 && dominant_input == 2) ||
+           (total_accels_x > 0 && dominant_input == 1) ||
+           (total_accels_y > 0 && dominant_input == 3) {
+            self.positive_hits += 3
+        }
+        // Negative acceleration evidence:
+        if (total_accels_x > 0 && dominant_input == 2) ||
+           (total_accels_x < 0 && dominant_input == 1) ||
+           (total_accels_y < 0 && dominant_input == 3) {
+            self.negative_hits += 3
+        }
     }
-    // NEXT: CLEAN UP MAPPY.RS
+
+    pub fn get_is_avatar(&self) -> bool {
+        return self.positive_hits - self.negative_hits >= 50 // greater than a threshold value
+    }
 }
-    // pub fn to_string(&self) -> String {
-    //     format!("{:?} {:?}", self.id, self.patterns)
-    // }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlobID(usize);
