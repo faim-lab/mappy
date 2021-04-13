@@ -164,7 +164,7 @@ impl SpriteTrack {
     }
 
     pub fn determine_avatar(&mut self, current_time: Time, input: Buttons) {
-        let mut button_input = RingBuffer::new(Buttons::new(), 15);
+        let mut button_input = RingBuffer::new(Buttons::new(), 25);
         button_input.push(input); // Push button_input into a RingBuffer
 
         // Counters used to determine most common input in current ring buffer:
@@ -193,25 +193,21 @@ impl SpriteTrack {
         } else {
             0 // no input
         };
-        
         let mut velocities: Vec<(i32, i32)> = Vec::new();
-        for i in 0..15 { // <- this should be 14 since there is nothing previous to the 15th?
+        for i in 0..25 {
             let pos: Option<(i32, i32)>      = self.point_at(Time(current_time.0-i));
             let pos_prev: Option<(i32, i32)> = self.point_at(Time(current_time.0-i-4));
-
             if pos.is_some() && pos_prev.is_some() {
                 let pos_x: i32      = pos.unwrap().0;
                 let pos_y: i32      = pos.unwrap().1;
                 let pos_x_prev: i32 = pos_prev.unwrap().0;
                 let pos_y_prev: i32 = pos_prev.unwrap().1;
-            
-                let x_vel: i32 = pos_x - pos_x_prev;
-                let y_vel: i32 = pos_y - pos_y_prev;
+                let x_vel: i32      = pos_x - pos_x_prev;
+                let y_vel: i32      = pos_y - pos_y_prev;
 
                 velocities.push((x_vel, y_vel));
             }
         }
-
         let mut accelerations: Vec<(i32, i32)> = Vec::new();
         for i in 0..(velocities.len()) {
             if (velocities.get(velocities.len() - i)).is_some() &&
@@ -228,58 +224,60 @@ impl SpriteTrack {
                 accelerations.push((x_accel, y_accel));
             }
         }
-
-        // TOTAL OF VELOCITIES
+        // total of velocities
         let mut total_vel_x: i32 = 0;
         let mut total_vel_y: i32 = 0;
         for i in 0..(velocities.len()) {
             total_vel_x += velocities.get(i).unwrap().0;
             total_vel_y += velocities.get(i).unwrap().1;
         }
-
-        // TOTAL OF ACCELERATIONS
-        let mut total_accels_x: i32 = 0;
-        let mut total_accels_y: i32 = 0;
+        // total of accelerations
+        let mut total_accel_x: i32 = 0;
+        let mut total_accel_y: i32 = 0;
         for i in 0..(accelerations.len()) {
-            total_accels_x += accelerations.get(i).unwrap().0;
-            total_accels_y += accelerations.get(i).unwrap().1;
+            total_accel_x += accelerations.get(i).unwrap().0;
+            total_accel_y += accelerations.get(i).unwrap().1;
         }
         // In the following code, we use the totals of recent velocities and 
         // accelerations as a kind of average.
 
-        // Positive velocity evidence:
-        if (total_vel_x < 0 && dominant_input == 2) ||
-           (total_vel_x > 0 && dominant_input == 1) ||
-           (total_vel_y > 0 && dominant_input == 3) {
-            self.positive_hits += 1
-        }
-        // Negative velocity evidence:
+        // Velocity evidence:
         if (total_vel_x > 0 && dominant_input == 2) ||
            (total_vel_x < 0 && dominant_input == 1) ||
            (total_vel_y < 0 && dominant_input == 3) {
+            self.positive_hits += 1
+        }
+        if (total_vel_x < 0 && dominant_input == 2) ||
+           (total_vel_x > 0 && dominant_input == 1) ||
+           (total_vel_y > 0 && dominant_input == 3) {
+            self.negative_hits += 2
+        }
+        // Case that the sprite is unmoving and there is an input:
+        if (total_vel_x == 0 && (dominant_input == 1 || dominant_input == 2)) ||
+           (total_vel_y == 0 && dominant_input == 3) {
             self.negative_hits += 1
         }
-        // The case that the sprite is unmoving and there is an input (still using velocity):
-        if (total_vel_x == 0 || total_vel_y == 0) &&
-           (dominant_input == 3 || dominant_input == 3 || dominant_input == 3) {
+        // Case that there is velocity but no input:
+        if (total_vel_x != 0 && dominant_input == 0) ||
+           (total_vel_y != 0 && dominant_input == 0) {
             self.negative_hits += 1
         }
-        // Positive acceleration evidence (stronger than velocity evidence):
-        if (total_accels_x < 0 && dominant_input == 2) ||
-           (total_accels_x > 0 && dominant_input == 1) ||
-           (total_accels_y > 0 && dominant_input == 3) {
+        // Positive acceleration evidence:
+        if (total_accel_x < 0 && dominant_input == 2) ||
+           (total_accel_x > 0 && dominant_input == 1) ||
+           (total_accel_y > 0 && dominant_input == 3) {
             self.positive_hits += 3
         }
-        // Negative acceleration evidence:
-        if (total_accels_x > 0 && dominant_input == 2) ||
-           (total_accels_x < 0 && dominant_input == 1) ||
-           (total_accels_y < 0 && dominant_input == 3) {
-            self.negative_hits += 3
-        }
+        // // Negative acceleration evidence:
+        // if (total_accel_x > 0 && dominant_input == 2) ||
+        //    (total_accel_x < 0 && dominant_input == 1) ||
+        //    (total_accel_y < 0 && dominant_input == 3) {
+        //     self.negative_hits += 1;
+        // }
     }
 
     pub fn get_is_avatar(&self) -> bool {
-        return self.positive_hits - self.negative_hits >= 50 // greater than a threshold value
+        return self.positive_hits - self.negative_hits >= 60 // greater than a threshold value
     }
 }
 
