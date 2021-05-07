@@ -60,10 +60,20 @@ impl Room {
         for s in self.screens.iter_mut() {
             s.reregister_at(s.region.x + xoff, s.region.y + yoff);
         }
+        println!("rereg {:?}", self.region());
+        let r = self.region();
+        let sr = self.screens_region();
+        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
     }
     pub fn finalize(mut self, initial: TileChange) -> Self {
+        let r = self.region();
+        let sr = self.screens_region();
+        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
         self.reregister_at(0, 0);
         self.screens = vec![Screen::combine(self.screens, initial)];
+        let r = self.region();
+        let sr = self.screens_region();
+        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
         self
     }
     pub fn get(&self, x: i32, y: i32) -> TileChange {
@@ -177,57 +187,50 @@ impl Room {
         self.top_left.1 = self.top_left.1.min(s.region.y);
         self.bottom_right.0 = self.bottom_right.0.max(xmax);
         self.bottom_right.1 = self.bottom_right.1.max(ymax);
+        let r = self.region();
+        let sr = self.screens_region();
+        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
+    }
+    fn screens_region(&self) -> Rect {
+        let mut r = self.screens[0].region;
+        for s in self.screens.iter() {
+            r = r.union(&s.region);
+        }
+        r
     }
     pub fn merge_cost_at(
+        // room to be merged
         &self,
         x: i32,
         y: i32,
+        // room to be checked against
         r2xo: i32,
         r2yo: i32,
         room: &Room,
         tiles: &TileDB,
         threshold: f32,
-    ) -> f32 {
-        let mut any1 = 0;
-        let mut any2 = 0;
+    ) -> (f32, usize) {
+        // let mut any1 = 0;
+        // let mut any2 = 0;
         let r = self.region();
-        let r2x = x - r2xo;
-        let r2y = y - r2yo;
+        let sr = self.screens_region();
+        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
+        let mut comparisons = 0;
+        // put self at x,y
+        // compare against room at r2xo, r2yo
         let mut cost = 0.0;
-
-        // TODO this whole alignment thing is confusing, maybe better
-        // to switch it out into a part that aligns two grids and a
-        // part that does something with each alignment?  because
-        // debugging why the y coordinate of r1 is out of bounds is
-        // annoying as.
-
-        //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
         for yo in 0..(r.h as i32) {
             for xo in 0..(r.w as i32) {
                 // TODO make this more cache friendly, should be able to read a row at a time; room could be a different data structure?
                 let s1x = r.x + xo;
                 let s1y = r.y + yo;
                 let screen = self.get_screen_for(s1x, s1y);
-                let s2x = r2x + xo;
-                let s2y = r2y + yo;
+                let s2x = r2xo + x + xo;
+                let s2y = r2yo + y + yo;
                 let screen2 = room.get_screen_for(s2x, s2y);
-                any1 += if screen.is_some() { 1 } else { 0 };
-                any2 += if screen2.is_some() { 1 } else { 0 };
-                assert!(
-                    screen.is_some(),
-                    "r1 {:?}\noff {},{}\nr2 {:?}\noff {},{}\nat {},{}\nposns {:?} -vs- {:?}\nscreens:{:?}",
-                    self.region(),
-                    x,
-                    y,
-                    room.region(),
-                    r2x,
-                    r2y,
-                    xo,
-                    yo,
-                    (s1x, s1y),
-                    (s2x, s2y),
-                    self.screens.iter().map(|s| s.region).collect::<Vec<_>>()
-                );
+                // any1 += screen.map(|_| 1).unwrap_or(0);
+                // any2 += screen2.map(|_| 1).unwrap_or(0);
+                comparisons += if screen.is_some() && screen2.is_some() { 1 } else { 0 };
                 cost += match (screen, screen2) {
                     (Some(screen), Some(screen2)) => {
                         // println!("compare");
@@ -240,28 +243,12 @@ impl Room {
                     _ => 0.0,
                 }
             }
-            if cost > threshold {
-                break;
-            }
+            // if cost > threshold {
+            //     cost = f32::MAX;
+            //     break;
+            // }
         }
-        assert!(
-            any1 > 0,
-            "a1 {:?}-{:?} {:?} {:?}",
-            r,
-            (x, y),
-            room.region(),
-            cost
-        );
-        assert!(
-            any2 > 0,
-            "a2 {:?}-{:?} {:?} {:?} {:?}",
-            r,
-            (x, y),
-            (r2x, r2y),
-            room.region(),
-            cost
-        );
-        cost
+        (cost,comparisons)
     }
 }
 

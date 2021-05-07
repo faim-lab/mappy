@@ -32,6 +32,9 @@ impl Rect {
     pub fn contains(&self, x: i32, y: i32) -> bool {
         self.x <= x && x < self.x + self.w as i32 && self.y <= y && y < self.y + self.h as i32
     }
+    pub fn contains_rect(&self, r:&Rect) -> bool {
+        self.union(r) == *self
+    }
     pub fn overlaps(&self, r: &Rect) -> bool {
         self.x < (r.x + r.w as i32)
             && r.x < (self.x + self.w as i32)
@@ -49,6 +52,20 @@ impl Rect {
             w: (x1 - x0) as u32,
             h: (y1 - y0) as u32,
         }
+    }
+    pub fn intersection(&self, other:&Rect) -> Option<Rect> {
+        let left = self.x.max(other.x);
+        let right = (self.x+self.w as i32).min(other.x+other.w as i32);
+        let top = self.y.max(other.y);
+        let bot = (self.y+self.h as i32).min(other.y+other.h as i32);
+        if right - left > 0 && bot - top > 0 {
+            Some(Rect { x:left, y:top, w:(right-left) as u32, h:(bot-top) as u32 })
+        } else {
+            None
+        }
+    }
+    pub fn area(&self) -> u32 {
+        self.w*self.h
     }
 }
 

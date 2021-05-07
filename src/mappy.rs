@@ -24,7 +24,7 @@ use std::sync::{
     Arc, RwLock,
 };
 
-const DO_TEMP_MERGE_CHECKS: bool = true;
+const DO_TEMP_MERGE_CHECKS: bool = false;
 
 static THREADS_WAITING: AtomicUsize = AtomicUsize::new(0);
 
@@ -94,7 +94,7 @@ impl MappyState {
     const BLOB_LOOKBACK: usize = 30;
 
     // This is just an arbitrary value, not sure what a good one is!
-    pub const ROOM_MERGE_THRESHOLD: f32 = 10.0;
+    pub const ROOM_MERGE_THRESHOLD: f32 = 30.0;
 
     pub fn new(w: usize, h: usize) -> Self {
         let db = TileDB::new();
@@ -358,7 +358,8 @@ impl MappyState {
             let merges = mrs
                 .metarooms()
                 .collect::<Vec<_>>()
-                .into_par_iter()
+                // .into_par_iter()
+                .into_iter()
                 .filter_map(|metaroom| {
                     // TODO make sure room has significant histogram overlap with at least one room in metaroom
                     if let Some((p, c)) = merge_cost(
@@ -908,45 +909,61 @@ pub fn merge_cost(
         }
         rect
     };
+    dbg!(room.id, ar,br);
 
-    let xover = (br.w as i32 / 2).min(ar.w as i32 / 2);
-    let yover = (br.h as i32 / 2).min(ar.h as i32 / 2);
-    let left = br.x + xover - (ar.w as i32);
-    let right = (br.x + br.w as i32) - xover;
-    let top = br.y + yover - (ar.h as i32);
-    let bot = (br.y + br.h as i32) - yover;
+    let overlap_req = ((ar.w.min(br.w)/2)*(ar.h.min(br.h)/2)) as usize;
+
+    let left = br.x-ar.w as i32;
+    let right = br.x + br.w as i32;
+    let top = br.y-ar.h as i32;
+    let bot = br.y + br.h as i32;
+    // dbg!(left,right,top,bot);
+    let left = 0; let right = 1;
+    let top = 0; let bot = 1;
     let num_rooms = metaroom.len();
     for y in top..bot {
         for x in left..right {
+            // put top left of room at x,y and match
             let mut cost = 0.0;
-            for r in metaroom.iter() {
+            let mut comparisons = 0;
+            for &(room_id, (rxo,rxy)) in metaroom.iter() {
                 let rooms = rooms.read().unwrap();
-                let room_b = &rooms[r.0];
-                let (rxo, rxy) = r.1;
+                let room_b = &rooms[room_id];
                 let rbr = Rect {
                     x: rxo,
                     y: rxy,
                     ..room_b.region()
                 };
-                if !rbr.overlaps(&Rect { x, y, ..ar }) {
+                if !rbr.overlaps(&Rect{x,y,..ar}) {
                     continue;
                 }
                 let tiles = tiles.read().unwrap();
-                cost += room.merge_cost_at(
+                // TODO: really, it should be for each tile of the merged room, find the least costly way to match this tile against the correspond tile of any example in the room
+                let (r_cost, r_comparisons) = room.merge_cost_at(
                     x,
                     y,
                     rxo,
                     rxy,
                     room_b,
                     &tiles,
-                    threshold * num_rooms as f32 - cost,
-                ) / num_rooms as f32;
-
+                    threshold,
+                );
+                let r_cost = r_cost / (num_rooms) as f32;
+                cost += r_cost;
+                comparisons += r_comparisons;
+                if room.id == 39 && (room_id == 17 || room_id == 15 || room_id == 13) {
+                    dbg!(room.id, room_id, rxo, rxy, r_cost * num_rooms as f32, r_comparisons, cost, threshold);
+                }
                 if cost >= threshold {
                     break;
                 }
             }
-            if cost < threshold {
+            if room.id > 39 {
+                panic!("done");
+            }
+            dbg!(room.id,x,y,comparisons,cost);
+            if cost < threshold && comparisons > overlap_req {
+                // dbg!(room.id,comparisons,cost);
                 threshold = cost;
                 best = Some(((x, y), cost));
             }
