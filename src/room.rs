@@ -194,6 +194,13 @@ impl Room {
         let r2x = x - r2xo;
         let r2y = y - r2yo;
         let mut cost = 0.0;
+
+        // TODO this whole alignment thing is confusing, maybe better
+        // to switch it out into a part that aligns two grids and a
+        // part that does something with each alignment?  because
+        // debugging why the y coordinate of r1 is out of bounds is
+        // annoying as.
+
         //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
         for yo in 0..(r.h as i32) {
             for xo in 0..(r.w as i32) {
@@ -208,7 +215,7 @@ impl Room {
                 any2 += if screen2.is_some() { 1 } else { 0 };
                 assert!(
                     screen.is_some(),
-                    "r1 {:?}\noff {},{}\nr2 {:?}\noff {},{}\nat {},{}\nposns {:?} -vs- {:?}",
+                    "r1 {:?}\noff {},{}\nr2 {:?}\noff {},{}\nat {},{}\nposns {:?} -vs- {:?}\nscreens:{:?}",
                     self.region(),
                     x,
                     y,
@@ -218,7 +225,8 @@ impl Room {
                     xo,
                     yo,
                     (s1x, s1y),
-                    (s2x, s2y)
+                    (s2x, s2y),
+                    self.screens.iter().map(|s| s.region).collect::<Vec<_>>()
                 );
                 cost += match (screen, screen2) {
                     (Some(screen), Some(screen2)) => {

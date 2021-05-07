@@ -69,7 +69,7 @@ async fn main() {
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
     let mut replay_index: usize = 0;
-    let speeds: [usize; 9] = [0, 1, 5, 15, 30, 60, 120, 240, 300];
+    let speeds: [usize; 10] = [0, 1, 5, 15, 30, 60, 120, 240, 300, 360];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
     let mut mappy = MappyState::new(w, h);
@@ -161,6 +161,11 @@ zxcvbnm,./ for debug displays"
             std::fs::create_dir_all("out/tiles").unwrap();
             mappy.dump_tiles(Path::new("out/tiles"));
             mappy.dump_map(Path::new("out/"));
+            {
+                use std::process::Command;
+                let image = Command::new("dot").current_dir("out").arg("-T").arg("png").arg("graph.dot").output().expect("graphviz failed").stdout;
+                std::fs::write(format!("out/{}.png", romname.to_str().unwrap()), &image);
+            }
         }
         // if is_key_pressed(KeyCode::M) {
         //      std::fs::remove_dir_all("out/rooms").unwrap_or(());
