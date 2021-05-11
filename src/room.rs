@@ -198,58 +198,6 @@ impl Room {
         }
         r
     }
-    pub fn merge_cost_at(
-        // room to be merged
-        &self,
-        x: i32,
-        y: i32,
-        // room to be checked against
-        r2xo: i32,
-        r2yo: i32,
-        room: &Room,
-        tiles: &TileDB,
-        threshold: f32,
-    ) -> (f32, usize) {
-        // let mut any1 = 0;
-        // let mut any2 = 0;
-        let r = self.region();
-        let sr = self.screens_region();
-        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
-        let mut comparisons = 0;
-        // put self at x,y
-        // compare against room at r2xo, r2yo
-        let mut cost = 0.0;
-        for yo in 0..(r.h as i32) {
-            for xo in 0..(r.w as i32) {
-                // TODO make this more cache friendly, should be able to read a row at a time; room could be a different data structure?
-                let s1x = r.x + xo;
-                let s1y = r.y + yo;
-                let screen = self.get_screen_for(s1x, s1y);
-                let s2x = r2xo + x + xo;
-                let s2y = r2yo + y + yo;
-                let screen2 = room.get_screen_for(s2x, s2y);
-                // any1 += screen.map(|_| 1).unwrap_or(0);
-                // any2 += screen2.map(|_| 1).unwrap_or(0);
-                comparisons += if screen.is_some() && screen2.is_some() { 1 } else { 0 };
-                cost += match (screen, screen2) {
-                    (Some(screen), Some(screen2)) => {
-                        // println!("compare");
-                        // TODO if tiles.compatible(..., ...)
-                        tiles.change_cost(
-                            self.screens[screen].get(s1x, s1y),
-                            room.screens[screen2].get(s2x, s2y),
-                        )
-                    }
-                    _ => 0.0,
-                }
-            }
-            // if cost > threshold {
-            //     cost = f32::MAX;
-            //     break;
-            // }
-        }
-        (cost,comparisons)
-    }
 }
 
 #[inline(always)]

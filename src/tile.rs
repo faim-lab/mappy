@@ -235,7 +235,7 @@ impl TileDB {
         if tc1 == tc2 || tc1 == self.initial_change || tc2 == self.initial_change {
             0.0
         } else if self.change_arena.get(tc1).unwrap().to == self.change_arena.get(tc2).unwrap().to {
-            0.5
+            0.25
         } else if self.change_closure.goes_to(tc1, tc2) || self.change_closure.goes_to(tc2, tc1) {
             0.1
         } else {

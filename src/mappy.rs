@@ -94,7 +94,7 @@ impl MappyState {
     const BLOB_LOOKBACK: usize = 30;
 
     // This is just an arbitrary value, not sure what a good one is!
-    pub const ROOM_MERGE_THRESHOLD: f32 = 30.0;
+    pub const ROOM_MERGE_THRESHOLD: f32 = 16.0;
 
     pub fn new(w: usize, h: usize) -> Self {
         let db = TileDB::new();
@@ -358,12 +358,13 @@ impl MappyState {
             let merges = mrs
                 .metarooms()
                 .collect::<Vec<_>>()
-                // .into_par_iter()
-                .into_iter()
+                .into_par_iter()
+                // .into_iter()
                 .filter_map(|metaroom| {
                     // TODO make sure room has significant histogram overlap with at least one room in metaroom
                     if let Some((p, c)) = merge_cost(
                         &room,
+                        metaroom.id,
                         &metaroom.registrations,
                         &rooms,
                         &tiles,
@@ -396,7 +397,8 @@ impl MappyState {
         );
         for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
             for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
-                if sprites::overlapping_sprite(
+                let tile = TileGfx::read(&self.fb, x as usize, y as usize);
+                if !tiles.contains(&tile) && sprites::overlapping_sprite(
                     x as usize,
                     y as usize,
                     TILE_SIZE,
@@ -406,7 +408,6 @@ impl MappyState {
                     // Just leave the empty one there
                     continue;
                 }
-                let tile = TileGfx::read(&self.fb, x as usize, y as usize);
                 // if !(self.tiles.contains(&tile)) {
                 // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
                 // }
@@ -824,6 +825,35 @@ impl MappyState {
             img.save(root.join(format!("t{:}.png", ti))).unwrap();
         }
     }
+    pub fn dump_tiles_single(root: &Path, tiles:&TileDB) {
+        let all_gfx:Vec<_> = tiles.gfx_iter().collect();
+        let colrows = (all_gfx.len() as f32).sqrt().ceil() as usize;
+        let mut t_buf = vec![0_u8; TILE_SIZE*TILE_SIZE*3];
+        let mut buf = vec![0_u8; colrows * colrows * TILE_SIZE * TILE_SIZE * 3];
+        for (ti, tile) in all_gfx.into_iter().enumerate() {
+            let row = ti / colrows;
+            let col = ti % colrows;
+            tile.write_rgb888(&mut t_buf);
+            for trow in 0..TILE_SIZE {
+                let image_step = TILE_SIZE * 3;
+                let image_pitch = colrows * image_step;
+                let image_row_start = (row*TILE_SIZE+trow)*image_pitch+col*image_step;
+                let image_row_end = (row*TILE_SIZE+trow)*image_pitch+(col+1)*image_step;
+                let tile_row_start = trow*TILE_SIZE*3;
+                let tile_row_end = (trow+1)*TILE_SIZE*3;
+                assert_eq!(image_row_end-image_row_start, tile_row_end-tile_row_start);
+                assert_eq!(tile_row_end-tile_row_start, TILE_SIZE * 3);
+                for tcolor in 0..TILE_SIZE*3  {
+                    assert_eq!(buf[image_row_start+tcolor], 0);
+                }
+                buf[image_row_start..image_row_end].copy_from_slice(&t_buf[tile_row_start..tile_row_end]);
+            }
+        }
+        let img: ImageBuffer<Rgb<u8>, _> =
+            ImageBuffer::from_raw(colrows as u32 * TILE_SIZE as u32, colrows as u32 * TILE_SIZE as u32, &buf[..])
+            .expect("Couldn't create image buffer");
+        img.save(root.join("tiles.png")).unwrap();
+    }
 
     pub fn dump_room(&self, room: &Room, at: (u32, u32), tiles_wide: u32, buf: &mut [u8]) {
         let region = room.region();
@@ -885,6 +915,7 @@ impl MappyState {
 
 pub fn merge_cost(
     room: &Room,
+    metaroom_id: MetaroomID,
     metaroom: &[(usize, (i32, i32))],
     rooms: &RwLock<Vec<Room>>,
     tiles: &RwLock<TileDB>,
@@ -917,55 +948,68 @@ pub fn merge_cost(
     let right = br.x + br.w as i32;
     let top = br.y-ar.h as i32;
     let bot = br.y + br.h as i32;
-    // dbg!(left,right,top,bot);
-    let left = 0; let right = 1;
-    let top = 0; let bot = 1;
-    let num_rooms = metaroom.len();
-    for y in top..bot {
-        for x in left..right {
+    // UGH room 51, 39 still not merging into 13/15/17.  why?  find costs and debug.  can the metaroom ID be passed in as a parameter to make this easier?
+    //    It looks like there are slight tile misalignments due to the menu scrolling in and out
+    let rooms = rooms.read().unwrap();
+    let tiles = tiles.read().unwrap();
+    for yo in top..bot {
+        for xo in left..right {
             // put top left of room at x,y and match
             let mut cost = 0.0;
             let mut comparisons = 0;
-            for &(room_id, (rxo,rxy)) in metaroom.iter() {
-                let rooms = rooms.read().unwrap();
-                let room_b = &rooms[room_id];
-                let rbr = Rect {
-                    x: rxo,
-                    y: rxy,
-                    ..room_b.region()
-                };
-                if !rbr.overlaps(&Rect{x,y,..ar}) {
-                    continue;
-                }
-                let tiles = tiles.read().unwrap();
-                // TODO: really, it should be for each tile of the merged room, find the least costly way to match this tile against the correspond tile of any example in the room
-                let (r_cost, r_comparisons) = room.merge_cost_at(
-                    x,
-                    y,
-                    rxo,
-                    rxy,
-                    room_b,
-                    &tiles,
-                    threshold,
-                );
-                let r_cost = r_cost / (num_rooms) as f32;
-                cost += r_cost;
-                comparisons += r_comparisons;
-                if room.id == 39 && (room_id == 17 || room_id == 15 || room_id == 13) {
-                    dbg!(room.id, room_id, rxo, rxy, r_cost * num_rooms as f32, r_comparisons, cost, threshold);
-                }
-                if cost >= threshold {
-                    break;
+            // for each tile of the merged room, find the least costly
+            // way to match this tile against the correspond tile of
+            // any example in the room
+            for ry in 0..(ar.h as i32) {
+                for rx in 0..(ar.w as i32) {
+                    let ax = ar.x + rx;
+                    let ay = ar.y + ry;
+                    // let bx = br.x + xo + rx;
+                    // let by = br.y + yo + ry;
+                    let screen1 = room.get_screen_for(ax,ay);
+                    if screen1.is_none() { continue; }
+                    let room_tile = room.screens[screen1.unwrap()].get(ax, ay);
+                    let mut best_tile_cost = None;
+                    for &(room_id, (rxo,ryo)) in metaroom.iter() {
+                        let room_b = &rooms[room_id];
+                        let s2x = rxo + rx + xo;
+                        let s2y = ryo + ry + yo;
+                        let screen2 = room_b.get_screen_for(s2x, s2y);
+                        if screen2.is_none() { continue; }
+                        let room_b_tile = room_b.screens[screen2.unwrap()].get(s2x, s2y);
+                        let tc = tiles.change_cost(
+                            room_tile,
+                            room_b_tile,
+                        );
+                        // if metaroom_id.0 == 20 && room.id == 39 {
+                            // println!("rt {:?}, rbt {:?}, xy {:?}, tc {:?}, best {:?}", room_tile, room_b_tile, (rx,ry), tc, best_tile_cost);
+                        // }
+                        if tc < best_tile_cost.unwrap_or(f32::MAX) {
+                            best_tile_cost = Some(tc);
+                        }
+                    };
+                    if best_tile_cost.is_some() {
+                        comparisons += 1;
+                        cost += best_tile_cost.unwrap();
+                    }
+                    if cost >= threshold {
+                        break;
+                    }
                 }
             }
-            if room.id > 39 {
-                panic!("done");
-            }
-            dbg!(room.id,x,y,comparisons,cost);
+            // if room.id == 39 && (room_id == 17 || room_id == 15 || room_id == 13) {
+                // dbg!(room.id, room_id, rxo, rxy, r_cost * num_rooms as f32, r_comparisons, cost, threshold);
+            // }
+            // if room.id == 39 && metaroom_id.0 == 20 {
+                // MappyState::dump_tiles_single(Path::new("out"), &tiles);
+                // dbg!(room.id,metaroom_id,xo,yo,comparisons,cost);
+                // panic!("done");
+            // }
+            // dbg!(room.id,xo,yo,comparisons,cost);
             if cost < threshold && comparisons > overlap_req {
                 // dbg!(room.id,comparisons,cost);
                 threshold = cost;
-                best = Some(((x, y), cost));
+                best = Some(((xo, yo), cost));
             }
         }
     }
