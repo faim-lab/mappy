@@ -991,7 +991,7 @@ pub fn merge_cost(
 // in get, 0 could give you the last thing that was written. 1 could give you the thing before that
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)] //added clone
 pub struct RingBuffer<T:Copy + std::fmt::Debug> {
     pub buf:Vec<T>,
     pub now:usize
