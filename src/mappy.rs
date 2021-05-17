@@ -395,6 +395,7 @@ impl MappyState {
             ),
             tiles.get_initial_tile(),
         );
+        let mut new_ts = 0;
         for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
             for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
                 let tile = TileGfx::read(&self.fb, x as usize, y as usize);
@@ -408,15 +409,19 @@ impl MappyState {
                     // Just leave the empty one there
                     continue;
                 }
-                // if !(self.tiles.contains(&tile)) {
+                if !tiles.contains(&tile) {
+                    new_ts += 1;
                 // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
-                // }
+                }
                 self.current_screen.set(
                     tiles.get_tile(tile),
                     (self.scroll.0 + x) / (TILE_SIZE as i32),
                     (self.scroll.1 + y) / (TILE_SIZE as i32),
                 );
             }
+        }
+        if new_ts > 10 {
+            println!("{:?} new tiles", new_ts);
         }
     }
 
@@ -952,6 +957,7 @@ pub fn merge_cost(
     //    It looks like there are slight tile misalignments due to the menu scrolling in and out
     let rooms = rooms.read().unwrap();
     let tiles = tiles.read().unwrap();
+    let initial = tiles.get_initial_change();
     for yo in top..bot {
         for xo in left..right {
             // put top left of room at x,y and match
@@ -977,10 +983,19 @@ pub fn merge_cost(
                         let screen2 = room_b.get_screen_for(s2x, s2y);
                         if screen2.is_none() { continue; }
                         let room_b_tile = room_b.screens[screen2.unwrap()].get(s2x, s2y);
+                        // Not really an observation!
+                        if !room_b.region().contains(s2x,s2y) { continue; }
+                        if initial == room_b_tile { continue; }
+
                         let tc = tiles.change_cost(
                             room_tile,
                             room_b_tile,
                         );
+                        // TODO add debugging here to fix 9->8 merge in zelda_2.fm2?  Can anything be done about it?
+                        // Also, 51->39 is still its own room instead of joining 17/15/13.  It should only be different at 4 positions, but for some reason is much worse than that?
+                        // if room.id == 1 && xo == 8 && yo == 20 {
+                        //     println!("Compare {:?},{:?} : {:?},{:?} : {:?},{:?} :: {:?}",rx,ry,ax,ay,s2x,s2y,room_b.region());
+                        // }
                         // if metaroom_id.0 == 20 && room.id == 39 {
                             // println!("rt {:?}, rbt {:?}, xy {:?}, tc {:?}, best {:?}", room_tile, room_b_tile, (rx,ry), tc, best_tile_cost);
                         // }
@@ -1007,7 +1022,7 @@ pub fn merge_cost(
             // }
             // dbg!(room.id,xo,yo,comparisons,cost);
             if cost < threshold && comparisons > overlap_req {
-                // dbg!(room.id,comparisons,cost);
+                dbg!(room.id,comparisons,cost,(xo,yo));
                 threshold = cost;
                 best = Some(((xo, yo), cost));
             }
