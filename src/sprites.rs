@@ -121,7 +121,7 @@ impl SpriteTrack {
             attrs: HashSet::new(),
             positive_hits: 0,
             negative_hits: 0,
-            button_input: RingBuffer::new(Buttons::new(), 15),
+            button_input: RingBuffer::new(Buttons::new(), 30),
         };
         ret.update(t, scroll, sd);
         ret
@@ -166,18 +166,17 @@ impl SpriteTrack {
     }
 
     pub fn determine_avatar(&mut self, current_time: Time, input: Buttons) {
-        // let mut button_input = RingBuffer::new(Buttons::new(), 15);
         self.button_input.push(input); // Push next input into ring buf
 
-        if self.button_input.get_sz() == 16 {
-            let back_16 = self.button_input.get(self.button_input.get_sz() - 1);
+        if self.button_input.get_sz() == 31 { // if ring buf is full enough to look back
             let back_15 = self.button_input.get(self.button_input.get_sz() - 2);
-            if back_16 != back_15 { // if input changed 15 frames ago
-                // determine if average acceleration from 30-15 frames ago differs from that 15-0 frames ago:
+            let back_16 = self.button_input.get(self.button_input.get_sz() - 1);
+            if back_16 != back_15 { // if input changed 30 frames ago
+                // high level: determine if average acceleration from 60-30 frames ago differs from that 30-0 frames ago:
                 let mut velocities: Vec<(i32, i32)> = Vec::new();
-                for i in 0..30 {
+                for i in (0..65).rev() {
                     let pos: Option<(i32, i32)>      = self.point_at(Time(current_time.0-i));
-                    let pos_prev: Option<(i32, i32)> = self.point_at(Time(current_time.0-i-3));
+                    let pos_prev: Option<(i32, i32)> = self.point_at(Time(current_time.0-i-5)); // 5 frames before pos
                     if pos.is_some() && pos_prev.is_some() {
                         let pos_x: i32      = pos.unwrap().0;
                         let pos_y: i32      = pos.unwrap().1;
@@ -190,70 +189,45 @@ impl SpriteTrack {
                     }
                 }
 
-                // // experiment, using velocity instead of acceleration to increment positive and negative hits
-                // let mut total_vel_x_15: i32 = 0;
-                // let mut total_vel_y_15: i32 = 0;
-                // for i in 15..30 {
-                //     if velocities.get(i).is_some() {
-                //         total_vel_x_15 += velocities.get(i).unwrap().0;
-                //         total_vel_y_15 += velocities.get(i).unwrap().1;
-                //     }
-                // }
-                // let mut total_vel_x_30: i32 = 0;
-                // let mut total_vel_y_30: i32 = 0;
-                // for i in 0..15 {
-                //     if velocities.get(i).is_some() {
-                //         total_vel_x_30 += velocities.get(i).unwrap().0;
-                //         total_vel_y_30 += velocities.get(i).unwrap().1;
-                //     }
-                // }
-                // if total_vel_x_30 - total_vel_x_15 != 0 || total_vel_y_30 - total_vel_y_15 != 0 {
-                //     println!("Positive Hit");
-                //     self.positive_hits += 1;
-                // } else {
-                //     println!("Negative Hit");
-                //     self.negative_hits += 1;
-                // }
-
                 let mut accelerations: Vec<(i32, i32)> = Vec::new();
-                for i in 0..(velocities.len()) { // <- this is 30
-                    if (velocities.get(velocities.len() - i)).is_some() &&
-                       (velocities.get(velocities.len() - i - 1)).is_some() {
+                for i in 5..(velocities.len()) {
+                    if (velocities.get(i)).is_some() &&
+                       (velocities.get(i - 5)).is_some() {
+
+                        let x_vel: i32 = velocities.get(i).unwrap().0;
+                        let y_vel: i32 = velocities.get(i).unwrap().1;
         
-                        let x_vel: i32 = velocities.get(velocities.len() - i).unwrap().0;
-                        let y_vel: i32 = velocities.get(velocities.len() - i).unwrap().1;
-        
-                        let x_vel_prev: i32 = velocities.get(velocities.len() - i - 1).unwrap().0;
-                        let y_vel_prev: i32 = velocities.get(velocities.len() - i - 1).unwrap().1;
+                        let x_vel_prev: i32 = velocities.get(i - 5).unwrap().0;
+                        let y_vel_prev: i32 = velocities.get(i - 5).unwrap().1;
         
                         let x_accel: i32 = x_vel - x_vel_prev;
                         let y_accel: i32 = y_vel - y_vel_prev;
                         accelerations.push((x_accel, y_accel));
                     }
                 }
-
-                // total of accelerations last 15 frames
-                let mut total_accel_x_15: i32 = 0;
-                let mut total_accel_y_15: i32 = 0;
-                for i in 15..30 {
-                    if accelerations.get(i).is_some() {
-                        total_accel_x_15 += accelerations.get(i).unwrap().0;
-                        total_accel_y_15 += accelerations.get(i).unwrap().1;
-                    }
-                }
-
-                // total of accelerations last 30-15 frames ago               
+                
+                // total of accelerations last 30 frames
                 let mut total_accel_x_30: i32 = 0;
                 let mut total_accel_y_30: i32 = 0;
-                for i in 0..15 {
+                for i in 30..60 {
                     if accelerations.get(i).is_some() {
                         total_accel_x_30 += accelerations.get(i).unwrap().0;
                         total_accel_y_30 += accelerations.get(i).unwrap().1;
                     }
                 }
 
-                // If average acceleration in 15-0 frames ago differs from that  30-15 ago
-                if (total_accel_x_30 - total_accel_x_15).abs() > 1 || (total_accel_y_30 - total_accel_y_15).abs() > 1 {
+                // total of accelerations last 60-30 frames ago               
+                let mut total_accel_x_60: i32 = 0;
+                let mut total_accel_y_60: i32 = 0;
+                for i in 0..30 {
+                    if accelerations.get(i).is_some() {
+                        total_accel_x_60 += accelerations.get(i).unwrap().0;
+                        total_accel_y_60 += accelerations.get(i).unwrap().1;
+                    }
+                }
+
+                // If average acceleration in 30-0 frames ago differs from that  60-30 ago
+                if (total_accel_x_60 - total_accel_x_30).abs() > 5 || (total_accel_y_60 - total_accel_y_30).abs() > 5 {
                     self.positive_hits += 1;
                 } else {
                     self.negative_hits += 1;
