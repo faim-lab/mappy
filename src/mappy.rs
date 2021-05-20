@@ -536,6 +536,8 @@ impl MappyState {
         let dead_tracks = &mut self.dead_tracks;
         let live_blobs = &mut self.live_blobs;
         let mut dead_blob_ids = vec![];
+
+        // kills tracks and stores blob's id if it is dead in dead blob id vec
         self.live_tracks.retain(|t| {
             if now.0 - t.last_observation_time().0 > Self::DESTROY_COAST {
                 let id = t.id;
@@ -554,6 +556,8 @@ impl MappyState {
                 true
             }
         });
+
+        // push a clone of the blob to dead blob vec 
         let dead_blobs = &mut self.dead_blobs;
         self.live_blobs.retain(|b| {
             if dead_blob_ids.contains(&b.id) {
@@ -637,7 +641,7 @@ impl MappyState {
                             &self.live_tracks[*tx],
                             &self.live_tracks,
                             Self::BLOB_LOOKBACK,
-                            self.live_tracks[*tx].last_observation_time(),
+                            self.now,
                         ),
                     )
                 })
@@ -682,7 +686,7 @@ impl MappyState {
                     &self.live_tracks[tx],
                     &self.live_tracks[ty],
                     Self::BLOB_LOOKBACK,
-                    self.live_tracks[tx].last_observation_time(),
+                    self.now,
                 ) < Self::BLOB_THRESHOLD
                 {
                     let mut blob = SpriteBlob::new(self.dead_blobs.len() + self.live_blobs.len());
@@ -698,7 +702,7 @@ impl MappyState {
                             &self.live_tracks[tz],
                             &self.live_tracks,
                             Self::BLOB_LOOKBACK,
-                            self.live_tracks[tz].last_observation_time(),
+                            self.now,
                         ) < Self::BLOB_THRESHOLD
                         {
                             blob.use_track(self.live_tracks[tz].id);

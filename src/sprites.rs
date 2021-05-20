@@ -105,7 +105,7 @@ pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[Spr
 }
 
 // struct holding time, coordinates, and the sprite's data
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct At(pub Time, pub (i32, i32), pub SpriteData);
 
 // struct of a Track's ID
@@ -144,6 +144,9 @@ impl SpriteTrack {
     pub fn last_observation_time(&self) -> Time {
         self.positions[self.positions.len() - 1].0
     }
+    pub fn first_observation_time(&self) -> Time {
+        self.positions[0].0
+    }
     pub fn update(&mut self, t: Time, scroll: (i32, i32), sd: SpriteData) {
         // TODO handle time properly, dedup if no change
         // TODO TODO what does that mean?
@@ -166,7 +169,7 @@ impl SpriteTrack {
             .iter()
             .rev()
             .find(|At(time, _, _)| *time <= t)
-            .unwrap();
+            .unwrap_or_else(|| panic!("{:?}   {:?}", t, self.positions));
         Some((sx + sd.x as i32, sy + sd.y as i32))
     }
 
@@ -228,14 +231,22 @@ impl SpriteBlob {
         // closeness score: 0 if touching over lookback and diff ID, 100 otherwise; use min among all self.live tracks with id != t.id
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
         // closeness + moving
-
         let mut closeness = 0; // default not touching
         let mut same_spd = 0; // number of frames where they are moving at the same speed
         if t1.id != t2.id {
-            for n in (now.0 - lookback)..now.0 {
+            // bad score if one of the tracks is younger than now.0 - lookback
+            if now.0 - lookback < t1.first_observation_time().0
+                || now.0 - lookback < t2.first_observation_time().0
+            {
+                // TO DO fix
+                return 100 as f32;
+            }
+
+            // consider some type of lower bound for the tracks 10-30 frames not enough to determine
+
+            for n in (now.0 - lookback + 1)..now.0 {
                 let mut vec1 = Vec::new();
                 let mut vec2 = Vec::new();
-
                 if let (Some((x1, y1)), Some((x1_p, y1_p))) =
                     (t1.position_at(Time(n)), t1.position_at(Time(n - 1)))
                 {
@@ -244,7 +255,6 @@ impl SpriteBlob {
                     vec1.push(dispx);
                     vec2.push(dispy);
                 }
-
                 if let (Some((x2, y2)), Some((x2_p, y2_p))) =
                     (t2.position_at(Time(n)), t2.position_at(Time(n - 1)))
                 {
@@ -253,7 +263,6 @@ impl SpriteBlob {
                     vec1.push(dispx2);
                     vec2.push(dispy2);
                 }
-
                 let rect1 = t1.get_sprite_data().sprite_rect();
                 let rect2 = t2.get_sprite_data().sprite_rect();
 
@@ -261,67 +270,11 @@ impl SpriteBlob {
                 if !rect1.overlaps(&rect2) {
                     closeness = std::cmp::max(closeness, 100);
                 }
-
                 if vec1[0] == vec2[0] && vec1[1] == vec2[1] {
                     same_spd += 1;
                 }
-
-                // old code
-
-                // // get the positions of the tracks at each frame
-                // let Some((x1, y1)) = t1.position_at(Time(n)); // current position
-                // let Some((x1_p, y1_p)) = t1.position_at(Time(n - 1));
-                // let Some((x2, y2)) = t2.position_at(Time(n)); // current position
-                // let Some((x2_p, y2_p)) = t2.position_at(Time(n - 1));
-
-                // let w = t1.current_data().width(); // t1's width TODO add data_at
-                // let h = t2.current_data().height(); // t1's height
-                // let _other = t2.current_data(); // sprite data of t2
-
-                // let rect1 = t1.getSpriteData().sprite_rect();
-                // let rect2 = t2.getSpriteData().sprite_rect();
-
-                // // if there is any instance that the two sprites are not touching then closness is set to 100.
-                // if !rect1.overlaps(&rect2) {
-                //     closeness = std::cmp::max(closeness, 100);
-                // }
-
-                // // Note:: change overlapping_sprite parameter for width and height to u8?
-                // //    if overlapping_sprite(x1, y1, w.into(), h.into(), &[other]) {
-                // //        closeness = 100;
-                // //    }
-
-                // // let time_prev = Time(n - 1);
-
-                // let dispx = x1 - x1_p;
-                // let dispy = y1 - y1_p;
-                // //    let dx = (dispx^2 + dispy^2).sqrt();
-                // //    let speed = dx;
-
-                // let dispx2 = x2 - x2_p;
-                // let dispy2 = y2 - y2_p;
-                // //    let dx2 = (dispx2^2 + dispy2^2).sqrt();
-                // //    let speed2 = dx2;
-
-                // // TODO fix this make it an actual vec
-                // let mut vec1 = Vec::new();
-                // vec1.push(dispx);
-                // vec1.push(dispy);
-
-                // let mut vec2 = Vec::new();
-                // vec2.push(dispx2);
-                // vec2.push(dispy2);
-
-                // // TODO do something to increment the number of frames that share the same speed
-                // // i.e. do we want to look at speed? or same velocity?
-                // // items may have the same speed but different directions should those be counted as the same blob? or different?
-                // // items may be going in the same direction but not necessarily the same blob? f.e. bullets? two concurrent fireballs?
-                // if vec1 == vec2 {
-                //     same_spd += 1;
-                // }
             }
         }
-
         let moving = 10.0 * (1.0 - same_spd as f32 / lookback as f32);
         return closeness as f32 + moving as f32;
     }
@@ -348,7 +301,7 @@ impl SpriteBlob {
         {
             return x;
         } else {
-            return 100 as f32;
+            return 100 as f32; // not touching at all and not moving together at all
         }
     }
     pub fn use_track(&mut self, t: TrackID) {

@@ -84,6 +84,7 @@ async fn main() {
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
+    let mut draw_live_blobs = false;
     let mut draw_merge_diff: Option<usize> = None;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
@@ -261,6 +262,11 @@ zxcvbnm,./ for debug displays"
             file.read_exact(&mut save_buf).unwrap();
             emu.load(&save_buf);
             mappy.handle_reset();
+        }
+
+        // blob sprites
+        if is_key_pressed(KeyCode::Q) {
+            draw_live_blobs = !draw_live_blobs;
         }
 
         // f/s * s = how many frames
@@ -467,6 +473,48 @@ zxcvbnm,./ for debug displays"
                 );
                 if track.positions.len() > 1 {
                     for pair in track.positions.windows(2) {
+                        let mappy::At(_, (sx0, sy0), sd0) = pair[0];
+                        let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
+                        let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
+                        let mappy::At(_, (sx1, sy1), sd1) = pair[1];
+                        let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
+                        let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;
+                        draw_line(
+                            x0 as f32 * SCALE,
+                            y0 as f32 * SCALE,
+                            x1 as f32 * SCALE,
+                            y1 as f32 * SCALE,
+                            1.,
+                            col,
+                        );
+                    }
+                }
+            }
+        }
+
+        if draw_live_blobs {
+            for blob in mappy.live_blobs.iter() {
+                let col = Color::new(
+                    ((blob.positions[0].0).0 * 31 % 256) as f32 / 255.,
+                    ((blob.positions[0].0).0 * 127 % 256) as f32 / 255.,
+                    ((blob.positions[0].0).0 * 91 % 256) as f32 / 255.,
+                    1.,
+                );
+                let startp = Vec2::new(
+                    ((blob.positions[0].1).0 + blob.positions[0].2.x as i32 - mappy.scroll.0)
+                        as f32,
+                    ((blob.positions[0].1).1 + blob.positions[0].2.y as i32 - mappy.scroll.1)
+                        as f32,
+                );
+                draw_rectangle(
+                    SCALE * (startp.x().max(0.)).min(w as f32) - SCALE * 2.,
+                    SCALE * (startp.y().max(0.)).min(h as f32) - SCALE * 2.,
+                    SCALE * 4.,
+                    SCALE * 4.,
+                    col,
+                );
+                if blob.positions.len() > 1 {
+                    for pair in blob.positions.windows(2) {
                         let mappy::At(_, (sx0, sy0), sd0) = pair[0];
                         let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
                         let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
