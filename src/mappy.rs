@@ -79,16 +79,22 @@ pub struct MappyState {
     maybe_control_change_time: Time,
     pub last_control: Time,
     pub last_controlled_scroll: (i32, i32),
+    pub control_duration: usize,
     pub timers: Timers<Timing>,
     // which rooms were terminated by resets?
     pub resets: Vec<usize>,
 }
 
 impl MappyState {
-    // 45 frames of no control
+    // 45 frames of no control suggests a room change...
     const CONTROL_ROOM_CHANGE_THRESHOLD: usize = 45;
-    // 400 tiles are different (out of 32*30 = 960)
-    const SCREEN_ROOM_CHANGE_DIFF: f32 = 400.0;
+    // and if this many tiles are different (out of 32*30 = 960) and only a small amount of scrolling happened...
+    const SCREEN_ROOM_CHANGE_DIFF_MODERATE: f32 = 170.0;
+    // or if this many tiles are different regardless of scrolling...
+    const SCREEN_ROOM_CHANGE_DIFF_BIG: f32 = 700.0;
+    // We are "in" the room this many frames after we regain control.
+    // This is meant to help with situations where the room does some fade-in or something and we get spurious tiles
+    const CONTROL_ROOM_ENTER_DURATION: usize = 60;
 
     const BLOB_THRESHOLD: f32 = 1.0;
     const BLOB_LOOKBACK: usize = 30;
@@ -125,7 +131,7 @@ impl MappyState {
             last_control: Time(0),
             maybe_control: false,
             maybe_control_change_time: Time(0),
-
+            control_duration: 0,
             last_controlled_scroll: (0, 0),
             live_sprites: [SpriteData::default(); SPRITE_COUNT],
             live_tracks: Vec::with_capacity(SPRITE_COUNT),
@@ -244,13 +250,30 @@ impl MappyState {
         let last_control_time = self.last_control;
         self.determine_control(emu);
         if self.has_control {
-            if (self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
-                && self.current_screen.difference(&self.last_control_screen)
-                    > Self::SCREEN_ROOM_CHANGE_DIFF)
-                || self.current_room.is_none()
+            if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD {
+                let diff = self.current_screen.difference(&self.last_control_screen);
+                if !had_control {
+                    println!(
+                        "{:?}: Regained control after {:?}; diff {:?}, scrolldiff {:?}",
+                        self.now.0,
+                        self.now.0 - last_control_time.0,
+                        diff,
+                        scroll_diff(self.scroll, self.last_controlled_scroll)
+                    );
+                }
+                let moderate_difference = diff > Self::SCREEN_ROOM_CHANGE_DIFF_MODERATE;
+                let big_difference = diff > Self::SCREEN_ROOM_CHANGE_DIFF_BIG;
+                let (sdx, sdy) = scroll_diff(self.scroll, self.last_controlled_scroll);
+                let small_scroll = (sdx != 0 || sdy != 0) && (sdx.abs() < 150 && sdy.abs() < 150);
+                if ((moderate_difference && !small_scroll) || big_difference)
+                    || self.current_room.is_none()
+                {
+                    self.finalize_current_room(true);
+                }
+            }
+            if self.control_duration > Self::CONTROL_ROOM_ENTER_DURATION
+                && self.current_room.is_some()
             {
-                self.finalize_current_room(true);
-            } else {
                 let t = self.timers.timer(Timing::Register).start();
                 self.current_room
                     .as_mut()
@@ -261,6 +284,11 @@ impl MappyState {
         } else if had_control {
             // dbg!("control loss", self.current_screen.region);
             self.last_control_screen.copy_from(&self.current_screen);
+        }
+        if self.has_control {
+            self.control_duration += 1;
+        } else {
+            self.control_duration = 0;
         }
         if DO_TEMP_MERGE_CHECKS
             && self.current_room.is_some()
@@ -331,7 +359,7 @@ impl MappyState {
                 old_room
             };
             old_room = old_room.finalize(self.tiles.read().unwrap().get_initial_change());
-            dbg!(old_room.region());
+            // dbg!(old_room.region());
             self.kickoff_merge_calc(old_room.clone(), MergePhase::Finalize);
             self.rooms.write().unwrap().push(old_room);
         } else if start_new {
@@ -399,19 +427,21 @@ impl MappyState {
         for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
             for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
                 let tile = TileGfx::read(&self.fb, x as usize, y as usize);
-                if !tiles.contains(&tile) && sprites::overlapping_sprite(
-                    x as usize,
-                    y as usize,
-                    TILE_SIZE,
-                    TILE_SIZE,
-                    &self.live_sprites,
-                ) {
+                if !tiles.contains(&tile)
+                    && sprites::overlapping_sprite(
+                        x as usize,
+                        y as usize,
+                        TILE_SIZE,
+                        TILE_SIZE,
+                        &self.live_sprites,
+                    )
+                {
                     // Just leave the empty one there
                     continue;
                 }
                 if !tiles.contains(&tile) {
                     new_ts += 1;
-                // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
+                    // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
                 }
                 self.current_screen.set(
                     tiles.get_tile(tile),
@@ -422,6 +452,10 @@ impl MappyState {
         }
         if new_ts > 10 {
             println!("{:?} new tiles", new_ts);
+            MappyState::dump_tiles_single(
+                &Path::new("out").join(format!("tiles_{}.png", self.now.0)),
+                &tiles,
+            );
         }
     }
 
@@ -750,7 +784,7 @@ impl MappyState {
         let gname = "map".to_string();
         let node_image_paths: BTreeMap<usize, String> = self
             .metarooms
-            .metarooms()
+            .all_metarooms()
             .map(|mr| (mr.id.0, format!("mr_{}.png", mr.id.0)))
             .collect();
         let node_labels: BTreeMap<usize, String> = self
@@ -771,10 +805,15 @@ impl MappyState {
             })
             .collect();
         let mut all_stmts = StmtList::new();
+        for mr in self.metarooms.all_metarooms() {
+            self.dump_metaroom(
+                &mr,
+                &dotfolder.join(Path::new(&node_image_paths[&mr.id.0].clone())),
+            );
+        }
         for mr in self.metarooms.metarooms() {
             let mut stmts = StmtList::new();
             let mr_ident = Identity::from(mr.id.0);
-            self.dump_metaroom(&mr, &dotfolder.join(Path::new(&node_image_paths[&mr.id.0].clone())));
             let mut attrs = AttrList::new()
                 .add_pair(xlabel(&node_labels[&mr.id.0]))
                 .add_pair(image(&node_image_paths[&mr.id.0]));
@@ -830,10 +869,10 @@ impl MappyState {
             img.save(root.join(format!("t{:}.png", ti))).unwrap();
         }
     }
-    pub fn dump_tiles_single(root: &Path, tiles:&TileDB) {
-        let all_gfx:Vec<_> = tiles.gfx_iter().collect();
+    pub fn dump_tiles_single(where_to: &Path, tiles: &TileDB) {
+        let all_gfx: Vec<_> = tiles.gfx_iter().collect();
         let colrows = (all_gfx.len() as f32).sqrt().ceil() as usize;
-        let mut t_buf = vec![0_u8; TILE_SIZE*TILE_SIZE*3];
+        let mut t_buf = vec![0_u8; TILE_SIZE * TILE_SIZE * 3];
         let mut buf = vec![0_u8; colrows * colrows * TILE_SIZE * TILE_SIZE * 3];
         for (ti, tile) in all_gfx.into_iter().enumerate() {
             let row = ti / colrows;
@@ -842,22 +881,29 @@ impl MappyState {
             for trow in 0..TILE_SIZE {
                 let image_step = TILE_SIZE * 3;
                 let image_pitch = colrows * image_step;
-                let image_row_start = (row*TILE_SIZE+trow)*image_pitch+col*image_step;
-                let image_row_end = (row*TILE_SIZE+trow)*image_pitch+(col+1)*image_step;
-                let tile_row_start = trow*TILE_SIZE*3;
-                let tile_row_end = (trow+1)*TILE_SIZE*3;
-                assert_eq!(image_row_end-image_row_start, tile_row_end-tile_row_start);
-                assert_eq!(tile_row_end-tile_row_start, TILE_SIZE * 3);
-                for tcolor in 0..TILE_SIZE*3  {
-                    assert_eq!(buf[image_row_start+tcolor], 0);
+                let image_row_start = (row * TILE_SIZE + trow) * image_pitch + col * image_step;
+                let image_row_end = (row * TILE_SIZE + trow) * image_pitch + (col + 1) * image_step;
+                let tile_row_start = trow * TILE_SIZE * 3;
+                let tile_row_end = (trow + 1) * TILE_SIZE * 3;
+                assert_eq!(
+                    image_row_end - image_row_start,
+                    tile_row_end - tile_row_start
+                );
+                assert_eq!(tile_row_end - tile_row_start, TILE_SIZE * 3);
+                for tcolor in 0..TILE_SIZE * 3 {
+                    assert_eq!(buf[image_row_start + tcolor], 0);
                 }
-                buf[image_row_start..image_row_end].copy_from_slice(&t_buf[tile_row_start..tile_row_end]);
+                buf[image_row_start..image_row_end]
+                    .copy_from_slice(&t_buf[tile_row_start..tile_row_end]);
             }
         }
-        let img: ImageBuffer<Rgb<u8>, _> =
-            ImageBuffer::from_raw(colrows as u32 * TILE_SIZE as u32, colrows as u32 * TILE_SIZE as u32, &buf[..])
-            .expect("Couldn't create image buffer");
-        img.save(root.join("tiles.png")).unwrap();
+        let img: ImageBuffer<Rgb<u8>, _> = ImageBuffer::from_raw(
+            colrows as u32 * TILE_SIZE as u32,
+            colrows as u32 * TILE_SIZE as u32,
+            &buf[..],
+        )
+        .expect("Couldn't create image buffer");
+        img.save(where_to).unwrap();
     }
 
     pub fn dump_room(&self, room: &Room, at: (u32, u32), tiles_wide: u32, buf: &mut [u8]) {
@@ -880,6 +926,9 @@ impl MappyState {
     }
 
     pub fn dump_current_room(&self, path: &Path) {
+        if self.current_room.is_none() {
+            return;
+        }
         let room = self.current_room.as_ref().unwrap();
         let region = room.region();
         let mut buf =
@@ -945,21 +994,21 @@ pub fn merge_cost(
         }
         rect
     };
-    dbg!(room.id, ar,br);
+    // dbg!(room.id, metaroom_id, ar, br);
 
-    let overlap_req = ((ar.w.min(br.w)/2)*(ar.h.min(br.h)/2)) as usize;
+    let overlap_req = 300;
 
-    let left = br.x-ar.w as i32;
+    let left = br.x - ar.w as i32;
     let right = br.x + br.w as i32;
-    let top = br.y-ar.h as i32;
+    let top = br.y - ar.h as i32;
     let bot = br.y + br.h as i32;
     // UGH room 51, 39 still not merging into 13/15/17.  why?  find costs and debug.  can the metaroom ID be passed in as a parameter to make this easier?
-    //    It looks like there are slight tile misalignments due to the menu scrolling in and out
+    //    It looks like there are slight tile misalignments due to the menu scrolling in and out??
     let rooms = rooms.read().unwrap();
     let tiles = tiles.read().unwrap();
     let initial = tiles.get_initial_change();
     for yo in top..bot {
-        for xo in left..right {
+        'reg: for xo in left..right {
             // put top left of room at x,y and match
             let mut cost = 0.0;
             let mut comparisons = 0;
@@ -972,59 +1021,73 @@ pub fn merge_cost(
                     let ay = ar.y + ry;
                     // let bx = br.x + xo + rx;
                     // let by = br.y + yo + ry;
-                    let screen1 = room.get_screen_for(ax,ay);
-                    if screen1.is_none() { continue; }
+                    let screen1 = room.get_screen_for(ax, ay);
+                    if screen1.is_none() {
+                        continue;
+                    }
                     let room_tile = room.screens[screen1.unwrap()].get(ax, ay);
                     let mut best_tile_cost = None;
-                    for &(room_id, (rxo,ryo)) in metaroom.iter() {
+                    for &(room_id, (rxo, ryo)) in metaroom.iter() {
                         let room_b = &rooms[room_id];
                         let s2x = rxo + rx + xo;
                         let s2y = ryo + ry + yo;
                         let screen2 = room_b.get_screen_for(s2x, s2y);
-                        if screen2.is_none() { continue; }
+                        if screen2.is_none() {
+                            continue;
+                        }
                         let room_b_tile = room_b.screens[screen2.unwrap()].get(s2x, s2y);
                         // Not really an observation!
-                        if !room_b.region().contains(s2x,s2y) { continue; }
-                        if initial == room_b_tile { continue; }
+                        if !room_b.region().contains(s2x, s2y) {
+                            continue;
+                        }
+                        if initial == room_b_tile {
+                            continue;
+                        }
 
-                        let tc = tiles.change_cost(
-                            room_tile,
-                            room_b_tile,
-                        );
-                        // TODO add debugging here to fix 9->8 merge in zelda_2.fm2?  Can anything be done about it?
-                        // Also, 51->39 is still its own room instead of joining 17/15/13.  It should only be different at 4 positions, but for some reason is much worse than that?
-                        // if room.id == 1 && xo == 8 && yo == 20 {
-                        //     println!("Compare {:?},{:?} : {:?},{:?} : {:?},{:?} :: {:?}",rx,ry,ax,ay,s2x,s2y,room_b.region());
+                        let tc = tiles.change_cost(room_tile, room_b_tile);
+                        // if room.id == 39 && metaroom_id.0 == 20 && xo == 0 && yo == 0 {
+                        // dbg!("R39cost", tc, ax, ay, s2x, s2y, room_id, room_tile, room_b_tile, tiles.get_change_by_id(room_tile), tiles.get_change_by_id(room_b_tile));
+                        // }
+                        // Also, 51->39 is still its own room instead of joining 17/15/13.  It should only be different at 4 positions, but for some reason is much worse than that?  lots of quarter-differences.
+                        // if room.id == 9 && room_id == 8 {
+                        // println!("Compare {:?},{:?} : {:?},{:?} : {:?},{:?} :: {:?}",rx,ry,ax,ay,s2x,s2y,room_b.region());
                         // }
                         // if metaroom_id.0 == 20 && room.id == 39 {
-                            // println!("rt {:?}, rbt {:?}, xy {:?}, tc {:?}, best {:?}", room_tile, room_b_tile, (rx,ry), tc, best_tile_cost);
+                        // println!("rt {:?}, rbt {:?}, xy {:?}, tc {:?}, best {:?}", room_tile, room_b_tile, (rx,ry), tc, best_tile_cost);
                         // }
                         if tc < best_tile_cost.unwrap_or(f32::MAX) {
                             best_tile_cost = Some(tc);
                         }
-                    };
+                    }
                     if best_tile_cost.is_some() {
                         comparisons += 1;
                         cost += best_tile_cost.unwrap();
                     }
                     if cost >= threshold {
-                        break;
+                        // if room.id == 39 && metaroom_id.0 == 20 && xo == 0 && yo == 0 {
+                        // dbg!("R39B", room.id, comparisons, overlap_req, cost, threshold);
+                        // panic!("done");
+                        // }
+                        continue 'reg;
                     }
                 }
             }
-            // if room.id == 39 && (room_id == 17 || room_id == 15 || room_id == 13) {
-                // dbg!(room.id, room_id, rxo, rxy, r_cost * num_rooms as f32, r_comparisons, cost, threshold);
+            // if xo == 0 && yo == 0 && room.id == 39 && metaroom_id.0 == 21 {
+            // dbg!("R39", room.id, comparisons, overlap_req, cost, threshold);
             // }
             // if room.id == 39 && metaroom_id.0 == 20 {
-                // MappyState::dump_tiles_single(Path::new("out"), &tiles);
-                // dbg!(room.id,metaroom_id,xo,yo,comparisons,cost);
-                // panic!("done");
+            // MappyState::dump_tiles_single(Path::new("out"), &tiles);
+            // dbg!(room.id,metaroom_id,xo,yo,comparisons,cost);
+            // panic!("done");
             // }
             // dbg!(room.id,xo,yo,comparisons,cost);
             if cost < threshold && comparisons > overlap_req {
-                dbg!(room.id,comparisons,cost,(xo,yo));
+                dbg!(room.id, comparisons, cost, (xo, yo));
                 threshold = cost;
                 best = Some(((xo, yo), cost));
+                if cost == 0.0 {
+                    return best;
+                }
             }
         }
     }
@@ -1039,4 +1102,7 @@ pub fn merge_cost(
     //   (this is the weighted average of cost of registering at posn wrt all other rooms in the metaroom)
     //      cost of registering ra in rb at posn is just existing room difference but with rects aligned appropriately and out of bounds spots ignored (also maybe taking change cycles into account)
     //   bail out if cost exceeds ROOM_MERGE_THRESHOLD
+}
+fn scroll_diff((x0, y0): (i32, i32), (x1, y1): (i32, i32)) -> (i32, i32) {
+    (x1 - x0, y1 - y0)
 }

@@ -157,13 +157,20 @@ zxcvbnm,./ for debug displays"
 
         if is_key_pressed(KeyCode::N) {
             std::fs::create_dir_all("out").unwrap_or(());
-            std::fs::remove_dir_all("out/tiles").unwrap_or(());
-            std::fs::create_dir_all("out/tiles").unwrap();
-            mappy.dump_tiles(Path::new("out/tiles"));
+            // std::fs::remove_dir_all("out/tiles").unwrap_or(());
+            // std::fs::create_dir_all("out/tiles").unwrap();
+            // mappy.dump_tiles(Path::new("out/tiles"));
             mappy.dump_map(Path::new("out/"));
             {
                 use std::process::Command;
-                let image = Command::new("dot").current_dir("out").arg("-T").arg("png").arg("graph.dot").output().expect("graphviz failed").stdout;
+                let image = Command::new("dot")
+                    .current_dir("out")
+                    .arg("-T")
+                    .arg("png")
+                    .arg("graph.dot")
+                    .output()
+                    .expect("graphviz failed")
+                    .stdout;
                 std::fs::write(format!("out/{}.png", romname.to_str().unwrap()), &image);
             }
         }
@@ -272,12 +279,12 @@ zxcvbnm,./ for debug displays"
             let old_control_time = mappy.last_control;
             mappy.process_screen(&mut emu);
             frame_counter += 1;
-            if mappy.has_control && !had_control {
-                println!(
-                    "Lost control for {} frames",
-                    mappy.now.0 - old_control_time.0
-                );
-            }
+            // if mappy.has_control && !had_control {
+            //     println!(
+            //         "Lost control for {} frames",
+            //         mappy.now.0 - old_control_time.0
+            //     );
+            // }
             if frame_counter % 300 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
                 // println!("Known tiles: {:?}", mappy.tiles.gfx_count());

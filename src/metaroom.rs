@@ -68,9 +68,11 @@ impl Merges {
         self.metarooms.iter_mut().find(|mr| mr.id == id).unwrap()
     }
     pub fn metarooms(&self) -> impl Iterator<Item = &Metaroom> {
-        self.metarooms
-            .iter()
+        self.all_metarooms()
             .take_while(|mr| mr.merged_into.is_empty())
+    }
+    pub fn all_metarooms(&self) -> impl Iterator<Item = &Metaroom> {
+        self.metarooms.iter()
     }
     pub fn merge_new_room(
         &mut self,
