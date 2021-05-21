@@ -41,7 +41,7 @@ fn main() {
 
     mappy.finish();
 
-    println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
+    println!("Known tiles: {:?}", mappy.tiles.read().unwrap().tile_stats());
     println!("Emulation only: 7.62524203s for 34,514 inputs, avg 0.000220 per frame");
     println!(
         "Net: {:} for {:} inputs, avg {:} per frame",
@@ -50,11 +50,11 @@ fn main() {
         start.elapsed().as_secs_f64() / (all_inputs as f64)
     );
     println!("{}", mappy.timers);
-    std::fs::remove_dir_all("out/tiles").unwrap_or(());
-    std::fs::create_dir_all("out/tiles").unwrap();
-    mappy.dump_tiles(Path::new("out/tiles/"));
+    // std::fs::remove_dir_all("out/tiles").unwrap_or(());
+    // std::fs::create_dir_all("out/tiles").unwrap();
+    // mappy.dump_tiles(Path::new("out/tiles/"));
 
-    println!("{}", mappy.timers);
+    // println!("{}", mappy.timers);
     mappy.dump_map(Path::new("out/"));
     // mappy.dump_tiles(Path::new("out/tiles"));
 }

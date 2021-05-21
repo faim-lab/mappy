@@ -81,6 +81,8 @@ pub struct MappyState {
     pub last_controlled_scroll: (i32, i32),
     pub control_duration: usize,
     pub timers: Timers<Timing>,
+    // are we currently mapping?
+    pub mapping:bool,
     // which rooms were terminated by resets?
     pub resets: Vec<usize>,
 }
@@ -151,6 +153,7 @@ impl MappyState {
             room_merge_rx,
             room_merge_tx,
             timers: Timers::new(),
+            mapping:false,
             resets: vec![],
         }
     }
@@ -249,6 +252,7 @@ impl MappyState {
         let had_control = self.has_control;
         let last_control_time = self.last_control;
         self.determine_control(emu);
+        self.mapping = false;
         if self.has_control {
             if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD {
                 let diff = self.current_screen.difference(&self.last_control_screen);
@@ -274,6 +278,7 @@ impl MappyState {
             if self.control_duration > Self::CONTROL_ROOM_ENTER_DURATION
                 && self.current_room.is_some()
             {
+                self.mapping = true;
                 let t = self.timers.timer(Timing::Register).start();
                 self.current_room
                     .as_mut()
@@ -387,7 +392,6 @@ impl MappyState {
                 .metarooms()
                 .collect::<Vec<_>>()
                 .into_par_iter()
-                // .into_iter()
                 .filter_map(|metaroom| {
                     // TODO make sure room has significant histogram overlap with at least one room in metaroom
                     if let Some((p, c)) = merge_cost(

@@ -53,22 +53,11 @@ impl<T: Tile> Screen<T> {
         // take union of my rect and s's rect
         // add up differences for each tile in that union
         let everything = self.region.union(&s.region);
-        let mut diff = 0.0;
-        for y in everything.y..(everything.y + everything.h as i32) {
-            for x in everything.x..(everything.x + everything.w as i32) {
-                let in_self = self.region.contains(x, y);
-                let in_s = s.region.contains(x, y);
-                diff += if in_self && in_s {
-                    if self.get(x, y) == s.get(x, y) {
-                        0.0
-                    } else {
-                        1.0
-                    }
-                } else if in_s || in_self {
-                    1.0
-                } else {
-                    0.0
-                };
+        let shared = self.region.intersection(&s.region).unwrap_or(Rect {x:0,y:0,w:0,h:0});
+        let mut diff = (everything.w*everything.h - shared.w*shared.h) as f32;
+        for y in shared.y..(shared.y + shared.h as i32) {
+            for x in shared.x..(shared.x + shared.w as i32) {
+                diff += if self.get(x, y) == s.get(x, y) { 0.0 } else { 1.0 };
             }
         }
         // dbg!(diff, self.region, s.region, everything);

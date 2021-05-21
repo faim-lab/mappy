@@ -8,7 +8,7 @@ type RoomScreen = Screen<TileChange>;
 pub struct Room {
     pub id: usize,
     pub screens: Vec<RoomScreen>,
-    pub seen_changes: HashSet<TileChange>,
+    // pub seen_changes: HashSet<TileChange>,
     pub top_left: (i32, i32),
     pub bottom_right: (i32, i32),
 }
@@ -27,7 +27,7 @@ impl Room {
                 },
                 db.get_initial_change(),
             )],
-            seen_changes: HashSet::new(),
+            // seen_changes: HashSet::new(),
             top_left: (screen.region.x, screen.region.y),
             // TODO hacky, probably not right
             bottom_right: (screen.region.x + 1, screen.region.y + 1),
@@ -182,7 +182,7 @@ impl Room {
                 extend_tile(br, s, &mut seen, x, y, db);
             }
         }
-        self.seen_changes.extend(seen.into_iter());
+        // self.seen_changes.extend(seen.into_iter());
         self.top_left.0 = self.top_left.0.min(s.region.x);
         self.top_left.1 = self.top_left.1.min(s.region.y);
         self.bottom_right.0 = self.bottom_right.0.max(xmax);
@@ -213,7 +213,7 @@ fn extend_tile(
     assert!(rs.region.contains(x, y), "{},{} : {:?}", x, y, rs.region);
     if s.get(x, y) != db.get_initial_tile() {
         let change = db.change_from_to(rs.get(x, y), s.get(x, y));
-        seen.push(change);
+        // seen.push(change);
         rs.set(change, x, y);
     }
 }

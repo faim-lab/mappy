@@ -91,11 +91,12 @@ impl fmt::Debug for TileGfx {
 pub type TileGfxId = Id<TileGfx>;
 impl Tile for TileGfxId {}
 
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 struct Chain<T: Ord + Eq + Copy> {
     elts: Vec<T>,
-    fwd: Vec<BTreeSet<usize>>,
-    back: Vec<BTreeSet<usize>>,
+    // TODO this is actually bad, there must be a bug since metroid is showing many tiles with >1200 predecessors in the chain even though there are only 624 tiles and somehow 2453 changes (seems like too many changes)
+    fwd: Vec<HashSet<usize>>,
+    back: Vec<HashSet<usize>>,
 }
 impl<T> Chain<Id<T>> {
     fn new() -> Self {
@@ -108,14 +109,16 @@ impl<T> Chain<Id<T>> {
     fn insert(&mut self, t: Id<T>) {
         if t.index() == self.elts.len() {
             self.elts.push(t);
-            self.fwd.push(BTreeSet::new());
-            self.back.push(BTreeSet::new());
+            self.fwd.push(HashSet::new());
+            self.back.push(HashSet::new());
         } else {
             assert!(t.index() < self.elts.len());
         }
     }
     fn chain(&mut self, tpre: Id<T>, tpost: Id<T>) {
+        // TODO, if tpre is initial, should this just be ignored?
         let ipre = tpre.index();
+        if ipre == 0 { return; }
         let ipost = tpost.index();
         self.fwd[ipre].insert(ipost);
         self.back[ipost].insert(ipre);
@@ -162,7 +165,7 @@ pub struct TileDB {
     gfx: HashMap<TileGfx, TileGfxId>,
 
     changes: HashMap<(TileGfxId, TileGfxId), TileChange>,
-    change_closure: Chain<TileChange>,
+    // change_closure: Chain<TileChange>,
 }
 
 impl TileDB {
@@ -182,8 +185,8 @@ impl TileDB {
         let initial_change = change_arena.alloc(initial_change_data);
         let mut changes = HashMap::new();
         changes.insert((initial, initial), initial_change);
-        let mut change_closure = Chain::new();
-        change_closure.insert(initial_change);
+        // let mut change_closure = Chain::new();
+        // change_closure.insert(initial_change);
         TileDB {
             gfx_arena,
             initial,
@@ -191,7 +194,7 @@ impl TileDB {
             change_arena,
             initial_change,
             changes,
-            change_closure,
+            // change_closure,
         }
     }
     pub fn get_initial_change(&self) -> TileChange {
@@ -232,13 +235,17 @@ impl TileDB {
         self.gfx.len()
     }
     pub fn change_cost(&self, tc1: TileChange, tc2: TileChange) -> f32 {
+        let tc1_c = self.change_arena.get(tc1).unwrap();
+        let tc2_c = self.change_arena.get(tc2).unwrap();
         if tc1 == tc2 || tc1 == self.initial_change || tc2 == self.initial_change {
             0.0
-        } else if self.change_arena.get(tc1).unwrap().to == self.change_arena.get(tc2).unwrap().to {
+        } else if tc1_c.to == tc2_c.from || tc1_c.from == tc2_c.to {
             0.25
-        } else if self.change_closure.goes_to(tc1, tc2) || self.change_closure.goes_to(tc2, tc1) {
-            0.1
-        } else {
+        }
+        // else if self.changes.contains_key(&(tc1_c.to,tc2_c.from)) || self.changes.contains_key(&(tc2_c.to,tc1_c.from)) { //self.change_closure.goes_to(tc1, tc2) || self.change_closure.goes_to(tc2, tc1) {
+        //     0.1
+        // }
+        else {
             1.0
         }
     }
@@ -262,9 +269,9 @@ impl TileDB {
                     count: 0,
                 })
             });
-            self.change_closure.insert(tc2);
+            // self.change_closure.insert(tc2);
 
-            self.change_closure.chain(tc, tc2);
+            // self.change_closure.chain(tc, tc2);
             let init = self.get_initial_change();
             let old_change = self.change_arena.get_mut(tc).unwrap();
             if tc != init {
@@ -286,4 +293,22 @@ impl TileDB {
             tc2
         }
     }
+    pub fn tile_stats(&self) -> TileDBStats {
+        TileDBStats{
+            gfx:self.gfx.len(),
+            changes:self.changes.len(),
+            // closure_sizes_fwd:
+            // self.change_closure.fwd.iter().map(|c| c.len()).collect(),
+            // closure_sizes_back:
+            // self.change_closure.back.iter().map(|c| c.len()).collect(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TileDBStats {
+    pub gfx:usize,
+    pub changes:usize,
+    // pub closure_sizes_fwd:Vec<usize>,
+    // pub closure_sizes_back:Vec<usize>,
 }

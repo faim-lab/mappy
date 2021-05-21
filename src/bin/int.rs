@@ -207,6 +207,7 @@ zxcvbnm,./ for debug displays"
             }
         };
         if let Some(n) = numkey {
+            std::fs::create_dir_all("inputs").unwrap_or(());
             let path = Path::new("inputs/").join(format!(
                 "{}_{}.fm2",
                 romname.to_str().expect("rom name not a valid utf-8 string"),
@@ -227,6 +228,7 @@ zxcvbnm,./ for debug displays"
             }
         }
         if is_key_pressed(KeyCode::R) {
+            std::fs::create_dir_all("state").unwrap_or(());
             let save_path = Path::new("state/").join(format!(
                 "{}.state",
                 romname.to_str().expect("rom name not a valid utf-8 string")
@@ -238,6 +240,7 @@ zxcvbnm,./ for debug displays"
                 .expect("Couldn't write all save file bytes!");
         }
         if is_key_pressed(KeyCode::Y) {
+            std::fs::create_dir_all("state").unwrap_or(());
             let save_path = Path::new("state/").join(format!(
                 "{}.state",
                 romname.to_str().expect("rom name not a valid utf-8 string")
@@ -469,6 +472,10 @@ zxcvbnm,./ for debug displays"
                     }
                 }
             }
+        }
+        if mappy.mapping {
+            //draw a little red circle in the corner
+            draw_circle(8.0*SCALE, 8.0*SCALE, 4.0*SCALE, Color([255,0,0,255]));
         }
         next_frame().await;
         // let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);
