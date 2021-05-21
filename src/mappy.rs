@@ -210,8 +210,6 @@ impl MappyState {
 
     pub fn process_screen(&mut self, emu: &mut Emulator) {
         // Read new data from emulator
-        sprites::get_sprites(&emu, &mut self.live_sprites);
-
         let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
         t.stop();
@@ -236,14 +234,19 @@ impl MappyState {
             self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1) as i32,
         );
         }
-        dbg!(self.scroll);
+        // dbg!(self.scroll);
+        // TODO: is it possible that the read-tiles-from-screen thing should take background scroll into account somehow differently?  or use sprite positions from the beginning of vblank instead of the end?
         t.stop();
         let t = self.timers.timer(Timing::ReadScreen).start();
-        // Update current screen tile grid
-        self.read_current_screen();
+        // Update current screen tile grid;
+        // can't do it on moment 0 since we don't have sprites yet
+        if self.now.0 > 0 {
+            self.read_current_screen();
+        }
         t.stop();
 
         let t = self.timers.timer(Timing::Track).start();
+        sprites::get_sprites(&emu, &mut self.live_sprites);
         // Relate current sprites to previous sprites
         self.track_sprites();
         t.stop();
