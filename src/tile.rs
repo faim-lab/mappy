@@ -238,15 +238,17 @@ impl TileDB {
         let tc1_c = self.change_arena.get(tc1).unwrap();
         let tc2_c = self.change_arena.get(tc2).unwrap();
         if tc1 == tc2 || tc1 == self.initial_change || tc2 == self.initial_change {
-            0.0
+            0.00
         } else if tc1_c.to == tc2_c.from || tc1_c.from == tc2_c.to {
             0.25
+        } else if tc1_c.to == tc2_c.to {
+            0.10
         }
         // else if self.changes.contains_key(&(tc1_c.to,tc2_c.from)) || self.changes.contains_key(&(tc2_c.to,tc1_c.from)) { //self.change_closure.goes_to(tc1, tc2) || self.change_closure.goes_to(tc2, tc1) {
         //     0.1
         // }
         else {
-            1.0
+            1.00
         }
     }
     pub fn change_from_to(&mut self, tc: TileChange, gfx: TileGfxId) -> TileChange {

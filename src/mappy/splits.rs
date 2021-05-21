@@ -162,9 +162,11 @@ pub fn get_main_split(
     // Is splitting happening some other way?
     // E.g. in Zelda the "room" abuts the "menu"
     if hi.scanline - lo.scanline >= 239 {
-        let (lo, hi) = get_best_effort_splits(fb, lo, hi);
-        (lo, hi, latch)
+        let (lo_b, hi_b) = get_best_effort_splits(fb, lo, hi);
+        // dbg!(("a", lo, hi, lo_b, hi_b, latch, changes.len()));
+        (lo_b, hi_b, latch)
     } else {
+        // dbg!(("b", lo,hi,latch,changes.len()));
         (lo, hi, latch)
     }
 }

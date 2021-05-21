@@ -210,6 +210,8 @@ impl MappyState {
 
     pub fn process_screen(&mut self, emu: &mut Emulator) {
         // Read new data from emulator
+        sprites::get_sprites(&emu, &mut self.live_sprites);
+
         let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
         t.stop();
@@ -217,6 +219,7 @@ impl MappyState {
         self.get_changes(&emu);
 
         // What can we learn from hardware screen splitting operations?
+        if self.changes.len() > 0 || self.splits.is_empty() {
         let (lo, hi, latch) = splits::get_main_split(&self.changes, self.latch, &self.fb);
         self.latch = latch;
         self.splits = [(lo, hi)];
@@ -232,6 +235,8 @@ impl MappyState {
             self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0) as i32,
             self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1) as i32,
         );
+        }
+        dbg!(self.scroll);
         t.stop();
         let t = self.timers.timer(Timing::ReadScreen).start();
         // Update current screen tile grid
@@ -239,7 +244,6 @@ impl MappyState {
         t.stop();
 
         let t = self.timers.timer(Timing::Track).start();
-        sprites::get_sprites(&emu, &mut self.live_sprites);
         // Relate current sprites to previous sprites
         self.track_sprites();
         t.stop();
@@ -998,16 +1002,14 @@ pub fn merge_cost(
         }
         rect
     };
-    // dbg!(room.id, metaroom_id, ar, br);
 
-    let overlap_req = 300;
+    let overlap_req = 300.min(ar.w*ar.h/2).min(br.w*br.h/2);
 
     let left = br.x - ar.w as i32;
     let right = br.x + br.w as i32;
     let top = br.y - ar.h as i32;
     let bot = br.y + br.h as i32;
-    // UGH room 51, 39 still not merging into 13/15/17.  why?  find costs and debug.  can the metaroom ID be passed in as a parameter to make this easier?
-    //    It looks like there are slight tile misalignments due to the menu scrolling in and out??
+    // dbg!(room.id, metaroom_id, ar, br, left, right, top, bot);
     let rooms = rooms.read().unwrap();
     let tiles = tiles.read().unwrap();
     let initial = tiles.get_initial_change();
@@ -1049,10 +1051,9 @@ pub fn merge_cost(
                         }
 
                         let tc = tiles.change_cost(room_tile, room_b_tile);
-                        // if room.id == 39 && metaroom_id.0 == 20 && xo == 0 && yo == 0 {
-                        // dbg!("R39cost", tc, ax, ay, s2x, s2y, room_id, room_tile, room_b_tile, tiles.get_change_by_id(room_tile), tiles.get_change_by_id(room_b_tile));
+                        // if room.id == 2 && metaroom_id.0 == 0 && xo == 0 && yo == 0 {
+                            // dbg!(tc, ax, ay, s2x, s2y, room_id, room_tile, room_b_tile, tiles.get_change_by_id(room_tile), tiles.get_change_by_id(room_b_tile));
                         // }
-                        // Also, 51->39 is still its own room instead of joining 17/15/13.  It should only be different at 4 positions, but for some reason is much worse than that?  lots of quarter-differences.
                         // if room.id == 9 && room_id == 8 {
                         // println!("Compare {:?},{:?} : {:?},{:?} : {:?},{:?} :: {:?}",rx,ry,ax,ay,s2x,s2y,room_b.region());
                         // }
@@ -1068,23 +1069,25 @@ pub fn merge_cost(
                         cost += best_tile_cost.unwrap();
                     }
                     if cost >= threshold {
-                        // if room.id == 39 && metaroom_id.0 == 20 && xo == 0 && yo == 0 {
-                        // dbg!("R39B", room.id, comparisons, overlap_req, cost, threshold);
+                        // if room.id == 2 && metaroom_id.0 == 0 && xo == 0 && yo == 0 {
+                        // dbg!("R2B", room.id, comparisons, overlap_req, cost, threshold);
                         // panic!("done");
                         // }
                         continue 'reg;
                     }
                 }
             }
-            // if xo == 0 && yo == 0 && room.id == 39 && metaroom_id.0 == 21 {
-            // dbg!("R39", room.id, comparisons, overlap_req, cost, threshold);
+            // if xo == 0 && yo == 0 && room.id == 2 && metaroom_id.0 == 0 {
+            // dbg!("R2A", room.id, comparisons, overlap_req, cost, threshold);
             // }
             // if room.id == 39 && metaroom_id.0 == 20 {
             // MappyState::dump_tiles_single(Path::new("out"), &tiles);
             // dbg!(room.id,metaroom_id,xo,yo,comparisons,cost);
             // panic!("done");
             // }
-            // dbg!(room.id,xo,yo,comparisons,cost);
+            // if room.id == 8 {
+                // dbg!(room.id,xo,yo,comparisons,cost);
+            // }
             if cost < threshold && comparisons > overlap_req {
                 dbg!(room.id, comparisons, cost, (xo, yo));
                 threshold = cost;
