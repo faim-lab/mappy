@@ -1,7 +1,7 @@
 use crate::screen::Screen;
 use crate::tile::{TileChange, TileDB, TileGfxId};
 use crate::Rect;
-use std::collections::HashSet;
+// use std::collections::HashSet;
 
 type RoomScreen = Screen<TileChange>;
 #[derive(Clone)]
@@ -204,7 +204,7 @@ impl Room {
 fn extend_tile(
     rs: &mut RoomScreen,
     s: &Screen<TileGfxId>,
-    seen: &mut Vec<TileChange>,
+    _seen: &mut Vec<TileChange>,
     x: i32,
     y: i32,
     db: &mut TileDB,

@@ -1,0 +1,31 @@
+#+TITLE: Fast, Accurate Mapping for Console Games
+
+* About this Repository
+
+This is a Rust project with a library, =mappy=, and two binary targets: =int= for interactive play and mapping and =batch= for the fastest possible "headless" mapping.
+
+Important data provided in this repository include our instrumented emulator binaries (in the =cores= folder; if one is not present for your architecture or OS please ask and the authors can provide a build or source code) and the game ROM files (in the =roms= folder).  We also provide input sequences used to generate figures for the paper in the =inputs= folder.
+
+To run this code you'll need =rustc= and =cargo= installed; please visit [[https://rustup.rs][the rustup website]] to get started. No other system dependencies are required besides =graphviz= to generate the map images.
+
+* How to Reproduce the Paper Figures
+
+Note that due to the use of automated layout with graphviz, some maps may be laid out differently from the figures in the paper.  These commands should also show performance diagnostics for the automated mapping system.
+
+- Figure 1, The first level of /Castlevania/: =cargo run --bin batch roms/cv.nes inputs/cv_8.fm2 && cd out && dot -Tpng graph.dot > fig1.png && cd ..=.  Crop out the first portion of the following world from the bottom of the resulting image.
+- Figure 3, /The Legend of Zelda's/ menu: =cargo run --bin int roms/zelda.nes inputs/zelda_1.fm2=, then tap the =z= key to show the grid overlay.  Take a screenshot with your OS's screenshot facility.
+- Figure 4, /Super Mario Bros./ triptych: =cargo run --bin int roms/mario.nes=, play until reaching the illustrated portion of the stage, then toggle the debug tile and sprite displays with the =x= and =c= keys.  Take a screenshot with your OS's screenshot facility.
+- Figure 5, The first few rooms of /The Legend of Zelda/: =cargo run --bin int roms/zelda.nes inputs/zelda_1.fm2=, wander into and out of the cave, then west by one room, back east, east again, north, west, west, south, and east once more.  After quitting with =ESC=, =cd out && dot -Tpng graph.dot > fig5.png && cd ..=.
+- Figure 6, /Super Mario Bros./ World 1-1: =cargo run --bin batch roms/mario.nes inputs/mario_1.fm2 inputs/mario_2.fm2 && cd out && dot -Tpng graph.dot > fig6.png && cd ..=.  You could also switch the order of =mario_1.fm2= and =mario_2.fm2=.
+
+* Making Your Own Maps
+
+To see a large map of part of /Zelda's/ overworld and its first dungeon, try =cargo run --bin batch roms/zelda.nes inputs/zelda_2.fm2 && cd out && dot -Tpng graph.dot > zelda.png && cd ..=.  Note that some of the rooms have bits of menu in them; this is a quirk since Zelda's menu scrolls into and out of place.  Soon, avatar detection will give us a way to ignore in-menu states like this.
+
+You can play with =cargo run --bin int roms/whatever.nes=, then while playing tap =shift-1= through =shift-0= to dump your input sequence to an =fm2= replay file in the =inputs/= folder or tap the =1= through =0= keys to reset and run the corresponding saved replay.  The =z= key shows a tile grid, the =x= key shows which tile is observed at every grid coordinate in the playfield, and the =c= key visualizes sprite tracks.  Finally, press =n= to dump the rooms and map up to but not including the current room into the =out/= folder.
+
+You can use =int= or =batch= to replay any number of input sequences from the command line (=batch= will also dump maps automatically).
+
+* The Source Code
+
+While =bin/batch.rs= and =bin/int.rs= are the binary entry points, most of the important code lives in =mappy.rs= and the other library modules.  =MappyState::process_screen= in =src/mappy.rs= follows something like the outline of the /Algorithms/ section of the paper: scroll detection, sprite tracking, control checking, scene transition checks, room mapping, and room merging.  Tile graphics and tile transitions (and the arenas used to allocate and index them) are defined in =src/tile.rs=, and screen-grids polymorphic in the contained type (tiles or tile transitions) are defined in =src/screen.rs=.

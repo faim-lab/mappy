@@ -171,7 +171,7 @@ zxcvbnm,./ for debug displays"
                     .output()
                     .expect("graphviz failed")
                     .stdout;
-                std::fs::write(format!("out/{}.png", romname.to_str().unwrap()), &image);
+                std::fs::write(format!("out/{}.png", romname.to_str().unwrap()), &image).unwrap();
             }
         }
         // if is_key_pressed(KeyCode::M) {
@@ -278,16 +278,8 @@ zxcvbnm,./ for debug displays"
                 emu.copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
             }
-            let had_control = mappy.has_control;
-            let old_control_time = mappy.last_control;
             mappy.process_screen(&mut emu);
             frame_counter += 1;
-            // if mappy.has_control && !had_control {
-            //     println!(
-            //         "Lost control for {} frames",
-            //         mappy.now.0 - old_control_time.0
-            //     );
-            // }
             if frame_counter % 300 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
                 // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
@@ -475,7 +467,12 @@ zxcvbnm,./ for debug displays"
         }
         if mappy.mapping {
             //draw a little red circle in the corner
-            draw_circle(8.0*SCALE, 8.0*SCALE, 4.0*SCALE, Color([255,0,0,255]));
+            draw_circle(
+                8.0 * SCALE,
+                8.0 * SCALE,
+                4.0 * SCALE,
+                Color([255, 0, 0, 255]),
+            );
         }
         next_frame().await;
         // let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);

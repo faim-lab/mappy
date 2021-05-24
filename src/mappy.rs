@@ -82,7 +82,7 @@ pub struct MappyState {
     pub control_duration: usize,
     pub timers: Timers<Timing>,
     // are we currently mapping?
-    pub mapping:bool,
+    pub mapping: bool,
     // which rooms were terminated by resets?
     pub resets: Vec<usize>,
 }
@@ -153,7 +153,7 @@ impl MappyState {
             room_merge_rx,
             room_merge_tx,
             timers: Timers::new(),
-            mapping:false,
+            mapping: false,
             resets: vec![],
         }
     }
@@ -218,23 +218,23 @@ impl MappyState {
 
         // What can we learn from hardware screen splitting operations?
         if self.changes.len() > 0 || self.splits.is_empty() {
-        let (lo, hi, latch) = splits::get_main_split(&self.changes, self.latch, &self.fb);
-        self.latch = latch;
-        self.splits = [(lo, hi)];
+            let (lo, hi, latch) = splits::get_main_split(&self.changes, self.latch, &self.fb);
+            self.latch = latch;
+            self.splits = [(lo, hi)];
 
-        // Update grid alignment and scrolling
-        let old_align = self.grid_align;
-        self.grid_align = (lo.scroll_x, lo.scroll_y);
-        if self.has_control {
-            self.last_controlled_scroll = self.scroll;
+            // Update grid alignment and scrolling
+            let old_align = self.grid_align;
+            self.grid_align = (lo.scroll_x, lo.scroll_y);
+            if self.has_control {
+                self.last_controlled_scroll = self.scroll;
+            }
+            // update scroll based on grid align change
+            // dbg!(old_align.1, self.grid_align.1, scrolling::find_offset(old_align.1, self.grid_align.1, 240));
+            self.scroll = (
+                self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0, 256) as i32,
+                self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32,
+            );
         }
-        // update scroll based on grid align change
-        self.scroll = (
-            self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0) as i32,
-            self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1) as i32,
-        );
-        }
-        // dbg!(self.scroll);
         // TODO: is it possible that the read-tiles-from-screen thing should take background scroll into account somehow differently?  or use sprite positions from the beginning of vblank instead of the end?
         t.stop();
         let t = self.timers.timer(Timing::ReadScreen).start();
@@ -786,6 +786,24 @@ impl MappyState {
             get_changes_fn(self.changes.as_mut_ptr(), self.change_count);
         }
     }
+    pub fn metaroom_exits(&self, mr: &Metaroom) -> Vec<MetaroomID> {
+        let mut out_to = vec![];
+        for (rid, _pos) in mr.registrations.iter() {
+            if self.resets.contains(rid) {
+                continue;
+            }
+            if let Some(mr2) = self
+                .metarooms
+                .metarooms()
+                .find(|mri| mri.registrations.iter().any(|(mrrid, _)| *mrrid == rid + 1))
+            {
+                if !out_to.contains(&mr2.id) {
+                    out_to.push(mr2.id);
+                }
+            }
+        }
+        out_to
+    }
     pub fn dump_map(&self, dotfolder: &Path) {
         use std::collections::BTreeMap;
         use std::fs;
@@ -838,22 +856,7 @@ impl MappyState {
                 attrs = attrs.add_pair(shape(Shape::Plain))
             }
             stmts = stmts.add_node(mr_ident.clone(), None, Some(attrs));
-            let mut out_to = vec![];
-            for (rid, _pos) in mr.registrations.iter() {
-                if self.resets.contains(rid) {
-                    continue;
-                }
-                if let Some(mr2) = self
-                    .metarooms
-                    .metarooms()
-                    .find(|mri| mri.registrations.iter().any(|(mrrid, _)| *mrrid == rid + 1))
-                {
-                    if !out_to.contains(&mr2.id) {
-                        out_to.push(mr2.id);
-                    }
-                }
-            }
-            for mr2_id in out_to {
+            for mr2_id in self.metaroom_exits(mr) {
                 stmts = stmts.add_edge(
                     Edge::head_node(mr_ident.clone(), None)
                         .arrow_to_node(Identity::from(mr2_id.0), None),
@@ -980,7 +983,7 @@ impl MappyState {
 
 pub fn merge_cost(
     room: &Room,
-    metaroom_id: MetaroomID,
+    _metaroom_id: MetaroomID,
     metaroom: &[(usize, (i32, i32))],
     rooms: &RwLock<Vec<Room>>,
     tiles: &RwLock<TileDB>,
@@ -1006,7 +1009,7 @@ pub fn merge_cost(
         rect
     };
 
-    let overlap_req = 300.min(ar.w*ar.h/2).min(br.w*br.h/2);
+    let overlap_req = 300.min(ar.w * ar.h / 2).min(br.w * br.h / 2);
 
     let left = br.x - ar.w as i32;
     let right = br.x + br.w as i32;
@@ -1055,7 +1058,7 @@ pub fn merge_cost(
 
                         let tc = tiles.change_cost(room_tile, room_b_tile);
                         // if room.id == 2 && metaroom_id.0 == 0 && xo == 0 && yo == 0 {
-                            // dbg!(tc, ax, ay, s2x, s2y, room_id, room_tile, room_b_tile, tiles.get_change_by_id(room_tile), tiles.get_change_by_id(room_b_tile));
+                        // dbg!(tc, ax, ay, s2x, s2y, room_id, room_tile, room_b_tile, tiles.get_change_by_id(room_tile), tiles.get_change_by_id(room_b_tile));
                         // }
                         // if room.id == 9 && room_id == 8 {
                         // println!("Compare {:?},{:?} : {:?},{:?} : {:?},{:?} :: {:?}",rx,ry,ax,ay,s2x,s2y,room_b.region());
@@ -1089,7 +1092,7 @@ pub fn merge_cost(
             // panic!("done");
             // }
             // if room.id == 8 {
-                // dbg!(room.id,xo,yo,comparisons,cost);
+            // dbg!(room.id,xo,yo,comparisons,cost);
             // }
             if cost < threshold && comparisons > overlap_req {
                 dbg!(room.id, comparisons, cost, (xo, yo));

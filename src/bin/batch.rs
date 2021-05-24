@@ -41,7 +41,10 @@ fn main() {
 
     mappy.finish();
 
-    println!("Known tiles: {:?}", mappy.tiles.read().unwrap().tile_stats());
+    println!(
+        "Known tiles: {:?}",
+        mappy.tiles.read().unwrap().tile_stats()
+    );
     println!("Emulation only: 7.62524203s for 34,514 inputs, avg 0.000220 per frame");
     println!(
         "Net: {:} for {:} inputs, avg {:} per frame",

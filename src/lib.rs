@@ -1,7 +1,7 @@
 #![allow(clippy::many_single_char_names)]
 mod framebuffer;
 mod mappy;
-mod metaroom;
+pub mod metaroom;
 pub mod room;
 mod screen;
 mod sprites;

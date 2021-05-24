@@ -46,23 +46,23 @@ pub struct ScrollChange {
     pub value: u8,
 }
 
-pub fn find_offset(old: u8, new: u8) -> i16 {
+pub fn find_offset(old: u8, new: u8, limit: i16) -> i16 {
     // each coordinate either increased and possibly wrapped or decreased and possibly wrapped or stayed the same
-    // in the former case calculate new+8 and subtract old if new < old, otherwise new - old
-    // in the middle case calculate old+8 - new if new > old, otherwise old - new
-    // the magic number here (255, 8, whatever) is the largest value grid_offset can take
     let old = old as i16;
     let new = new as i16;
     let decrease = if new <= old {
         new - old
     } else {
-        new - (old + 256)
+        new - (old + limit)
     };
     let increase = if new >= old {
         new - old
     } else {
-        (new + 256) - old
+        (new + limit) - old
     };
-
-    *[decrease, increase].iter().min_by_key(|n| n.abs()).unwrap()
+    if increase.abs() < decrease.abs() {
+        increase
+    } else {
+        decrease
+    }
 }

@@ -197,13 +197,13 @@ impl SpriteBlob {
     pub fn is_dead(&self) -> bool {
         self.live_tracks.is_empty()
     }
-    pub fn blob_score_pair(t1: &SpriteTrack, t2: &SpriteTrack, lookback: usize) -> f32 {
+    pub fn blob_score_pair(_t1: &SpriteTrack, _t2: &SpriteTrack, _lookback: usize) -> f32 {
         // closeness score: 0 if touching over lookback and diff ID, 100 otherwise; use min among all self.live tracks with id != t.id
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
         // closeness + moving
         100.0
     }
-    pub fn blob_score(&self, t: &SpriteTrack, all_tracks: &[SpriteTrack], lookback: usize) -> f32 {
+    pub fn blob_score(&self, _t: &SpriteTrack, _all_tracks: &[SpriteTrack], _lookback: usize) -> f32 {
         // closeness score: 0 if touching, 100 otherwise; use min among all self.live tracks with id != t.id
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
         // closeness + moving

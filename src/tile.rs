@@ -91,58 +91,60 @@ impl fmt::Debug for TileGfx {
 pub type TileGfxId = Id<TileGfx>;
 impl Tile for TileGfxId {}
 
-use std::collections::HashSet;
-struct Chain<T: Ord + Eq + Copy> {
-    elts: Vec<T>,
-    // TODO this is actually bad, there must be a bug since metroid is showing many tiles with >1200 predecessors in the chain even though there are only 624 tiles and somehow 2453 changes (seems like too many changes)
-    fwd: Vec<HashSet<usize>>,
-    back: Vec<HashSet<usize>>,
-}
-impl<T> Chain<Id<T>> {
-    fn new() -> Self {
-        Self {
-            elts: vec![],
-            fwd: vec![],
-            back: vec![],
-        }
-    }
-    fn insert(&mut self, t: Id<T>) {
-        if t.index() == self.elts.len() {
-            self.elts.push(t);
-            self.fwd.push(HashSet::new());
-            self.back.push(HashSet::new());
-        } else {
-            assert!(t.index() < self.elts.len());
-        }
-    }
-    fn chain(&mut self, tpre: Id<T>, tpost: Id<T>) {
-        // TODO, if tpre is initial, should this just be ignored?
-        let ipre = tpre.index();
-        if ipre == 0 { return; }
-        let ipost = tpost.index();
-        self.fwd[ipre].insert(ipost);
-        self.back[ipost].insert(ipre);
-        // TODO resolve too much copying, can't prove that ipre isn't in to_add_back.
-        // a dense matrix would improve things but then adding tiles stinks
+// use std::collections::HashSet;
+// struct Chain<T: Ord + Eq + Copy> {
+//     elts: Vec<T>,
+//     // TODO this is actually bad, there must be a bug since metroid is showing many tiles with >1200 predecessors in the chain even though there are only 624 tiles and somehow 2453 changes (seems like too many changes)
+//     fwd: Vec<HashSet<usize>>,
+//     back: Vec<HashSet<usize>>,
+// }
+// impl<T> Chain<Id<T>> {
+//     fn new() -> Self {
+//         Self {
+//             elts: vec![],
+//             fwd: vec![],
+//             back: vec![],
+//         }
+//     }
+//     fn insert(&mut self, t: Id<T>) {
+//         if t.index() == self.elts.len() {
+//             self.elts.push(t);
+//             self.fwd.push(HashSet::new());
+//             self.back.push(HashSet::new());
+//         } else {
+//             assert!(t.index() < self.elts.len());
+//         }
+//     }
+//     fn chain(&mut self, tpre: Id<T>, tpost: Id<T>) {
+//         // TODO, if tpre is initial, should this just be ignored?
+//         let ipre = tpre.index();
+//         if ipre == 0 {
+//             return;
+//         }
+//         let ipost = tpost.index();
+//         self.fwd[ipre].insert(ipost);
+//         self.back[ipost].insert(ipre);
+//         // TODO resolve too much copying, can't prove that ipre isn't in to_add_back.
+//         // a dense matrix would improve things but then adding tiles stinks
 
-        // tpost's descendants get backward links to all of tpre's ancestors
-        for to_add_back in self.fwd[ipost].iter() {
-            self.back[*to_add_back].insert(ipre);
-            let cp: Vec<_> = self.back[ipre].iter().copied().collect();
-            self.back[*to_add_back].extend(cp);
-        }
-        // tpre's ancestors get forward links to all of tpost's descendants
-        for to_add_fwd in self.back[ipre].iter() {
-            self.fwd[*to_add_fwd].insert(ipost);
-            let cp: Vec<_> = self.fwd[ipost].iter().copied().collect();
-            self.fwd[*to_add_fwd].extend(cp);
-        }
-    }
+//         // tpost's descendants get backward links to all of tpre's ancestors
+//         for to_add_back in self.fwd[ipost].iter() {
+//             self.back[*to_add_back].insert(ipre);
+//             let cp: Vec<_> = self.back[ipre].iter().copied().collect();
+//             self.back[*to_add_back].extend(cp);
+//         }
+//         // tpre's ancestors get forward links to all of tpost's descendants
+//         for to_add_fwd in self.back[ipre].iter() {
+//             self.fwd[*to_add_fwd].insert(ipost);
+//             let cp: Vec<_> = self.fwd[ipost].iter().copied().collect();
+//             self.fwd[*to_add_fwd].extend(cp);
+//         }
+//     }
 
-    fn goes_to(&self, tpre: Id<T>, tpost: Id<T>) -> bool {
-        self.fwd[tpre.index()].contains(&(tpost.index()))
-    }
-}
+//     fn goes_to(&self, tpre: Id<T>, tpost: Id<T>) -> bool {
+//         self.fwd[tpre.index()].contains(&(tpost.index()))
+//     }
+// }
 
 pub type TileChange = Id<TileChangeData>;
 impl Tile for TileChange {}
@@ -296,9 +298,9 @@ impl TileDB {
         }
     }
     pub fn tile_stats(&self) -> TileDBStats {
-        TileDBStats{
-            gfx:self.gfx.len(),
-            changes:self.changes.len(),
+        TileDBStats {
+            gfx: self.gfx.len(),
+            changes: self.changes.len(),
             // closure_sizes_fwd:
             // self.change_closure.fwd.iter().map(|c| c.len()).collect(),
             // closure_sizes_back:
@@ -309,8 +311,8 @@ impl TileDB {
 
 #[derive(Debug)]
 pub struct TileDBStats {
-    pub gfx:usize,
-    pub changes:usize,
+    pub gfx: usize,
+    pub changes: usize,
     // pub closure_sizes_fwd:Vec<usize>,
     // pub closure_sizes_back:Vec<usize>,
 }
