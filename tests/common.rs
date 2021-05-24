@@ -21,8 +21,10 @@ pub fn run(rom: &Path, fm2s: &[&Path]) -> MappyState {
     mappy
 }
 #[allow(unused)]
-pub fn print_testcase(mappy: MappyState, rooms: &[mappy::room::Room], metarooms: &[mappy::metaroom::Metaroom]) {
-    println!(
+pub fn print_testcase(mappy: &MappyState) {
+    let rooms = mappy.rooms.read().unwrap();
+    let metarooms: Vec<_> = mappy.metarooms.metarooms().collect();
+   println!(
         "assert_eq!(rooms.len(), {:?});",
         rooms.len()
     );
