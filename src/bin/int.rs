@@ -500,38 +500,15 @@ zxcvbnm,./ for debug displays"
                     ((blob.positions[0].0).0 * 91 % 256) as f32 / 255.,
                     1.,
                 );
-                let startp = Vec2::new(
-                    ((blob.positions[0].1).0 + blob.positions[0].2.x as i32 - mappy.scroll.0)
-                        as f32,
-                    ((blob.positions[0].1).1 + blob.positions[0].2.y as i32 - mappy.scroll.1)
-                        as f32,
-                );
-                draw_rectangle(
-                    SCALE * (startp.x().max(0.)).min(w as f32) - SCALE * 2.,
-                    SCALE * (startp.y().max(0.)).min(h as f32) - SCALE * 2.,
-                    SCALE * 4.,
-                    SCALE * 4.,
+                let (_time, x, y) = blob.positions.last().unwrap();
+                draw_circle(
+                    (x - mappy.scroll.0) as f32 * SCALE,
+                    (y - mappy.scroll.0) as f32 * SCALE,
+                    8.0 * SCALE,
                     col,
                 );
-                if blob.positions.len() > 1 {
-                    for pair in blob.positions.windows(2) {
-                        let mappy::At(_, (sx0, sy0), sd0) = pair[0];
-                        let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
-                        let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
-                        let mappy::At(_, (sx1, sy1), sd1) = pair[1];
-                        let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
-                        let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;
-                        draw_line(
-                            x0 as f32 * SCALE,
-                            y0 as f32 * SCALE,
-                            x1 as f32 * SCALE,
-                            y1 as f32 * SCALE,
-                            1.,
-                            col,
-                        );
-                    }
-                }
             }
+            println!("{}", mappy.live_blobs.len());
         }
         next_frame().await;
         // let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);

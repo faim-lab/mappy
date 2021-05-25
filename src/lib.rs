@@ -38,6 +38,14 @@ impl Rect {
             && self.y < (r.y + r.h as i32)
             && r.y < (self.y + self.h as i32)
     }
+    pub fn expand(&self, num: u32) -> Rect {
+        Rect {
+            x: self.x - num as i32,
+            y: self.y - num as i32,
+            w: self.w + 2 * num,
+            h: self.h + 2 * num,
+        }
+    }
     pub fn union(&self, other: &Rect) -> Rect {
         let x0 = self.x.min(other.x);
         let y0 = self.y.min(other.y);

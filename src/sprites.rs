@@ -267,8 +267,8 @@ impl SpriteBlob {
                 let rect2 = t2.get_sprite_data().sprite_rect();
 
                 // closeness will be zero if they do overlap, if they don't overlap then closeness will be set to 100.
-                if !rect1.overlaps(&rect2) {
-                    closeness = std::cmp::max(closeness, 100);
+                if !rect1.expand(1).overlaps(&rect2.expand(1)) {
+                    closeness = 100;
                 }
                 if vec1[0] == vec2[0] && vec1[1] == vec2[1] {
                     same_spd += 1;
@@ -290,6 +290,7 @@ impl SpriteBlob {
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
         // closeness + moving
         // return min blob score of all of self.live_tracks with id != t.id
+
         if let Some(x) = self
             .live_tracks
             .iter()
