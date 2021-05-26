@@ -108,7 +108,6 @@ pub struct SpriteTrack {
     pub attrs: HashSet<u8>,
     pub positive_hits: i32,
     pub negative_hits: i32,
-    pub button_input: RingBuffer<Buttons>,
 }
 
 impl SpriteTrack {
@@ -121,7 +120,6 @@ impl SpriteTrack {
             attrs: HashSet::new(),
             positive_hits: 0,
             negative_hits: 0,
-            button_input: RingBuffer::new(Buttons::new(), 30),
         };
         ret.update(t, scroll, sd);
         ret
@@ -155,6 +153,9 @@ impl SpriteTrack {
             .find(|At(t0, _, _)| t0 < &t)
             .map(|At(_, (sx, sy), sd)| (sx + sd.x as i32, sy + sd.y as i32))
     }
+    pub fn point_at_panicking(&self, t: Time) -> (i32, i32) {
+        self.point_at(t).unwrap()
+    }
     pub fn seen_pattern(&self, pat: u8) -> bool {
         self.patterns.contains(&pat)
     }
@@ -165,25 +166,35 @@ impl SpriteTrack {
         self.attrs.contains(&attrs)
     }
 
-    pub fn determine_avatar(&mut self, current_time: Time, input: Buttons) {
-        self.button_input.push(input); // Push next input into ring buf
+    // Here, positive and negative hits are incremented based on whether input changes occur at the same time 
+    // as changes in acceleration. Also, button inputs are dealt with in int.rs and mappy.rs, and there is a
+    // visualizer in int.rs (look at avatar_indicator, and press m while running int.rs to see). What I have right
+    // now as a whole works somewhat, but has some issues that need soliving. For instance, it's picking up sprites
+    // like blocks that Mario breaks (since they accelerate so fast when they're broken, I think). 
+    pub fn determine_avatar(&mut self, current_time: Time, button_input: &RingBuffer<Buttons>) {
+        // See the struct RingBuffer and the field button_inputs in mappy.rs. This is where 
+        // player inputs are stored, and then they're passed as a parameter into here
 
-        if self.button_input.get_sz() == 31 { // if ring buf is full enough to look back
-            let back_15 = self.button_input.get(self.button_input.get_sz() - 2);
-            let back_16 = self.button_input.get(self.button_input.get_sz() - 1);
-            if back_16 != back_15 { // if input changed 30 frames ago
-                // high level: determine if average acceleration from 60-30 frames ago differs from that 30-0 frames ago:
+        if self.last_observation_time() > Time(60) { // if sprite has existed long enough to look back
+            if button_input.get(31) != button_input.get(30) { // if input changed 30 frames ago
+                // -> determine if average acceleration from 60-30 frames ago differs from that 30-0 frames ago:
+
+
+                // Below is a potentially more concise way to do my calculations. It's commented out because I was having a hard time working
+                // with the complex iterators, maps and options. 
+
+                // let velocities = (0..60).rev().map(|i| {
+                //     self.point_at(Time(current_time.0-i)).map(|(x0,y0)| self.point_at(Time(current_time.0-i-5)).map(|(x1,y1)| (x1-x0,y1-y0)))
+                // });
+                // let velocities: Vec<_> = velocities.collect();
+
                 let mut velocities: Vec<(i32, i32)> = Vec::new();
                 for i in (0..65).rev() {
                     let pos: Option<(i32, i32)>      = self.point_at(Time(current_time.0-i));
                     let pos_prev: Option<(i32, i32)> = self.point_at(Time(current_time.0-i-5)); // 5 frames before pos
                     if pos.is_some() && pos_prev.is_some() {
-                        let pos_x: i32      = pos.unwrap().0;
-                        let pos_y: i32      = pos.unwrap().1;
-                        let pos_x_prev: i32 = pos_prev.unwrap().0;
-                        let pos_y_prev: i32 = pos_prev.unwrap().1;
-                        let x_vel: i32      = pos_x - pos_x_prev;
-                        let y_vel: i32      = pos_y - pos_y_prev;
+                        let x_vel: i32      = pos.unwrap().0 - pos_prev.unwrap().0; // Use change in position to find velocity
+                        let y_vel: i32      = pos.unwrap().1 - pos_prev.unwrap().1;
                         
                         velocities.push((x_vel, y_vel));
                     }
@@ -193,19 +204,12 @@ impl SpriteTrack {
                 for i in 5..(velocities.len()) {
                     if (velocities.get(i)).is_some() &&
                        (velocities.get(i - 5)).is_some() {
-
-                        let x_vel: i32 = velocities.get(i).unwrap().0;
-                        let y_vel: i32 = velocities.get(i).unwrap().1;
         
-                        let x_vel_prev: i32 = velocities.get(i - 5).unwrap().0;
-                        let y_vel_prev: i32 = velocities.get(i - 5).unwrap().1;
-        
-                        let x_accel: i32 = x_vel - x_vel_prev;
-                        let y_accel: i32 = y_vel - y_vel_prev;
+                        let x_accel: i32 = velocities.get(i).unwrap().0 - velocities.get(i - 5).unwrap().0;
+                        let y_accel: i32 = velocities.get(i).unwrap().1 - velocities.get(i - 5).unwrap().1;
                         accelerations.push((x_accel, y_accel));
                     }
                 }
-                
                 // total of accelerations last 30 frames
                 let mut total_accel_x_30: i32 = 0;
                 let mut total_accel_y_30: i32 = 0;
@@ -215,7 +219,6 @@ impl SpriteTrack {
                         total_accel_y_30 += accelerations.get(i).unwrap().1;
                     }
                 }
-
                 // total of accelerations last 60-30 frames ago               
                 let mut total_accel_x_60: i32 = 0;
                 let mut total_accel_y_60: i32 = 0;
@@ -225,8 +228,9 @@ impl SpriteTrack {
                         total_accel_y_60 += accelerations.get(i).unwrap().1;
                     }
                 }
-
-                // If average acceleration in 30-0 frames ago differs from that  60-30 ago
+                // If average acceleration (I use sum of accels, for simplicity) 30-0 frames ago differs from that 60-30 ago,
+                // increment pos hits, else increment neg hits. I'm not quite sure how to define "different," but I've used a
+                // threshold of 5 here.
                 if (total_accel_x_60 - total_accel_x_30).abs() > 5 || (total_accel_y_60 - total_accel_y_30).abs() > 5 {
                     self.positive_hits += 1;
                 } else {
@@ -237,8 +241,9 @@ impl SpriteTrack {
         }
     }
 
+    // Return whether the positive and negative hits pass a threshold (which I have as 5)
     pub fn get_is_avatar(&self) -> bool {
-        return self.positive_hits - self.negative_hits > 0 // greater than a threshold value
+        return self.positive_hits - self.negative_hits > 5
     }
 }
 

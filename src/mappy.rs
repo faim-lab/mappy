@@ -82,6 +82,7 @@ pub struct MappyState {
     pub timers: Timers<Timing>,
     // which rooms were terminated by resets?
     pub resets: Vec<usize>,
+    pub button_inputs: RingBuffer<Buttons>,
 }
 
 impl MappyState {
@@ -96,7 +97,7 @@ impl MappyState {
     // This is just an arbitrary value, not sure what a good one is!
     pub const ROOM_MERGE_THRESHOLD: f32 = 10.0;
 
-    pub fn new(w: usize, h: usize) -> Self { // Added parameter for size of RingBuffer. IDK if that will create a mess
+    pub fn new(w: usize, h: usize) -> Self {
         let db = TileDB::new();
         let t0 = db.get_initial_tile();
         let s0 = Screen::new(Rect::new(0, 0, 0, 0), t0);
@@ -146,6 +147,7 @@ impl MappyState {
             room_merge_tx,
             timers: Timers::new(),
             resets: vec![],
+            button_inputs: RingBuffer::new(Buttons::new(), 30),
         }
     }
 
@@ -532,17 +534,6 @@ impl MappyState {
             + (if new_s.height() == sd2.height() { 0 } else { 8 })
     }
 
-
-    // fn get_sprite_acceleration(&mut self) {
-    //     let now = self.now;
-    //     let dead_tracks = &mut self.dead_tracks;
-    //     let live_blobs = &mut self.live_blobs;
-    //     let mut dead_blob_ids = vec![];
-
-
-
-    // }
-
     fn track_sprites(&mut self, input: Buttons) {
         use matching::{greedy_match, Match, MatchTo, Target};
         let now = self.now;
@@ -630,8 +621,9 @@ impl MappyState {
             }
         }
         // avatar identification related:
+        self.button_inputs.push(input);
         for track in self.live_tracks.iter_mut() {
-            track.determine_avatar(self.now, input);
+            track.determine_avatar(self.now, &self.button_inputs);
         }
     }
 
@@ -991,10 +983,10 @@ pub fn merge_cost(
 // in get, 0 could give you the last thing that was written. 1 could give you the thing before that
 
 
-#[derive(Debug, Clone)] //added clone
+#[derive(Debug, Clone)]
 pub struct RingBuffer<T:Copy + std::fmt::Debug> {
-    pub buf:Vec<T>,
-    pub now:usize
+    buf:Vec<T>,
+    now:usize
 }
 impl<T:Copy + std::fmt::Debug> RingBuffer<T> {
     pub fn new(t:T, sz:usize) -> Self {
@@ -1015,7 +1007,10 @@ impl<T:Copy + std::fmt::Debug> RingBuffer<T> {
         self.buf[self.now] = t;
     }
     pub fn get(&self, since:usize) -> T {
-        self.buf[(self.buf.len() - since) - 1]
+        // self.buf[(self.buf.len() - since) - 1]
+        let mut idx = self.now as i64 - since as i64;
+        while idx < 0 { idx += self.buf.len() as i64 }
+        self.buf[idx as usize]
     }
     pub fn get_sz(&self) -> usize {
         self.buf.len()

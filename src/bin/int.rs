@@ -21,7 +21,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
     for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
-        mappy.process_screen(emu, inputs.last().unwrap()[0]);
+        mappy.process_screen(emu, inp[0]);
         if frames % 300 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
             println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
@@ -462,6 +462,7 @@ zxcvbnm,./ for debug displays"
             }
         }
 
+        // Avatar ID visualizer (press m to activate)
         if avatar_indicator {
             for track in mappy.live_tracks.iter() {
                 if track.get_is_avatar() {
