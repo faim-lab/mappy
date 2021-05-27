@@ -339,10 +339,10 @@ zxcvbnm,./ for debug displays"
             for x in ((region.x)..(region.x + region.w as i32)).step_by(TILE_SIZE) {
                 for y in ((region.y)..(region.y + region.h as i32)).step_by(TILE_SIZE) {
                     // Use tile hash and convert to a 24-bit color
-                    let tile = mappy.current_screen.get(
+                    let tile = mappy.current_screen[(
                         sr.x + (x - region.x) / TILE_SIZE as i32,
                         sr.y + (y - region.y) / TILE_SIZE as i32,
-                    );
+                    )];
                     let idx = tile.index();
                     if idx != 0 {
                         // TODO this but better
@@ -376,7 +376,7 @@ zxcvbnm,./ for debug displays"
                     mappy.current_room.as_ref().unwrap().region()
                 );
             }
-            let change = mappy.current_room.as_ref().unwrap().get(tx, ty);
+            let change = mappy.current_room.as_ref().unwrap().get(tx, ty).unwrap();
             let tiles = mappy.tiles.read().unwrap();
             let change_data = tiles.get_change_by_id(change);
             // todo print screen tile gfx at this position
@@ -535,8 +535,8 @@ fn debug_merge_cost_at(
                     // println!("compare");
                     // TODO if tiles.compatible(..., ...)
                     let c = tiles.change_cost(
-                        this.screens[screen].get(s1x, s1y),
-                        room.screens[screen2].get(s2x, s2y),
+                        this.screens[screen][(s1x, s1y)],
+                        room.screens[screen2][(s2x, s2y)],
                     );
                     draw_rectangle(
                         (((xo * TILE_SIZE as i32) - scroll.0) as f32 * SCALE) as f32,

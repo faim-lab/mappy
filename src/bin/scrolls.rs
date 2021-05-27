@@ -299,10 +299,10 @@ async fn main() {
             for x in ((region.x)..(region.x + region.w as i32)).step_by(TILE_SIZE) {
                 for y in ((region.y)..(region.y + region.h as i32)).step_by(TILE_SIZE) {
                     // Use tile hash and convert to a 24-bit color
-                    let tile = mappy.current_screen.get(
+                    let tile = mappy.current_screen[(
                         sr.x + (x - region.x) / TILE_SIZE as i32,
                         sr.y + (y - region.y) / TILE_SIZE as i32,
-                    );
+                    )];
                     let idx = tile.index();
                     if idx != 0 {
                         // TODO this but better

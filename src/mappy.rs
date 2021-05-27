@@ -1,5 +1,4 @@
 use crate::framebuffer::Framebuffer;
-// use crate::metaroom::Metaroom;
 use crate::metaroom::{Merges, Metaroom, MetaroomID};
 use crate::room::Room;
 use crate::screen::Screen;
@@ -260,8 +259,18 @@ impl MappyState {
         let last_control_time = self.last_control;
         self.determine_control(emu);
         self.mapping = false;
+        let Rect{w:sw, h:sh, ..} = self.current_screen.region;
         if self.has_control {
-            if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD {
+            let sdiff = scroll_diff(self.scroll, self.last_controlled_scroll);
+            if !had_control {
+                println!(
+                    "{:?}: Regained control after {:?}; scrolldiff {:?}",
+                    self.now.0,
+                    self.now.0 - last_control_time.0,
+                    sdiff
+                );
+            }
+            if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD || sdiff.0.abs() as u32 >= (sw*3)/4 || sdiff.1.abs() as u32 >= (sh*3)/4 {
                 let diff = self.current_screen.difference(&self.last_control_screen);
                 if !had_control {
                     println!(
@@ -926,7 +935,7 @@ impl MappyState {
         for y in region.y..(region.y + region.h as i32) {
             for x in region.x..(region.x + region.w as i32) {
                 let tile = room.get(x, y);
-                let tile_change_data_db = tiles.get_change_by_id(tile);
+                let tile_change_data_db = tiles.get_change_by_id(tile.unwrap_or(tiles.get_initial_change()));
                 let to_tile_gfx_id = tile_change_data_db.unwrap().to;
                 let corresponding_tile_gfx = tiles.get_tile_by_id(to_tile_gfx_id);
                 corresponding_tile_gfx.unwrap().write_rgb888_at(
@@ -1037,7 +1046,8 @@ pub fn merge_cost(
                     if screen1.is_none() {
                         continue;
                     }
-                    let room_tile = room.screens[screen1.unwrap()].get(ax, ay);
+                    let room_tile = room.screens[screen1.unwrap()][(ax, ay)];
+                    if initial == room_tile { continue; }
                     let mut best_tile_cost = None;
                     for &(room_id, (rxo, ryo)) in metaroom.iter() {
                         let room_b = &rooms[room_id];
@@ -1047,7 +1057,7 @@ pub fn merge_cost(
                         if screen2.is_none() {
                             continue;
                         }
-                        let room_b_tile = room_b.screens[screen2.unwrap()].get(s2x, s2y);
+                        let room_b_tile = room_b.screens[screen2.unwrap()][(s2x, s2y)];
                         // Not really an observation!
                         if !room_b.region().contains(s2x, s2y) {
                             continue;
@@ -1096,6 +1106,7 @@ pub fn merge_cost(
             // }
             if cost < threshold && comparisons > overlap_req {
                 dbg!(room.id, comparisons, cost, (xo, yo));
+                // assert!(room.id != 1);
                 threshold = cost;
                 best = Some(((xo, yo), cost));
                 if cost == 0.0 {

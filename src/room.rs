@@ -76,11 +76,8 @@ impl Room {
         assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
         self
     }
-    pub fn get(&self, x: i32, y: i32) -> TileChange {
-        self.screens[self
-            .get_screen_for(x, y)
-            .unwrap_or_else(|| panic!("bad {:?} {:?}", self.region(), (x, y)))]
-        .get(x, y)
+    pub fn get(&self, x: i32, y: i32) -> Option<TileChange> {
+        self.get_screen_for(x,y).map(|s| self.screens[s][(x,y)])
     }
 
     pub fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
@@ -211,8 +208,8 @@ fn extend_tile(
 ) {
     assert!(s.region.contains(x, y), "{},{} : {:?}", x, y, s.region);
     assert!(rs.region.contains(x, y), "{},{} : {:?}", x, y, rs.region);
-    if s.get(x, y) != db.get_initial_tile() {
-        let change = db.change_from_to(rs.get(x, y), s.get(x, y));
+    if s[(x, y)] != db.get_initial_tile() {
+        let change = db.change_from_to(rs[(x,y)], s[(x,y)]);
         // seen.push(change);
         rs.set(change, x, y);
     }
@@ -284,7 +281,7 @@ mod tests {
         for y in s.region.y..(s.region.y + s.region.h as i32) {
             for x in s.region.x..(s.region.x + s.region.w as i32) {
                 let atile = db
-                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()].get(x, y))
+                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()][(x, y)])
                     .unwrap();
                 assert_eq!(atile.from, t0);
                 assert_eq!(atile.to, t1);
@@ -295,7 +292,7 @@ mod tests {
         for y in s.region.y..(s.region.y + s.region.h as i32) {
             for x in s.region.x..(s.region.x + s.region.w as i32) {
                 let atile = db
-                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()].get(x, y))
+                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()][(x, y)])
                     .unwrap();
                 assert_eq!(atile.from, t0);
                 assert_eq!(atile.to, t1);
@@ -313,7 +310,7 @@ mod tests {
         for y in s.region.y..(s.region.y + s.region.h as i32) {
             for x in s.region.x..(s.region.x + s.region.w as i32) {
                 let atile = db
-                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()].get(x, y))
+                    .get_change_by_id(r.screens[r.get_screen_for(x, y).unwrap()][(x, y)])
                     .unwrap();
                 if x < r0.x || y >= r0.y + (r0.h as i32) {
                     assert_eq!(atile.from, t0);

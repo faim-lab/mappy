@@ -7,6 +7,14 @@ pub struct Screen<T: Tile> {
     tiles: Box<[T]>,
 }
 
+impl<T:Tile> std::ops::Index<(i32,i32)> for Screen<T> {
+    type Output = T;
+    #[inline(always)]
+    fn index(&self, (x,y): (i32,i32)) -> &Self::Output {
+        &self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize]
+    }
+}
+
 impl<T: Tile> Screen<T> {
     pub fn new(region: Rect, tile: T) -> Self {
         Self {
@@ -15,8 +23,8 @@ impl<T: Tile> Screen<T> {
         }
     }
     #[inline(always)]
-    pub fn get(&self, x: i32, y: i32) -> T {
-        self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize]
+    pub fn get(&self, x: i32, y: i32) -> Option<T> {
+        self.tiles.get(((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize).copied()
     }
     #[inline(always)]
     pub fn set(&mut self, t: T, x: i32, y: i32) {
@@ -31,7 +39,7 @@ impl<T: Tile> Screen<T> {
         for s2 in screens {
             for y in s2.region.y..(s2.region.y + s2.region.h as i32) {
                 for x in s2.region.x..(s2.region.x + s2.region.w as i32) {
-                    s.set(s2.get(x, y), x, y);
+                    s.set(s2[(x, y)], x, y);
                 }
             }
         }
