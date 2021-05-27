@@ -1,3 +1,4 @@
+use crate::ringbuffer::RingBuffer;
 use crate::framebuffer::Framebuffer;
 use crate::metaroom::{Merges, Metaroom, MetaroomID};
 use crate::room::Room;
@@ -84,6 +85,7 @@ pub struct MappyState {
     pub mapping: bool,
     // which rooms were terminated by resets?
     pub resets: Vec<usize>,
+    pub button_inputs: RingBuffer<Buttons>,
 }
 
 impl MappyState {
@@ -154,6 +156,7 @@ impl MappyState {
             timers: Timers::new(),
             mapping: false,
             resets: vec![],
+            button_inputs: RingBuffer::new(Buttons::new(), 30),
         }
     }
 
@@ -207,7 +210,7 @@ impl MappyState {
         }
     }
 
-    pub fn process_screen(&mut self, emu: &mut Emulator) {
+    pub fn process_screen(&mut self, emu: &mut Emulator, input: [Buttons;2]) {
         // Read new data from emulator
         let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
@@ -247,7 +250,7 @@ impl MappyState {
         let t = self.timers.timer(Timing::Track).start();
         sprites::get_sprites(&emu, &mut self.live_sprites);
         // Relate current sprites to previous sprites
-        self.track_sprites();
+        self.track_sprites(input);
         t.stop();
 
         let t = self.timers.timer(Timing::Blob).start();
@@ -325,6 +328,7 @@ impl MappyState {
         self.process_merges();
         // Update `now`
         self.now.0 += 1;
+
     }
     fn process_merges(&mut self) {
         if !self.room_merge_rx.is_empty() {
@@ -431,7 +435,8 @@ impl MappyState {
         });
     }
 
-    fn read_current_screen(&mut self) {
+    fn read_current_screen(&mut self) { // if a clear sprite is overlapping a tile, then just place that tile
+                                        // overlapping sprite check. See if it's a tile that's already been seen
         let mut tiles = self.tiles.write().unwrap();
         let region = self.split_region();
         self.current_screen = Screen::new(
@@ -591,8 +596,9 @@ impl MappyState {
             + (if new_s.height() == sd2.height() { 0 } else { 8 })
     }
 
-    fn track_sprites(&mut self) {
+    fn track_sprites(&mut self, input: [Buttons;2]) {
         use matching::{greedy_match, Match, MatchTo, Target};
+        let input = input[0];
         let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
         let live_blobs = &mut self.live_blobs;
@@ -676,6 +682,11 @@ impl MappyState {
                     self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[new]);
                 }
             }
+        }
+        // avatar identification related:
+        self.button_inputs.push(input);
+        for track in self.live_tracks.iter_mut() {
+            track.determine_avatar(self.now, &self.button_inputs);
         }
     }
 

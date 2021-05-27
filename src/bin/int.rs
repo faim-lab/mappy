@@ -1,7 +1,6 @@
 use macroquad::*;
 use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
-
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
@@ -22,7 +21,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
     for (frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
-        mappy.process_screen(emu);
+        mappy.process_screen(emu, *inp);
         if frames % 300 == 0 {
             println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
             println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
@@ -65,6 +64,7 @@ async fn main() {
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
     let mut draw_merge_diff: Option<usize> = None;
+    let mut avatar_indicator = false;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
@@ -157,9 +157,6 @@ zxcvbnm,./ for debug displays"
 
         if is_key_pressed(KeyCode::N) {
             std::fs::create_dir_all("out").unwrap_or(());
-            // std::fs::remove_dir_all("out/tiles").unwrap_or(());
-            // std::fs::create_dir_all("out/tiles").unwrap();
-            // mappy.dump_tiles(Path::new("out/tiles"));
             mappy.dump_map(Path::new("out/"));
             {
                 use std::process::Command;
@@ -179,6 +176,10 @@ zxcvbnm,./ for debug displays"
         //      std::fs::create_dir_all("out/rooms").unwrap();
         //      mappy.dump_rooms(Path::new("out/rooms"));
         //  }
+
+        if is_key_pressed(KeyCode::M) {
+            avatar_indicator = !avatar_indicator;
+        }
 
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         let numkey = {
@@ -278,7 +279,7 @@ zxcvbnm,./ for debug displays"
                 emu.copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
             }
-            mappy.process_screen(&mut emu);
+            mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
             frame_counter += 1;
             if frame_counter % 300 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
@@ -473,6 +474,22 @@ zxcvbnm,./ for debug displays"
                 4.0 * SCALE,
                 Color([255, 0, 0, 255]),
             );
+        }
+        // Avatar ID visualizer (press m to activate)
+        if avatar_indicator {
+            for track in mappy.live_tracks.iter() {
+                if track.get_is_avatar() {
+                    let mappy::At(_, (sx0, sy0), sd0) = track.positions.last().unwrap();
+                    let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
+                    let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
+                    draw_circle(
+                        x0 as f32 * SCALE,
+                        y0 as f32 * SCALE,
+                        4.0,
+                        DARKBLUE
+                    );
+                }
+            }
         }
         next_frame().await;
         // let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);

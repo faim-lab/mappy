@@ -14,7 +14,7 @@ pub fn run(rom: &Path, fm2s: &[&Path]) -> MappyState {
         mappy::read_fm2(&mut inputs, fm2);
         for (_i, input_pair) in inputs.iter().enumerate() {
             emu.run(*input_pair);
-            mappy.process_screen(&mut emu);
+            mappy.process_screen(&mut emu, *input_pair);
         }
     }
     mappy.finish();

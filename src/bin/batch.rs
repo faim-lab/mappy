@@ -27,17 +27,13 @@ fn main() {
         all_inputs += inputs.len();
         for (_i, input_pair) in inputs.iter().enumerate() {
             emu.run(*input_pair);
-            mappy.process_screen(&mut emu);
-            // if i > 280 && i % 60 == 0 {
-            // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-            // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
-            // }
+            mappy.process_screen(&mut emu, *input_pair);
         }
         let fb = emu.create_imagebuffer();
         fb.unwrap().save(format!("out/out_{}.png", file_i)).unwrap();
     }
 
-    mappy.dump_current_room(Path::new("out/current_room.png"));
+    // mappy.dump_current_room(Path::new("out/current_room.png"));
 
     mappy.finish();
 
@@ -53,11 +49,5 @@ fn main() {
         start.elapsed().as_secs_f64() / (all_inputs as f64)
     );
     println!("{}", mappy.timers);
-    // std::fs::remove_dir_all("out/tiles").unwrap_or(());
-    // std::fs::create_dir_all("out/tiles").unwrap();
-    // mappy.dump_tiles(Path::new("out/tiles/"));
-
-    // println!("{}", mappy.timers);
     mappy.dump_map(Path::new("out/"));
-    // mappy.dump_tiles(Path::new("out/tiles"));
 }

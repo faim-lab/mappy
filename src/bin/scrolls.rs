@@ -24,7 +24,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     // let start = Instant::now();
     for inp in inputs.iter() {
         emu.run(*inp);
-        mappy.process_screen(emu);
+        mappy.process_screen(emu, *inp);
     }
 }
 
@@ -227,7 +227,7 @@ async fn main() {
                 emu.copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
             }
-            mappy.process_screen(&mut emu);
+            mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
             frame_counter += 1;
             if frame_counter % OUTPUT_INTERVAL == 0 {
                 let fb_out = emu.create_imagebuffer();
