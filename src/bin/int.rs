@@ -63,7 +63,6 @@ async fn main() {
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
-    let mut draw_merge_diff: Option<usize> = None;
     let mut avatar_indicator = false;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
@@ -133,28 +132,6 @@ zxcvbnm,./ for debug displays"
         if is_key_pressed(KeyCode::C) {
             draw_live_tracks = !draw_live_tracks;
         }
-        if is_key_pressed(KeyCode::V) {
-            draw_merge_diff = match draw_merge_diff {
-                None => None,
-                Some(0) => None,
-                Some(n) => Some(n - 1),
-            };
-            println!("Diff vs {:?}", draw_merge_diff);
-        }
-        if is_key_pressed(KeyCode::B) {
-            draw_merge_diff = match draw_merge_diff {
-                None => Some(0),
-                Some(n) => {
-                    if mappy.metarooms.len() == n + 1 {
-                        Some(n)
-                    } else {
-                        Some(n + 1)
-                    }
-                }
-            };
-            println!("Diff vs {:?}", draw_merge_diff);
-        }
-
         if is_key_pressed(KeyCode::N) {
             std::fs::create_dir_all("out").unwrap_or(());
             mappy.dump_map(Path::new("out/"));
@@ -363,7 +340,6 @@ zxcvbnm,./ for debug displays"
                 }
             }
         }
-
         if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
             let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
             if shifted {
@@ -383,45 +359,11 @@ zxcvbnm,./ for debug displays"
             // todo print screen tile gfx at this position
             println!("{},{} -- {:?},{:?}", tx, ty, change, change_data);
         }
-        if let Some(mr) = draw_merge_diff {
-            let cur = &mappy.current_room;
-            if let Some(cur) = cur {
-                let mr = mappy.metarooms.metaroom(mr);
-                let regs = &mr.registrations;
-                let rooms = mappy.rooms.read().unwrap();
-                let regs: Vec<_> = regs
-                    .iter()
-                    .map(|(room_id, pos)| (&rooms[*room_id], pos))
-                    .collect();
-                let x = 0;
-                let y = 0;
-                let mut cost = 0.0;
-                for (room_b, (rxo, rxy)) in regs.iter() {
-                    let tiles = mappy.tiles.read().unwrap();
-                    cost += debug_merge_cost_at(
-                        (mappy.scroll.0 - 8, mappy.scroll.1 - 32),
-                        cur,
-                        x,
-                        y,
-                        *rxo,
-                        *rxy,
-                        room_b,
-                        &tiles,
-                        MappyState::ROOM_MERGE_THRESHOLD * regs.len() as f32 - cost,
-                    ) / regs.len() as f32;
-                }
-                if frame_counter % 3 == 0 {
-                    println!(
-                        "Cost: {}@{:?}\n{:?} -- {:?}\n",
-                        cost,
-                        (x, y),
-                        cur.region(),
-                        mappy::Rect {
-                            x: (regs[0].1).0,
-                            y: (regs[0].1).1,
-                            ..regs[0].0.region()
-                        }
-                    );
+        if is_mouse_button_down(MouseButton::Left) {
+            for track in mappy.live_tracks.iter() {
+                let (mx,my) = mouse_position();
+                if mappy::sprites::overlapping_sprite((mx/SCALE) as usize,(my / SCALE) as usize,2,2,&[*track.current_data()]) {
+                    println!("S:{:?}",track.positions.last().unwrap());
                 }
             }
         }
@@ -448,10 +390,10 @@ zxcvbnm,./ for debug displays"
                 );
                 if track.positions.len() > 1 {
                     for pair in track.positions.windows(2) {
-                        let mappy::At(_, (sx0, sy0), sd0) = pair[0];
+                        let mappy::sprites::At(_, (sx0, sy0), sd0) = pair[0];
                         let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
                         let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
-                        let mappy::At(_, (sx1, sy1), sd1) = pair[1];
+                        let mappy::sprites::At(_, (sx1, sy1), sd1) = pair[1];
                         let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
                         let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;
                         draw_line(
@@ -479,7 +421,7 @@ zxcvbnm,./ for debug displays"
         if avatar_indicator {
             for track in mappy.live_tracks.iter() {
                 if track.get_is_avatar() {
-                    let mappy::At(_, (sx0, sy0), sd0) = track.positions.last().unwrap();
+                    let mappy::sprites::At(_, (sx0, sy0), sd0) = track.positions.last().unwrap();
                     let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
                     let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
                     draw_circle(
@@ -504,91 +446,6 @@ zxcvbnm,./ for debug displays"
     //mappy.dump_tiles(Path::new("out/"));
 }
 
-fn debug_merge_cost_at(
-    scroll: (i32, i32),
-    this: &Room,
-    x: i32,
-    y: i32,
-    r2xo: i32,
-    r2yo: i32,
-    room: &Room,
-    tiles: &TileDB,
-    threshold: f32,
-) -> f32 {
-    let mut any1 = 0;
-    let mut any2 = 0;
-    let r = this.region();
-    let r2x = r2xo + x;
-    let r2y = r2yo + y;
-    let mut cost = 0.0;
-    //println!("{:?}-{:?}\n{:?}-{:?}",r, (x, y), room.region(), (rxo, ryo));
-    for yo in 0..(r.h as i32) {
-        for xo in 0..(r.w as i32) {
-            // TODO make this more cache friendly, should be able to read a row at a time; room could be a different data structure?
-            let s1x = r.x + xo;
-            let s1y = r.y + yo;
-            let screen = this.get_screen_for(s1x, s1y);
-            let s2x = r2x + xo;
-            let s2y = r2y + yo;
-            let screen2 = room.get_screen_for(s2x, s2y);
-            any1 += if screen.is_some() { 1 } else { 0 };
-            any2 += if screen2.is_some() { 1 } else { 0 };
-            assert!(
-                screen.is_some(),
-                "r1 {:?}\noff {},{}\nr2 {:?}\noff {},{}\nat {},{}\nposns {:?} -vs- {:?}",
-                this.region(),
-                x,
-                y,
-                room.region(),
-                r2x,
-                r2y,
-                xo,
-                yo,
-                (s1x, s1y),
-                (s2x, s2y)
-            );
-            cost += match (screen, screen2) {
-                (Some(screen), Some(screen2)) => {
-                    // println!("compare");
-                    // TODO if tiles.compatible(..., ...)
-                    let c = tiles.change_cost(
-                        this.screens[screen][(s1x, s1y)],
-                        room.screens[screen2][(s2x, s2y)],
-                    );
-                    draw_rectangle(
-                        (((xo * TILE_SIZE as i32) - scroll.0) as f32 * SCALE) as f32,
-                        (((yo * TILE_SIZE as i32) - scroll.1) as f32 * SCALE) as f32,
-                        TILE_SIZE as f32 * SCALE,
-                        TILE_SIZE as f32 * SCALE,
-                        Color::new(1.0, 0.0, 0.0, c),
-                    );
-                    c
-                }
-                _ => 0.0,
-            };
-        }
-        if cost > threshold {
-            break;
-        }
-    }
-    assert!(
-        any1 > 0,
-        "a1 {:?}-{:?} {:?} {:?}",
-        r,
-        (x, y),
-        room.region(),
-        cost
-    );
-    assert!(
-        any2 > 0,
-        "a2 {:?}-{:?} {:?} {:?}",
-        r,
-        (x, y),
-        room.region(),
-        cost
-    );
-    cost
-}
 
 fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let x = (x / SCALE) as i32;

@@ -93,7 +93,7 @@ pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[Spr
     false
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct At(pub Time, pub (i32, i32), pub SpriteData);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -171,8 +171,8 @@ impl SpriteTrack {
     }
     pub fn velocities(&self, times:std::ops::Range<usize>) -> Vec<(i32,i32)> {
         times.map(|t| {
-            let (t1x,t1y) = self.point_at(Time(t)).unwrap();
-            let (t2x,t2y) = self.point_at(Time(t-1)).unwrap();
+            let (t1x,t1y) = self.point_at(Time(t-1)).unwrap();
+            let (t2x,t2y) = self.point_at(Time(t)).unwrap();
             (t2x-t1x,t2y-t1y)
         }).collect()
     }
@@ -191,26 +191,47 @@ impl SpriteTrack {
     pub fn determine_avatar(&mut self, current_time: Time, button_input: &RingBuffer<Buttons>) {
         // See the struct RingBuffer and the field button_inputs in mappy.rs. This is where
         // player inputs are stored, and then they're passed as a parameter into here
-        if current_time < Time(61) { return; }
-        const THRESHOLD:f32 = 5.0;
-        let early = *current_time - 60;
-        let middle = *current_time - 30;
+        const LOOKBACK:usize = 60;
+        assert!(LOOKBACK <= button_input.get_sz());
+        if current_time < Time(LOOKBACK+1) { return; }
+        const THRESHOLD:f32 = 0.3;
+        let early = *current_time - LOOKBACK;
+        let middle = *current_time - LOOKBACK/2;
         if early-1 > *self.starting_time() { // if sprite has existed long enough to look back
-
-            /// EEHHHHH this isn't really working, should do something more like "record number of times input happened at same time as movement or sprite change", and "number of times input happened", and compute NPMI or something....
-
-            let input_changed = button_input.get(31) != button_input.get(30);
-            let before_velocity = self.velocities(early..middle).into_iter().map(|(vx,vy)| (((vx*vx)+(vy*vy)) as f32).sqrt()).mean();
-            let now_velocity = self.velocities(middle..*current_time).into_iter().map(|(vx,vy)| (((vx*vx)+(vy*vy)) as f32).sqrt()).mean();
-            let movement_changed = (before_velocity - now_velocity).abs() > THRESHOLD;
-            let sprite_changed = self.sprites(early..middle).into_iter().mode() == self.sprites(middle..*current_time).into_iter().mode();
-            if current_time == Time(65) {
-                dbg!(before_velocity, now_velocity, sprite_changed, input_changed);
-            }
-            if (input_changed == movement_changed) { // || (input_changed == sprite_changed)  {
+            let input_changed = button_input.get(middle) != button_input.get(middle-1);
+            let before_velocity = self.velocities(early..middle);
+            let before_velocity_x = before_velocity.iter().map(|(vx,_)|*vx as f32).mean();
+            let before_velocity_y = before_velocity.iter().map(|(_,vy)|*vy as f32).mean();
+            let now_velocity = self.velocities(middle..*current_time);
+            let now_velocity_x = now_velocity.iter().map(|(vx,_)|*vx as f32).mean();
+            let now_velocity_y = now_velocity.iter().map(|(_,vy)|*vy as f32).mean();
+            let movement_changed_x = (before_velocity_x - now_velocity_x).abs() > THRESHOLD;
+            let movement_changed_y = (before_velocity_y - now_velocity_y).abs() > THRESHOLD;
+            let movement_changed = movement_changed_x || movement_changed_y;
+            let before_modes = self.sprites(early..middle).into_iter().modes(3);
+            let now_modes = self.sprites(middle..*current_time).into_iter().modes(3);
+            let sprite_changed = before_modes.iter().any(|(_c,s)| !now_modes.iter().any(|(_c2,s2)| s2 == s)) || now_modes.iter().any(|(_c,s)| !before_modes.iter().any(|(_c2,s2)| s2 == s));
+            // if current_time == Time(65) {
+                // dbg!(before_velocity, now_velocity, sprite_changed, input_changed);
+            // }
+            if input_changed && (movement_changed || sprite_changed) {
                 self.positive_hits += 1;
-            } else {
+            }
+            if input_changed && !(movement_changed || sprite_changed) {
                 self.negative_hits += 1;
+            }
+            // if !input_changed && movement_changed {
+                // self.negative_hits += 1;
+            // }
+            if self.positions[0].2.index == 1 {
+                dbg!(input_changed,
+                     (before_velocity_x,before_velocity_y),
+                     (now_velocity_x,now_velocity_y),
+                     before_modes,
+                     now_modes,
+                     self.positive_hits,
+                     self.negative_hits
+                );
             }
         }
     }
@@ -218,18 +239,22 @@ impl SpriteTrack {
     // Return whether the positive and negative hits pass a threshold (which I have as 5)
     pub fn get_is_avatar(&self) -> bool {
         // TODO: use NPMI between input changes and movement changes.
-        return self.positive_hits - self.negative_hits > 5
+        return self.positive_hits > self.negative_hits
     }
 }
 
 trait IterStats : Iterator {
-    fn mode(self) -> Self::Item where Self: Sized, Self::Item : std::hash::Hash + Eq {
-        use std::collections::HashMap;
-        let mut map = HashMap::new();
+    fn modes(self,k:usize) -> Vec<(usize,Self::Item)> where Self: Sized, Self::Item : PartialEq {
+        let mut counts = vec![];
         for thing in self.into_iter() {
-            *map.entry(thing).or_insert(0) += 1;
+            match counts.iter_mut().find(|(_count,item)| *item == thing) {
+                Some((count, _item)) => *count += 1,
+                None => counts.push((1,thing))
+            }
         }
-        map.into_iter().max_by_key(|(_item,count)| *count).unwrap().0
+        counts.sort_by_key(|(count,_item)| -(*count as isize));
+        counts.truncate(k);
+        counts
     }
     fn mean(self) -> f32 where Self: Sized, Self::Item : num_traits::Float {
         use num_traits::cast::ToPrimitive;

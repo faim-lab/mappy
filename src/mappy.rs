@@ -102,6 +102,8 @@ impl MappyState {
     const BLOB_THRESHOLD: f32 = 1.0;
     const BLOB_LOOKBACK: usize = 30;
 
+    const BUTTON_HISTORY:usize = 60;
+
     // This is just an arbitrary value, not sure what a good one is!
     pub const ROOM_MERGE_THRESHOLD: f32 = 16.0;
 
@@ -156,7 +158,7 @@ impl MappyState {
             timers: Timers::new(),
             mapping: false,
             resets: vec![],
-            button_inputs: RingBuffer::new(Buttons::new(), 30),
+            button_inputs: RingBuffer::new(Buttons::new(), Self::BUTTON_HISTORY),
         }
     }
 
