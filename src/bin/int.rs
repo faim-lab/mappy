@@ -1,5 +1,5 @@
 use macroquad::*;
-use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
+use mappy::{MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
 use std::io::{Read, Write};
 use std::path::Path;

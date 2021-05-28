@@ -107,8 +107,8 @@ pub struct SpriteTrack {
     pub patterns: HashSet<u8>,
     pub tables: HashSet<u8>,
     pub attrs: HashSet<u8>,
-    pub positive_hits: i32,
-    pub negative_hits: i32,
+    pub horizontal_control_evidence:(i32,i32),
+    pub vertical_control_evidence:(i32,i32),
 }
 
 impl SpriteTrack {
@@ -119,8 +119,8 @@ impl SpriteTrack {
             patterns: HashSet::new(),
             tables: HashSet::new(),
             attrs: HashSet::new(),
-            positive_hits: 0,
-            negative_hits: 0,
+            horizontal_control_evidence:(0,0),
+            vertical_control_evidence:(0,0),
         };
         ret.update(t, scroll, sd);
         ret
@@ -194,68 +194,73 @@ impl SpriteTrack {
         const LOOKBACK:usize = 60;
         assert!(LOOKBACK <= button_input.get_sz());
         if current_time < Time(LOOKBACK+1) { return; }
-        const THRESHOLD:f32 = 0.3;
+        const THRESHOLD:f32 = 0.1;
         let early = *current_time - LOOKBACK;
         let middle = *current_time - LOOKBACK/2;
         if early-1 > *self.starting_time() { // if sprite has existed long enough to look back
-            let input_changed = button_input.get(middle) != button_input.get(middle-1);
+            let mid = button_input.get(LOOKBACK/2);
+            let mid_prev = button_input.get(LOOKBACK/2 + 1);
             let before_velocity = self.velocities(early..middle);
             let before_velocity_x = before_velocity.iter().map(|(vx,_)|*vx as f32).mean();
             let before_velocity_y = before_velocity.iter().map(|(_,vy)|*vy as f32).mean();
             let now_velocity = self.velocities(middle..*current_time);
             let now_velocity_x = now_velocity.iter().map(|(vx,_)|*vx as f32).mean();
             let now_velocity_y = now_velocity.iter().map(|(_,vy)|*vy as f32).mean();
-            let movement_changed_x = (before_velocity_x - now_velocity_x).abs() > THRESHOLD;
-            let movement_changed_y = (before_velocity_y - now_velocity_y).abs() > THRESHOLD;
-            let movement_changed = movement_changed_x || movement_changed_y;
-            let before_modes = self.sprites(early..middle).into_iter().modes(3);
-            let now_modes = self.sprites(middle..*current_time).into_iter().modes(3);
-            let sprite_changed = before_modes.iter().any(|(_c,s)| !now_modes.iter().any(|(_c2,s2)| s2 == s)) || now_modes.iter().any(|(_c,s)| !before_modes.iter().any(|(_c2,s2)| s2 == s));
-            // if current_time == Time(65) {
-                // dbg!(before_velocity, now_velocity, sprite_changed, input_changed);
+            let mid_x = if mid.get_left() { -1 } else if mid.get_right() { 1 } else { 0 };
+            let mid_prev_x = if mid_prev.get_left() { -1 } else if mid_prev.get_right() { 1 } else { 0 };
+            let mid_y = if mid.get_up() { -1 } else if mid.get_down() { 1 } else { 0 };
+            let mid_prev_y = if mid_prev.get_up() { -1 } else if mid_prev.get_down() { 1 } else { 0 };
+            if mid_x > mid_prev_x {
+                if now_velocity_x - before_velocity_x >= THRESHOLD {
+                    self.horizontal_control_evidence.0 += 1;
+                } else {
+                    self.horizontal_control_evidence.1 += 1;
+                }
+            } else if mid_x < mid_prev_x {
+                if before_velocity_x - now_velocity_x >= THRESHOLD {
+                    self.horizontal_control_evidence.0 += 1;
+                } else {
+                    self.horizontal_control_evidence.1 += 1;
+                }
+            } else {
+                // questionable, doesn't account for e.g. braking
+                // if (before_velocity_x - now_velocity_x).abs() > THRESHOLD {
+                //     self.horizontal_control_evidence.1 += 1;
+                // }
+            }
+            if mid_y > mid_prev_y {
+                if now_velocity_y - before_velocity_y >= THRESHOLD {
+                    self.vertical_control_evidence.0 += 1;
+                } else {
+                    self.vertical_control_evidence.1 += 1;
+                }
+            } else if mid_y < mid_prev_y {
+                if before_velocity_y - now_velocity_y >= THRESHOLD {
+                    self.vertical_control_evidence.0 += 1;
+                } else {
+                    self.vertical_control_evidence.1 += 1;
+                }
+            } else {
+                // questionable
+                // if (before_velocity_y - now_velocity_y).abs() > THRESHOLD {
+                    // self.vertical_control_evidence.1 += 1;
+                // }
+            }
+            // if mid_x != mid_prev_x && self.positions.last().unwrap().2.index == 14 {
+            //     dbg!(current_time, mid_prev_x,mid_x,before_velocity_x,now_velocity_x,self.horizontal_control_evidence);
             // }
-            if input_changed && (movement_changed || sprite_changed) {
-                self.positive_hits += 1;
-            }
-            if input_changed && !(movement_changed || sprite_changed) {
-                self.negative_hits += 1;
-            }
-            // if !input_changed && movement_changed {
-                // self.negative_hits += 1;
-            // }
-            if self.positions[0].2.index == 1 {
-                dbg!(input_changed,
-                     (before_velocity_x,before_velocity_y),
-                     (now_velocity_x,now_velocity_y),
-                     before_modes,
-                     now_modes,
-                     self.positive_hits,
-                     self.negative_hits
-                );
-            }
         }
     }
 
     // Return whether the positive and negative hits pass a threshold (which I have as 5)
     pub fn get_is_avatar(&self) -> bool {
         // TODO: use NPMI between input changes and movement changes.
-        return self.positive_hits > self.negative_hits
+        (self.horizontal_control_evidence.0 > self.horizontal_control_evidence.1) ||
+            (self.vertical_control_evidence.0 > self.vertical_control_evidence.1)
     }
 }
 
 trait IterStats : Iterator {
-    fn modes(self,k:usize) -> Vec<(usize,Self::Item)> where Self: Sized, Self::Item : PartialEq {
-        let mut counts = vec![];
-        for thing in self.into_iter() {
-            match counts.iter_mut().find(|(_count,item)| *item == thing) {
-                Some((count, _item)) => *count += 1,
-                None => counts.push((1,thing))
-            }
-        }
-        counts.sort_by_key(|(count,_item)| -(*count as isize));
-        counts.truncate(k);
-        counts
-    }
     fn mean(self) -> f32 where Self: Sized, Self::Item : num_traits::Float {
         use num_traits::cast::ToPrimitive;
         let mut count = 0;

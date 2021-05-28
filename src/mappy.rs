@@ -687,6 +687,8 @@ impl MappyState {
         }
         // avatar identification related:
         self.button_inputs.push(input);
+        // let btn_x = if self.button_inputs.get(30).get_left() { -1 } else if self.button_inputs.get(30).get_right() { 1 } else { 0 };
+        // dbg!(btn_x);
         for track in self.live_tracks.iter_mut() {
             track.determine_avatar(self.now, &self.button_inputs);
         }
