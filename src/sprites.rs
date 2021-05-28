@@ -139,6 +139,9 @@ impl SpriteTrack {
         self.tables.insert(sd.table);
         self.attrs.insert(sd.attrs);
     }
+    pub fn starting_time(&self) -> Time {
+        self.positions[0].0
+    }
     pub fn starting_point(&self) -> (i32, i32) {
         let At(_, (sx, sy), sd) = &self.positions[0];
         (sx + sd.x as i32, sy + sd.y as i32)
@@ -147,15 +150,15 @@ impl SpriteTrack {
         let At(_, (sx, sy), sd) = &self.positions.last().unwrap();
         (sx + sd.x as i32, sy + sd.y as i32)
     }
-    pub fn point_at(&self, t: Time) -> Option<(i32, i32)> {
+    pub fn position_at(&self, t: Time) -> Option<&At> {
         self.positions
             .iter()
             .rev()
             .find(|At(t0, _, _)| t0 < &t)
-            .map(|At(_, (sx, sy), sd)| (sx + sd.x as i32, sy + sd.y as i32))
     }
-    pub fn point_at_panicking(&self, t: Time) -> (i32, i32) {
-        self.point_at(t).unwrap()
+    pub fn point_at(&self, t: Time) -> Option<(i32, i32)> {
+        self.position_at(t)
+            .map(|At(_, (sx, sy), sd)| (sx + sd.x as i32, sy + sd.y as i32))
     }
     pub fn seen_pattern(&self, pat: u8) -> bool {
         self.patterns.contains(&pat)
@@ -166,6 +169,19 @@ impl SpriteTrack {
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
     }
+    pub fn velocities(&self, times:std::ops::Range<usize>) -> Vec<(i32,i32)> {
+        times.map(|t| {
+            let (t1x,t1y) = self.point_at(Time(t)).unwrap();
+            let (t2x,t2y) = self.point_at(Time(t-1)).unwrap();
+            (t2x-t1x,t2y-t1y)
+        }).collect()
+    }
+    pub fn sprites(&self, times:std::ops::Range<usize>) -> Vec<(u8,u8,u8)> {
+        times.map(|t| {
+            let sd = self.position_at(Time(t)).unwrap().2;
+            (sd.pattern_id, sd.table, sd.attrs)
+        }).collect()
+    }
 
     // Here, positive and negative hits are incremented based on whether input changes occur at the same time
     // as changes in acceleration. Also, button inputs are dealt with in int.rs and mappy.rs, and there is a
@@ -175,78 +191,58 @@ impl SpriteTrack {
     pub fn determine_avatar(&mut self, current_time: Time, button_input: &RingBuffer<Buttons>) {
         // See the struct RingBuffer and the field button_inputs in mappy.rs. This is where
         // player inputs are stored, and then they're passed as a parameter into here
+        if current_time < Time(61) { return; }
+        const THRESHOLD:f32 = 5.0;
+        let early = *current_time - 60;
+        let middle = *current_time - 30;
+        if early-1 > *self.starting_time() { // if sprite has existed long enough to look back
 
-        if self.last_observation_time() > Time(60) { // if sprite has existed long enough to look back
-            if button_input.get(31) != button_input.get(30) { // if input changed 30 frames ago
-                // -> determine if average acceleration from 60-30 frames ago differs from that 30-0 frames ago:
+            /// EEHHHHH this isn't really working, should do something more like "record number of times input happened at same time as movement or sprite change", and "number of times input happened", and compute NPMI or something....
 
-
-                // Below is a potentially more concise way to do my calculations. It's commented out because I was having a hard time working
-                // with the complex iterators, maps and options.
-
-                // let velocities = (0..60).rev().map(|i| {
-                //     self.point_at(Time(current_time.0-i)).map(|(x0,y0)| self.point_at(Time(current_time.0-i-5)).map(|(x1,y1)| (x1-x0,y1-y0)))
-                // });
-                // let velocities: Vec<_> = velocities.collect();
-
-                let mut velocities: Vec<(i32, i32)> = Vec::new();
-                for i in (0..65).rev() {
-                    let pos: Option<(i32, i32)>      = self.point_at(Time(current_time.0-i));
-                    let pos_prev: Option<(i32, i32)> = self.point_at(Time(current_time.0-i-5)); // 5 frames before pos
-                    if pos.is_some() && pos_prev.is_some() {
-                        let x_vel: i32      = pos.unwrap().0 - pos_prev.unwrap().0; // Use change in position to find velocity
-                        let y_vel: i32      = pos.unwrap().1 - pos_prev.unwrap().1;
-
-                        velocities.push((x_vel, y_vel));
-                    }
-                }
-
-                let mut accelerations: Vec<(i32, i32)> = Vec::new();
-                for i in 5..(velocities.len()) {
-                    if (velocities.get(i)).is_some() &&
-                       (velocities.get(i - 5)).is_some() {
-
-                        let x_accel: i32 = velocities.get(i).unwrap().0 - velocities.get(i - 5).unwrap().0;
-                        let y_accel: i32 = velocities.get(i).unwrap().1 - velocities.get(i - 5).unwrap().1;
-                        accelerations.push((x_accel, y_accel));
-                    }
-                }
-                // total of accelerations last 30 frames
-                let mut total_accel_x_30: i32 = 0;
-                let mut total_accel_y_30: i32 = 0;
-                for i in 30..60 {
-                    if accelerations.get(i).is_some() {
-                        total_accel_x_30 += accelerations.get(i).unwrap().0;
-                        total_accel_y_30 += accelerations.get(i).unwrap().1;
-                    }
-                }
-                // total of accelerations last 60-30 frames ago
-                let mut total_accel_x_60: i32 = 0;
-                let mut total_accel_y_60: i32 = 0;
-                for i in 0..30 {
-                    if accelerations.get(i).is_some() {
-                        total_accel_x_60 += accelerations.get(i).unwrap().0;
-                        total_accel_y_60 += accelerations.get(i).unwrap().1;
-                    }
-                }
-                // If average acceleration (I use sum of accels, for simplicity) 30-0 frames ago differs from that 60-30 ago,
-                // increment pos hits, else increment neg hits. I'm not quite sure how to define "different," but I've used a
-                // threshold of 5 here.
-                if (total_accel_x_60 - total_accel_x_30).abs() > 5 || (total_accel_y_60 - total_accel_y_30).abs() > 5 {
-                    self.positive_hits += 1;
-                } else {
-                    self.negative_hits += 1;
-                }
-
+            let input_changed = button_input.get(31) != button_input.get(30);
+            let before_velocity = self.velocities(early..middle).into_iter().map(|(vx,vy)| (((vx*vx)+(vy*vy)) as f32).sqrt()).mean();
+            let now_velocity = self.velocities(middle..*current_time).into_iter().map(|(vx,vy)| (((vx*vx)+(vy*vy)) as f32).sqrt()).mean();
+            let movement_changed = (before_velocity - now_velocity).abs() > THRESHOLD;
+            let sprite_changed = self.sprites(early..middle).into_iter().mode() == self.sprites(middle..*current_time).into_iter().mode();
+            if current_time == Time(65) {
+                dbg!(before_velocity, now_velocity, sprite_changed, input_changed);
+            }
+            if (input_changed == movement_changed) { // || (input_changed == sprite_changed)  {
+                self.positive_hits += 1;
+            } else {
+                self.negative_hits += 1;
             }
         }
     }
 
     // Return whether the positive and negative hits pass a threshold (which I have as 5)
     pub fn get_is_avatar(&self) -> bool {
+        // TODO: use NPMI between input changes and movement changes.
         return self.positive_hits - self.negative_hits > 5
     }
 }
+
+trait IterStats : Iterator {
+    fn mode(self) -> Self::Item where Self: Sized, Self::Item : std::hash::Hash + Eq {
+        use std::collections::HashMap;
+        let mut map = HashMap::new();
+        for thing in self.into_iter() {
+            *map.entry(thing).or_insert(0) += 1;
+        }
+        map.into_iter().max_by_key(|(_item,count)| *count).unwrap().0
+    }
+    fn mean(self) -> f32 where Self: Sized, Self::Item : num_traits::Float {
+        use num_traits::cast::ToPrimitive;
+        let mut count = 0;
+        let mut sum = num_traits::identities::zero::<Self::Item>();
+        for elt in self.into_iter() {
+            count += 1;
+            sum = sum + elt;
+        }
+        sum.to_f32().unwrap() / count.to_f32().unwrap()
+    }
+}
+impl<Iter,Item> IterStats for Iter where Iter : Iterator<Item=Item> {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlobID(usize);

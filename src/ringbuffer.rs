@@ -36,3 +36,37 @@ impl<T:Copy + std::fmt::Debug> RingBuffer<T> {
         self.buf.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_get() {
+        let mut rb = RingBuffer::new(0,3);
+        assert_eq!(rb.get(0), 0);
+        assert_eq!(rb.get(1), 0);
+        assert_eq!(rb.get(2), 0);
+        assert_eq!(rb.get_sz(), 3);
+        rb.push(1);
+        assert_eq!(rb.get(0), 1);
+        assert_eq!(rb.get(1), 0);
+        assert_eq!(rb.get(2), 0);
+        assert_eq!(rb.get_sz(), 3);
+        rb.push(2);
+        assert_eq!(rb.get(0), 2);
+        assert_eq!(rb.get(1), 1);
+        assert_eq!(rb.get(2), 0);
+        assert_eq!(rb.get_sz(), 3);
+        rb.push(3);
+        assert_eq!(rb.get(0), 3);
+        assert_eq!(rb.get(1), 2);
+        assert_eq!(rb.get(2), 1);
+        assert_eq!(rb.get_sz(), 3);
+        rb.push(4);
+        assert_eq!(rb.get(0), 4);
+        assert_eq!(rb.get(1), 3);
+        assert_eq!(rb.get(2), 2);
+        assert_eq!(rb.get_sz(), 3);
+        assert_eq!(rb.get(3), 4);
+    }
+}

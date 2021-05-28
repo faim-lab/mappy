@@ -428,9 +428,9 @@ zxcvbnm,./ for debug displays"
         if draw_live_tracks {
             for track in mappy.live_tracks.iter() {
                 let col = Color::new(
-                    ((track.positions[0].0).0 * 31 % 256) as f32 / 255.,
-                    ((track.positions[0].0).0 * 127 % 256) as f32 / 255.,
-                    ((track.positions[0].0).0 * 91 % 256) as f32 / 255.,
+                    (*(track.positions[0].0) * 31 % 256) as f32 / 255.,
+                    (*(track.positions[0].0) * 127 % 256) as f32 / 255.,
+                    (*(track.positions[0].0) * 91 % 256) as f32 / 255.,
                     1.,
                 );
                 let startp = Vec2::new(

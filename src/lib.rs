@@ -16,7 +16,27 @@ use std::path::Path;
 pub use tile::TILE_SIZE;
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct Time(pub usize);
+pub struct Time(usize);
+
+impl std::ops::Add<Time> for Time {
+    type Output=Time;
+    fn add(self, other:Time) -> Self::Output {
+        Time(self.0+other.0)
+    }
+}
+impl std::ops::Sub<Time> for Time {
+    type Output=Time;
+    fn sub(self, other:Time) -> Self::Output {
+        Time(self.0-other.0)
+    }
+}
+
+impl std::ops::Deref for Time {
+    type Target=usize;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub struct Rect {
