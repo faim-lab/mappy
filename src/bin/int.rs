@@ -104,7 +104,8 @@ async fn main() {
     }
 
     if let Some(save_path) = args.save {
-        mappy::write_fm2(&mut replay_inputs, &Path::new(&save_path))
+        mappy::write_fm2(&mut replay_inputs, &Path::new(&save_path));
+        // mappy::save_fm2(&mut save_buf, &Path::new(&save_path));
     }
 
     // match result {}

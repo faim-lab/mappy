@@ -325,6 +325,5 @@ impl SpriteBlob {
                     (t, ax + bx / tl, ay + by / tl)
                 }),
         );
-        
     }
 }
