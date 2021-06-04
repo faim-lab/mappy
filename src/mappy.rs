@@ -36,6 +36,15 @@ enum MergePhase {
     Finalize,
 }
 
+pub enum DirectionLabel {
+    Up,
+    Down,
+    Left,
+    Right,
+    VeryBad,
+    NoDirection
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Timing {
     FBRead,
@@ -805,9 +814,10 @@ impl MappyState {
                 .resize_with(self.change_count as usize, Default::default);
             get_changes_fn(self.changes.as_mut_ptr(), self.change_count);
         }
-    }
-    pub fn metaroom_exits(&self, mr: &Metaroom) -> Vec<MetaroomID> {
+    } 
+    pub fn metaroom_exits(&self, mr: &Metaroom) -> (Vec<MetaroomID>, Vec<DirectionLabel>) {
         let mut out_to = vec![];
+        let mut directions_out = vec![];
         for (rid, _pos) in mr.registrations.iter() {
             if self.resets.contains(rid) {
                 continue;
@@ -818,11 +828,13 @@ impl MappyState {
                 .find(|mri| mri.registrations.iter().any(|(mrrid, _)| *mrrid == rid + 1))
             {
                 if !out_to.contains(&mr2.id) {
+                    let direction: DirectionLabel = DirectionLabel::NoDirection;
                     out_to.push(mr2.id);
+                    directions_out.push(direction);
                 }
             }
         }
-        out_to
+        (out_to, directions_out)
     }
     pub fn dump_map(&self, dotfolder: &Path) {
         use std::collections::BTreeMap;
@@ -876,10 +888,20 @@ impl MappyState {
                 attrs = attrs.add_pair(shape(Shape::Plain))
             }
             stmts = stmts.add_node(mr_ident.clone(), None, Some(attrs));
-            for mr2_id in self.metaroom_exits(mr) {
+            for i in 0..self.metaroom_exits(mr).0.len() {
+                let mr2_id = self.metaroom_exits(mr).0[i];
+                let direction_label = &self.metaroom_exits(mr).1[i];
                 stmts = stmts.add_edge(
                     Edge::head_node(mr_ident.clone(), None)
-                        .arrow_to_node(Identity::from(mr2_id.0), None),
+                        .arrow_to_node(Identity::from(mr2_id.0), None).add_attrpair(tabbycat::attributes::label(
+                                match direction_label {
+                                    DirectionLabel::Left => "Left",
+                                    DirectionLabel::Right => "Right",
+                                    DirectionLabel::Up => "Up",
+                                    DirectionLabel::Down => "Down",
+                                    DirectionLabel::NoDirection => "None",
+                                    DirectionLabel::VeryBad => "Yikes"
+                                })),
                 );
             }
             all_stmts = all_stmts.extend(stmts);
