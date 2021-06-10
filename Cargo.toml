@@ -17,6 +17,7 @@ chrono = "0.4"
 crossbeam = "0.8.0"
 rayon="1.5.0"
 tabbycat={version="0.1.1", features=["attributes"]}
+num-traits = "0.2"
 
 [profile.dev]
 opt-level = 3
