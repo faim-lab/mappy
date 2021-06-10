@@ -242,6 +242,7 @@ impl MappyState {
             // dbg!(old_align.1, self.grid_align.1, scrolling::find_offset(old_align.1, self.grid_align.1, 240));
             let offset_x = scrolling::find_offset(old_align.0, self.grid_align.0, 256) as i32;
             let offset_y = scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32;
+            println!("{}, {}", offset_x, offset_y);
             if let Some(room) = &mut self.current_room {
                 if room.exit_scroll() == None || offset_x != 0 || offset_y != 0 {
                     room.set_exit_dir(Some((offset_x, offset_y))); 
