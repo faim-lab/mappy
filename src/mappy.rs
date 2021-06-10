@@ -226,7 +226,6 @@ impl MappyState {
         t.stop();
         let t = self.timers.timer(Timing::Scroll).start();
         self.get_changes(&emu);
-
         // What can we learn from hardware screen splitting operations?
         if self.changes.len() > 0 || self.splits.is_empty() {
             let (lo, hi, latch) = splits::get_main_split(&self.changes, self.latch, &self.fb);
@@ -241,9 +240,16 @@ impl MappyState {
             }
             // update scroll based on grid align change
             // dbg!(old_align.1, self.grid_align.1, scrolling::find_offset(old_align.1, self.grid_align.1, 240));
+            let offset_x = scrolling::find_offset(old_align.0, self.grid_align.0, 256) as i32;
+            let offset_y = scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32;
+            if let Some(room) = &mut self.current_room {
+                if room.exit_scroll() == None || offset_x != 0 || offset_y != 0 {
+                    room.set_exit_dir(Some((offset_x, offset_y))); 
+                }  
+            } 
             self.scroll = (
-                self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0, 256) as i32,
-                self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32,
+                self.scroll.0 + offset_x,
+                self.scroll.1 + offset_y, 
             );
         }
         // TODO: is it possible that the read-tiles-from-screen thing should take background scroll into account somehow differently?  or use sprite positions from the beginning of vblank instead of the end?
@@ -301,6 +307,7 @@ impl MappyState {
                     || self.current_room.is_none()
                 {
                     self.finalize_current_room(true);
+                    
                 }
             }
             if self.control_duration > Self::CONTROL_ROOM_ENTER_DURATION
@@ -828,7 +835,26 @@ impl MappyState {
                 .find(|mri| mri.registrations.iter().any(|(mrrid, _)| *mrrid == rid + 1))
             {
                 if !out_to.contains(&mr2.id) {
-                    let direction: DirectionLabel = DirectionLabel::NoDirection;
+                    let exit_scroll = self.rooms.read().unwrap()[rid+1].exit_scroll();
+                    let direction: DirectionLabel = match exit_scroll {
+                        None => DirectionLabel::VeryBad, 
+                        Some((x,y)) => {
+                            println!("exit scroll: {},{}",x,y);
+                            if x == 0 && y == 0 {
+                                DirectionLabel::NoDirection
+                            } else if x > 0 && y == 0 {
+                                DirectionLabel::Right
+                            } else if x < 0 && y == 0 {
+                                DirectionLabel::Left
+                            } else if x == 0 && y >0 {
+                                DirectionLabel::Up
+                            } else if x == 0 && y < 0 {
+                                DirectionLabel::Down
+                            } else {
+                                DirectionLabel::VeryBad
+                            }
+                        }
+                    };
                     out_to.push(mr2.id);
                     directions_out.push(direction);
                 }

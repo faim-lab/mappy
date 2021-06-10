@@ -7,6 +7,7 @@ type RoomScreen = Screen<TileChange>;
 #[derive(Clone)]
 pub struct Room {
     pub id: usize,
+    pub exit_scroll: Option<(i32,i32)>,
     pub screens: Vec<RoomScreen>,
     // pub seen_changes: HashSet<TileChange>,
     pub top_left: (i32, i32),
@@ -18,6 +19,7 @@ impl Room {
     pub fn new(id: usize, screen: &Screen<TileGfxId>, db: &mut TileDB) -> Self {
         let mut ret = Self {
             id,
+            exit_scroll: None,
             screens: vec![Screen::new(
                 Rect {
                     x: screen.region.x,
@@ -36,6 +38,12 @@ impl Room {
             ret.register_screen(&screen, db);
         }
         ret
+    }
+    pub fn set_exit_dir(&mut self, direction: Option<(i32,i32)>) {
+        self.exit_scroll = direction;
+    }
+    pub fn exit_scroll(&self) -> Option<(i32,i32)> {
+        self.exit_scroll
     }
     pub fn width(&self) -> u32 {
         self.screens[0].region.w
