@@ -243,13 +243,7 @@ impl MappyState {
             // update scroll based on grid align change
             // dbg!(old_align.1, self.grid_align.1, scrolling::find_offset(old_align.1, self.grid_align.1, 240));
             let offset_x = scrolling::find_offset(old_align.0, self.grid_align.0, 256) as i32;
-            let offset_y = scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32;
-            println!("{}, {}", offset_x, offset_y);
-            if let Some(room) = &mut self.current_room {
-                if room.exit_scroll() == None || offset_x != 0 || offset_y != 0 {
-                    room.set_exit_dir(Some((offset_x, offset_y))); 
-                }  
-            } 
+            let offset_y = scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32; 
             self.scroll = (
                 self.scroll.0 + offset_x,
                 self.scroll.1 + offset_y, 
@@ -404,6 +398,8 @@ impl MappyState {
             };
             old_room = old_room.finalize(self.tiles.read().unwrap().get_initial_change());
             // dbg!(old_room.region());
+            let (sdx, sdy) = scroll_diff(self.scroll, self.last_controlled_scroll);
+            old_room.set_exit_dir(Some((sdx, sdy))); 
             self.kickoff_merge_calc(old_room.clone(), MergePhase::Finalize);
             self.rooms.write().unwrap().push(old_room);
         } else if start_new {
@@ -838,7 +834,7 @@ impl MappyState {
                 .find(|mri| mri.registrations.iter().any(|(mrrid, _)| *mrrid == rid + 1))
             {
                 if !out_to.contains(&mr2.id) {
-                    let exit_scroll = self.rooms.read().unwrap()[rid+1].exit_scroll();
+                    let exit_scroll = self.rooms.read().unwrap()[*rid].exit_scroll();
                     let direction: DirectionLabel = match exit_scroll {
                         None => DirectionLabel::VeryBad, 
                         Some((x,y)) => {
