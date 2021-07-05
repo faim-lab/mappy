@@ -345,10 +345,10 @@ async fn main() {
                 );
                 if track.positions.len() > 1 {
                     for pair in track.positions.windows(2) {
-                        let mappy::At(_, (sx0, sy0), sd0) = pair[0];
+                        let mappy::sprites::At(_, (sx0, sy0), sd0) = pair[0];
                         let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
                         let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
-                        let mappy::At(_, (sx1, sy1), sd1) = pair[1];
+                        let mappy::sprites::At(_, (sx1, sy1), sd1) = pair[1];
                         let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
                         let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;
                         draw_line(
