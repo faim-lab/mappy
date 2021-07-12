@@ -1,7 +1,7 @@
+use crate::ringbuffer::RingBuffer;
 use crate::Time;
 use retro_rs::{Buttons, Emulator};
 use std::collections::HashSet;
-use crate::ringbuffer::RingBuffer;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct SpriteData {
     pub index: u8,
@@ -107,8 +107,8 @@ pub struct SpriteTrack {
     pub patterns: HashSet<u8>,
     pub tables: HashSet<u8>,
     pub attrs: HashSet<u8>,
-    pub horizontal_control_evidence:(i32,i32),
-    pub vertical_control_evidence:(i32,i32),
+    pub horizontal_control_evidence: (i32, i32),
+    pub vertical_control_evidence: (i32, i32),
 }
 
 impl SpriteTrack {
@@ -119,8 +119,8 @@ impl SpriteTrack {
             patterns: HashSet::new(),
             tables: HashSet::new(),
             attrs: HashSet::new(),
-            horizontal_control_evidence:(0,0),
-            vertical_control_evidence:(0,0),
+            horizontal_control_evidence: (0, 0),
+            vertical_control_evidence: (0, 0),
         };
         ret.update(t, scroll, sd);
         ret
@@ -151,10 +151,7 @@ impl SpriteTrack {
         (sx + sd.x as i32, sy + sd.y as i32)
     }
     pub fn position_at(&self, t: Time) -> Option<&At> {
-        self.positions
-            .iter()
-            .rev()
-            .find(|At(t0, _, _)| t0 < &t)
+        self.positions.iter().rev().find(|At(t0, _, _)| t0 < &t)
     }
     pub fn point_at(&self, t: Time) -> Option<(i32, i32)> {
         self.position_at(t)
@@ -169,18 +166,22 @@ impl SpriteTrack {
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
     }
-    pub fn velocities(&self, times:std::ops::Range<usize>) -> Vec<(i32,i32)> {
-        times.map(|t| {
-            let (t1x,t1y) = self.point_at(Time(t-1)).unwrap();
-            let (t2x,t2y) = self.point_at(Time(t)).unwrap();
-            (t2x-t1x,t2y-t1y)
-        }).collect()
+    pub fn velocities(&self, times: std::ops::Range<usize>) -> Vec<(i32, i32)> {
+        times
+            .map(|t| {
+                let (t1x, t1y) = self.point_at(Time(t - 1)).unwrap();
+                let (t2x, t2y) = self.point_at(Time(t)).unwrap();
+                (t2x - t1x, t2y - t1y)
+            })
+            .collect()
     }
-    pub fn sprites(&self, times:std::ops::Range<usize>) -> Vec<(u8,u8,u8)> {
-        times.map(|t| {
-            let sd = self.position_at(Time(t)).unwrap().2;
-            (sd.pattern_id, sd.table, sd.attrs)
-        }).collect()
+    pub fn sprites(&self, times: std::ops::Range<usize>) -> Vec<(u8, u8, u8)> {
+        times
+            .map(|t| {
+                let sd = self.position_at(Time(t)).unwrap().2;
+                (sd.pattern_id, sd.table, sd.attrs)
+            })
+            .collect()
     }
 
     // Here, positive and negative hits are incremented based on whether input changes occur at the same time
@@ -191,25 +192,52 @@ impl SpriteTrack {
     pub fn determine_avatar(&mut self, current_time: Time, button_input: &RingBuffer<Buttons>) {
         // See the struct RingBuffer and the field button_inputs in mappy.rs. This is where
         // player inputs are stored, and then they're passed as a parameter into here
-        const LOOKBACK:usize = 60;
+        const LOOKBACK: usize = 60;
         assert!(LOOKBACK <= button_input.get_sz());
-        if current_time < Time(LOOKBACK+1) { return; }
-        const THRESHOLD:f32 = 0.1;
+        if current_time < Time(LOOKBACK + 1) {
+            return;
+        }
+        const THRESHOLD: f32 = 0.1;
         let early = *current_time - LOOKBACK;
-        let middle = *current_time - LOOKBACK/2;
-        if early-1 > *self.starting_time() { // if sprite has existed long enough to look back
-            let mid = button_input.get(LOOKBACK/2);
-            let mid_prev = button_input.get(LOOKBACK/2 + 1);
+        let middle = *current_time - LOOKBACK / 2;
+        if early - 1 > *self.starting_time() {
+            // if sprite has existed long enough to look back
+            let mid = button_input.get(LOOKBACK / 2);
+            let mid_prev = button_input.get(LOOKBACK / 2 + 1);
             let before_velocity = self.velocities(early..middle);
-            let before_velocity_x = before_velocity.iter().map(|(vx,_)|*vx as f32).mean();
-            let before_velocity_y = before_velocity.iter().map(|(_,vy)|*vy as f32).mean();
+            let before_velocity_x = before_velocity.iter().map(|(vx, _)| *vx as f32).mean();
+            let before_velocity_y = before_velocity.iter().map(|(_, vy)| *vy as f32).mean();
             let now_velocity = self.velocities(middle..*current_time);
-            let now_velocity_x = now_velocity.iter().map(|(vx,_)|*vx as f32).mean();
-            let now_velocity_y = now_velocity.iter().map(|(_,vy)|*vy as f32).mean();
-            let mid_x = if mid.get_left() { -1 } else if mid.get_right() { 1 } else { 0 };
-            let mid_prev_x = if mid_prev.get_left() { -1 } else if mid_prev.get_right() { 1 } else { 0 };
-            let mid_y = if mid.get_up() { -1 } else if mid.get_down() { 1 } else { 0 };
-            let mid_prev_y = if mid_prev.get_up() { -1 } else if mid_prev.get_down() { 1 } else { 0 };
+            let now_velocity_x = now_velocity.iter().map(|(vx, _)| *vx as f32).mean();
+            let now_velocity_y = now_velocity.iter().map(|(_, vy)| *vy as f32).mean();
+            let mid_x = if mid.get_left() {
+                -1
+            } else if mid.get_right() {
+                1
+            } else {
+                0
+            };
+            let mid_prev_x = if mid_prev.get_left() {
+                -1
+            } else if mid_prev.get_right() {
+                1
+            } else {
+                0
+            };
+            let mid_y = if mid.get_up() {
+                -1
+            } else if mid.get_down() {
+                1
+            } else {
+                0
+            };
+            let mid_prev_y = if mid_prev.get_up() {
+                -1
+            } else if mid_prev.get_down() {
+                1
+            } else {
+                0
+            };
             if mid_x > mid_prev_x {
                 if now_velocity_x - before_velocity_x >= THRESHOLD {
                     self.horizontal_control_evidence.0 += 1;
@@ -243,7 +271,7 @@ impl SpriteTrack {
             } else {
                 // questionable
                 // if (before_velocity_y - now_velocity_y).abs() > THRESHOLD {
-                    // self.vertical_control_evidence.1 += 1;
+                // self.vertical_control_evidence.1 += 1;
                 // }
             }
             // if mid_x != mid_prev_x && self.positions.last().unwrap().2.index == 14 {
@@ -255,13 +283,17 @@ impl SpriteTrack {
     // Return whether the positive and negative hits pass a threshold (which I have as 5)
     pub fn get_is_avatar(&self) -> bool {
         // TODO: use NPMI between input changes and movement changes.
-        (self.horizontal_control_evidence.0 > self.horizontal_control_evidence.1) ||
-            (self.vertical_control_evidence.0 > self.vertical_control_evidence.1)
+        (self.horizontal_control_evidence.0 > self.horizontal_control_evidence.1)
+            || (self.vertical_control_evidence.0 > self.vertical_control_evidence.1)
     }
 }
 
-trait IterStats : Iterator {
-    fn mean(self) -> f32 where Self: Sized, Self::Item : num_traits::Float {
+trait IterStats: Iterator {
+    fn mean(self) -> f32
+    where
+        Self: Sized,
+        Self::Item: num_traits::Float,
+    {
         use num_traits::cast::ToPrimitive;
         let mut count = 0;
         let mut sum = num_traits::identities::zero::<Self::Item>();
@@ -272,7 +304,7 @@ trait IterStats : Iterator {
         sum.to_f32().unwrap() / count.to_f32().unwrap()
     }
 }
-impl<Iter,Item> IterStats for Iter where Iter : Iterator<Item=Item> {}
+impl<Iter, Item> IterStats for Iter where Iter: Iterator<Item = Item> {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlobID(usize);
@@ -316,7 +348,12 @@ impl SpriteBlob {
         // closeness + moving
         100.0
     }
-    pub fn blob_score(&self, _t: &SpriteTrack, _all_tracks: &[SpriteTrack], _lookback: usize) -> f32 {
+    pub fn blob_score(
+        &self,
+        _t: &SpriteTrack,
+        _all_tracks: &[SpriteTrack],
+        _lookback: usize,
+    ) -> f32 {
         // closeness score: 0 if touching, 100 otherwise; use min among all self.live tracks with id != t.id
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
         // closeness + moving

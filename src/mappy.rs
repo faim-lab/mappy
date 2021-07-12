@@ -1,6 +1,6 @@
-use crate::ringbuffer::RingBuffer;
 use crate::framebuffer::Framebuffer;
 use crate::metaroom::{Merges, Metaroom, MetaroomID};
+use crate::ringbuffer::RingBuffer;
 use crate::room::Room;
 use crate::screen::Screen;
 use crate::sprites::{self, SpriteBlob, SpriteData, SpriteTrack, SPRITE_COUNT};
@@ -102,7 +102,7 @@ impl MappyState {
     const BLOB_THRESHOLD: f32 = 1.0;
     const BLOB_LOOKBACK: usize = 30;
 
-    const BUTTON_HISTORY:usize = 60;
+    const BUTTON_HISTORY: usize = 60;
 
     // This is just an arbitrary value, not sure what a good one is!
     pub const ROOM_MERGE_THRESHOLD: f32 = 16.0;
@@ -212,7 +212,7 @@ impl MappyState {
         }
     }
 
-    pub fn process_screen(&mut self, emu: &mut Emulator, input: [Buttons;2]) {
+    pub fn process_screen(&mut self, emu: &mut Emulator, input: [Buttons; 2]) {
         // Read new data from emulator
         let t = self.timers.timer(Timing::FBRead).start();
         self.fb.read_from(&emu);
@@ -264,7 +264,7 @@ impl MappyState {
         let last_control_time = self.last_control;
         self.determine_control(emu);
         self.mapping = false;
-        let Rect{w:sw, h:sh, ..} = self.current_screen.region;
+        let Rect { w: sw, h: sh, .. } = self.current_screen.region;
         if self.has_control {
             let sdiff = scroll_diff(self.scroll, self.last_controlled_scroll);
             if !had_control {
@@ -275,7 +275,10 @@ impl MappyState {
                     sdiff
                 );
             }
-            if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD || sdiff.0.abs() as u32 >= (sw*3)/4 || sdiff.1.abs() as u32 >= (sh*3)/4 {
+            if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
+                || sdiff.0.abs() as u32 >= (sw * 3) / 4
+                || sdiff.1.abs() as u32 >= (sh * 3) / 4
+            {
                 let diff = self.current_screen.difference(&self.last_control_screen);
                 if !had_control {
                     println!(
@@ -330,7 +333,6 @@ impl MappyState {
         self.process_merges();
         // Update `now`
         self.now.0 += 1;
-
     }
     fn process_merges(&mut self) {
         if !self.room_merge_rx.is_empty() {
@@ -437,8 +439,9 @@ impl MappyState {
         });
     }
 
-    fn read_current_screen(&mut self) { // if a clear sprite is overlapping a tile, then just place that tile
-                                        // overlapping sprite check. See if it's a tile that's already been seen
+    fn read_current_screen(&mut self) {
+        // if a clear sprite is overlapping a tile, then just place that tile
+        // overlapping sprite check. See if it's a tile that's already been seen
         let mut tiles = self.tiles.write().unwrap();
         let region = self.split_region();
         self.current_screen = Screen::new(
@@ -591,14 +594,14 @@ impl MappyState {
             + (if old.seen_pattern(new_s.pattern_id) {
                 0
             } else {
-                4
+                2
             })
             + (if old.seen_table(new_s.table) { 0 } else { 4 })
             + (if old.seen_attrs(new_s.attrs) { 0 } else { 4 })
             + (if new_s.height() == sd2.height() { 0 } else { 8 })
     }
 
-    fn track_sprites(&mut self, input: [Buttons;2]) {
+    fn track_sprites(&mut self, input: [Buttons; 2]) {
         use matching::{greedy_match, Match, MatchTo, Target};
         let input = input[0];
         let now = self.now;
@@ -659,7 +662,7 @@ impl MappyState {
             // no new sprites at all
             return;
         }
-        //branch and bound should quickly find the global optimum? maybe later
+        // branch and bound should quickly find the global optimum? maybe later
         let matching = greedy_match(candidates, self.live_tracks.len());
         // println!("Matched with cost {:?}",cost);
         let mut _new_count = 0;
@@ -950,7 +953,8 @@ impl MappyState {
         for y in region.y..(region.y + region.h as i32) {
             for x in region.x..(region.x + region.w as i32) {
                 let tile = room.get(x, y);
-                let tile_change_data_db = tiles.get_change_by_id(tile.unwrap_or(tiles.get_initial_change()));
+                let tile_change_data_db =
+                    tiles.get_change_by_id(tile.unwrap_or(tiles.get_initial_change()));
                 let to_tile_gfx_id = tile_change_data_db.unwrap().to;
                 let corresponding_tile_gfx = tiles.get_tile_by_id(to_tile_gfx_id);
                 corresponding_tile_gfx.unwrap().write_rgb888_at(
@@ -1062,7 +1066,9 @@ pub fn merge_cost(
                         continue;
                     }
                     let room_tile = room.screens[screen1.unwrap()][(ax, ay)];
-                    if initial == room_tile { continue; }
+                    if initial == room_tile {
+                        continue;
+                    }
                     let mut best_tile_cost = None;
                     for &(room_id, (rxo, ryo)) in metaroom.iter() {
                         let room_b = &rooms[room_id];

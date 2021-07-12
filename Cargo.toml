@@ -18,6 +18,11 @@ crossbeam = "0.8.0"
 rayon="1.5.0"
 tabbycat={version="0.1.1", features=["attributes"]}
 num-traits = "0.2"
+argh = "0.1.5"
+
+[dependencies.pyo3]
+version = "0.14.1"
+features = ["auto-initialize"]
 
 [profile.dev]
 opt-level = 3

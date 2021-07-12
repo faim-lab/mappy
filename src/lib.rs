@@ -2,12 +2,12 @@
 mod framebuffer;
 mod mappy;
 pub mod metaroom;
+mod ringbuffer;
 pub mod room;
 mod screen;
 pub mod sprites;
 pub mod tile;
 pub mod time;
-mod ringbuffer;
 pub use crate::mappy::*;
 use retro_rs::Buttons;
 use std::fs::File;
@@ -18,20 +18,20 @@ pub use tile::TILE_SIZE;
 pub struct Time(usize);
 
 impl std::ops::Add<Time> for Time {
-    type Output=Time;
-    fn add(self, other:Time) -> Self::Output {
-        Time(self.0+other.0)
+    type Output = Time;
+    fn add(self, other: Time) -> Self::Output {
+        Time(self.0 + other.0)
     }
 }
 impl std::ops::Sub<Time> for Time {
-    type Output=Time;
-    fn sub(self, other:Time) -> Self::Output {
-        Time(self.0-other.0)
+    type Output = Time;
+    fn sub(self, other: Time) -> Self::Output {
+        Time(self.0 - other.0)
     }
 }
 
 impl std::ops::Deref for Time {
-    type Target=usize;
+    type Target = usize;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
