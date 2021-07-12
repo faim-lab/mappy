@@ -238,12 +238,11 @@ zxcvbnm,./ for debug displays"
                         use pyo3::types::PyDict;
                         let filter = filter_mod.getattr(py, "filter").expect("Python filter module does not define `filter` function");
                         // two copies, eugh
-                        let fb_immut = pyo3::types::PyBytes::new(py, &fb);
                         let fb_py = pyo3::types::PyByteArray::new(py, &fb);
                         let info = PyDict::new(py);
                         info.set_item("name", "contents").unwrap();
                         filter
-                            .call1(py, (info, fb_immut, fb_py, 256, 240))
+                            .call1(py, (info, fb_py, 256, 240))
                             .unwrap_or_else(|e| {
                                 // We can't display Python exceptions via std::fmt::Display,
                                 // so print the error here manually.

@@ -1,2 +1,2 @@
-def filter(info, fb_immut, fb_mut, w, h):
+def filter(info, fb_mut, w, h):
     pass
