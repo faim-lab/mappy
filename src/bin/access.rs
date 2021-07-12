@@ -1,6 +1,7 @@
 use macroquad::*;
 use mappy::{MappyState, TILE_SIZE};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use retro_rs::{Buttons, Emulator};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -233,14 +234,19 @@ zxcvbnm,./ for debug displays"
                 // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
                 emu.copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
+            }
+            // wait for sprite updates...
+            mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
+            // then filter
+            if accum < 2.0 {
                 if let Some(filter_mod) = &filter {
                     Python::with_gil(|py| {
-                        use pyo3::types::PyDict;
                         let filter = filter_mod.getattr(py, "filter").expect("Python filter module does not define `filter` function");
+                        let fb_len = fb.len();
                         // two copies, eugh
                         let fb_py = pyo3::types::PyByteArray::new(py, &fb);
                         let info = PyDict::new(py);
-                        info.set_item("name", "contents").unwrap();
+                        load_mappy_info(info, &mappy);
                         filter
                             .call1(py, (info, fb_py, 256, 240))
                             .unwrap_or_else(|e| {
@@ -250,11 +256,10 @@ zxcvbnm,./ for debug displays"
                                 panic!();
                             });
                         // and a third
-                        unsafe { fb.copy_from_slice(fb_py.as_bytes()); }
+                        unsafe { fb.copy_from_slice(&fb_py.as_bytes()[..fb_len]); }
                     });
                 }
             }
-            mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
             frame_counter += 1;
             if frame_counter % 300 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
@@ -328,4 +333,9 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let tx = (x + mappy.scroll.0) / TILE_SIZE as i32;
     let ty = (y + mappy.scroll.1) / TILE_SIZE as i32;
     (tx, ty)
+}
+
+fn load_mappy_info(dict:&PyDict, mappy:&MappyState) {
+    dict.set_item("scroll", mappy.scroll).unwrap();
+    dict.set_item("sprites", mappy.prev_sprites.iter().filter_map(|s| if s.is_valid() { Some((s.index,s.x,s.y,s.width(),s.height())) } else { None }).collect::<Vec<_>>()).unwrap();
 }

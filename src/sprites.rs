@@ -82,7 +82,7 @@ pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[Spr
         // a2 < b1
         if x <= s.x as usize + s.width() as usize
             && s.x as usize <= x + w
-            // this +1 is because a sprite is drawn on the scanline -after- its y value? I think?
+            // this +1 is because a sprite is drawn on the scanline -after- its y value!
             && y <= s.y as usize + s.height() as usize + 1
             // could be s.y but we'll keep it more generous just to be safe
             && s.y as usize <= y + h + 1

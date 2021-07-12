@@ -59,6 +59,7 @@ pub struct MappyState {
     pub has_control: bool,
     pub splits: [(Split, Split); 1],
     pub live_sprites: [SpriteData; SPRITE_COUNT],
+    pub prev_sprites: [SpriteData; SPRITE_COUNT],
     pub live_tracks: Vec<SpriteTrack>,
     dead_tracks: Vec<SpriteTrack>,
     pub live_blobs: Vec<SpriteBlob>,
@@ -139,6 +140,7 @@ impl MappyState {
             control_duration: 0,
             last_controlled_scroll: (0, 0),
             live_sprites: [SpriteData::default(); SPRITE_COUNT],
+            prev_sprites: [SpriteData::default(); SPRITE_COUNT],
             live_tracks: Vec::with_capacity(SPRITE_COUNT),
             // just for the current room
             dead_tracks: Vec::with_capacity(128),
@@ -189,6 +191,9 @@ impl MappyState {
         self.maybe_control_change_time = Time(0);
         self.last_controlled_scroll = (0, 0);
         self.live_sprites
+            .iter_mut()
+            .for_each(|s| *s = SpriteData::default());
+        self.prev_sprites
             .iter_mut()
             .for_each(|s| *s = SpriteData::default());
         self.live_tracks.clear();
@@ -250,6 +255,7 @@ impl MappyState {
         t.stop();
 
         let t = self.timers.timer(Timing::Track).start();
+        self.prev_sprites.copy_from_slice(&self.live_sprites);
         sprites::get_sprites(&emu, &mut self.live_sprites);
         // Relate current sprites to previous sprites
         self.track_sprites(input);
