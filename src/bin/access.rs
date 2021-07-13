@@ -1,11 +1,12 @@
 use macroquad::*;
 use mappy::{MappyState, TILE_SIZE};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use retro_rs::{Buttons, Emulator};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 const SCALE: f32 = 3.0;
 
@@ -60,16 +61,20 @@ async fn main() {
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
 
-    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), &romfile);
-    // Have to run emu for one frame before we can get the framebuffer size
-    let mut start_state = vec![0; emu.save_size()];
-    let mut save_buf = vec![0; emu.save_size()];
-    emu.save(&mut start_state);
-    emu.save(&mut save_buf);
-    emu.run([Buttons::new(), Buttons::new()]);
-    let (w, h) = emu.framebuffer_size();
-    // So reset it afterwards
-    emu.load(&start_state);
+    let emu = Rc::new(RefCell::new(Emulator::create(Path::new("cores/fceumm_libretro"), &romfile)));
+    let (start_state, mut save_buf) = {
+        let mut emu = emu.borrow_mut();
+        // Have to run emu for one frame before we can get the framebuffer size
+        let mut start_state = vec![0; emu.save_size()];
+        let mut save_buf = vec![0; emu.save_size()];
+        emu.save(&mut start_state);
+        emu.save(&mut save_buf);
+        emu.run([Buttons::new(), Buttons::new()]);
+        // So reset it afterwards
+        emu.load(&start_state);
+        (start_state, save_buf)
+    };
+    let (w, h) = emu.borrow().framebuffer_size();
 
     assert_eq!((w, h), (256, 240));
 
@@ -83,10 +88,10 @@ async fn main() {
     let speeds: [usize; 10] = [0, 1, 5, 15, 30, 60, 120, 240, 300, 360];
     let mut speed: usize = 5;
     let mut accum: f32 = 0.0;
-    let mut mappy = MappyState::new(w, h);
+    let mappy = Rc::new(RefCell::new(MappyState::new(w, h)));
     if let Some(replayfile) = args.replay {
         mappy::read_fm2(&mut replay_inputs, &replayfile);
-        replay(&mut emu, &mut mappy, &replay_inputs);
+        replay(&mut emu.borrow_mut(), &mut mappy.borrow_mut(), &replay_inputs);
         inputs.extend(replay_inputs.drain(..));
     }
     let filter:Option<Py<PyModule>> = args.filter.map(|fpath| {
@@ -176,8 +181,8 @@ zxcvbnm,./ for debug displays"
                 mappy::write_fm2(&inputs, &path);
                 println!("Dumped {}", n);
             } else {
-                emu.load(&start_state);
-                mappy.handle_reset();
+                emu.borrow_mut().load(&start_state);
+                mappy.borrow_mut().handle_reset();
                 frame_counter = 0;
                 inputs.clear();
                 replay_inputs.clear();
@@ -191,7 +196,7 @@ zxcvbnm,./ for debug displays"
                 "{}.state",
                 romname.to_str().expect("rom name not a valid utf-8 string")
             ));
-            emu.save(&mut save_buf);
+            emu.borrow().save(&mut save_buf);
             //write it out to the file
             let mut file = std::fs::File::create(save_path).expect("Couldn't create save file!");
             file.write_all(&save_buf)
@@ -205,8 +210,8 @@ zxcvbnm,./ for debug displays"
             ));
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
             file.read_exact(&mut save_buf).unwrap();
-            emu.load(&save_buf);
-            mappy.handle_reset();
+            emu.borrow_mut().load(&save_buf);
+            mappy.borrow_mut().handle_reset();
         }
         // f/s * s = how many frames
         let dt = get_frame_time();
@@ -229,14 +234,14 @@ zxcvbnm,./ for debug displays"
                 replay_inputs[replay_index - 1][0]
             };
             inputs.push([buttons, Buttons::new()]);
-            emu.run(inputs[inputs.len() - 1]);
+            emu.borrow_mut().run(inputs[inputs.len() - 1]);
             if accum < 2.0 {
                 // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
-                emu.copy_framebuffer_rgba8888(&mut fb)
+                emu.borrow().copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
             }
             // wait for sprite updates...
-            mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
+            mappy.borrow_mut().process_screen(&mut emu.borrow_mut(), inputs.last().copied().unwrap());
             // then filter
             if accum < 2.0 {
                 if let Some(filter_mod) = &filter {
@@ -245,10 +250,13 @@ zxcvbnm,./ for debug displays"
                         let fb_len = fb.len();
                         // two copies, eugh
                         let fb_py = pyo3::types::PyByteArray::new(py, &fb);
-                        let info = PyDict::new(py);
-                        load_mappy_info(info, &mappy);
                         filter
-                            .call1(py, (info, fb_py, 256, 240))
+                            .call1(py, (Mappy{
+                                emulator:Rc::clone(&emu),
+                                mappy:Rc::clone(&mappy),
+                                width:w,
+                                height:h
+                            }, fb_py))
                             .unwrap_or_else(|e| {
                                 // We can't display Python exceptions via std::fmt::Display,
                                 // so print the error here manually.
@@ -289,6 +297,8 @@ zxcvbnm,./ for debug displays"
                 ..DrawTextureParams::default()
             },
         );
+        {
+            let mappy = mappy.borrow();
         if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
             let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
             if shifted {
@@ -321,10 +331,11 @@ zxcvbnm,./ for debug displays"
                 }
             }
         }
+        }
         next_frame().await;
     }
-    mappy.finish();
-    println!("{}", mappy.timers);
+    mappy.borrow_mut().finish();
+    println!("{}", mappy.borrow().timers);
 }
 
 fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
@@ -335,7 +346,74 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     (tx, ty)
 }
 
-fn load_mappy_info(dict:&PyDict, mappy:&MappyState) {
-    dict.set_item("scroll", mappy.scroll).unwrap();
-    dict.set_item("sprites", mappy.prev_sprites.iter().filter_map(|s| if s.is_valid() { Some((s.index,s.x,s.y,s.width(),s.height())) } else { None }).collect::<Vec<_>>()).unwrap();
+
+#[pyclass(unsendable)]
+struct Mappy {
+    mappy:Rc<RefCell<MappyState>>,
+    #[allow(dead_code)]
+    emulator:Rc<RefCell<Emulator>>,
+    #[pyo3(get)]
+    width:usize,
+    #[pyo3(get)]
+    height:usize
+}
+
+#[pymethods]
+impl Mappy {
+    #[getter]
+    fn scroll(&self) -> PyResult<(i32,i32)> {
+        Ok(self.mappy.borrow().scroll)
+    }
+    #[getter]
+    fn sprites(&self) -> PyResult<Vec<Sprite>> {
+        Ok(self.mappy.borrow().prev_sprites.iter().filter_map(|s| if s.is_valid() { Some(Sprite{sprite:*s})} else { None }).collect::<Vec<_>>())
+    }
+}
+#[pyclass]
+struct Sprite {
+    sprite:mappy::sprites::SpriteData
+}
+
+#[pymethods]
+impl Sprite {
+    #[getter]
+    fn index(&self) -> PyResult<u8> {
+        Ok(self.sprite.index)
+    }
+    #[getter]
+    fn x(&self) -> PyResult<u8> {
+        Ok(self.sprite.x)
+    }
+    #[getter]
+    fn y(&self) -> PyResult<u8> {
+        Ok(self.sprite.y)
+    }
+    #[getter]
+    fn width(&self) -> PyResult<u8> {
+        Ok(self.sprite.width())
+    }
+    #[getter]
+    fn height(&self) -> PyResult<u8> {
+        Ok(self.sprite.height())
+    }
+    #[getter]
+    fn vflip(&self) -> PyResult<bool> {
+        Ok(self.sprite.vflip())
+    }
+    #[getter]
+    fn hflip(&self) -> PyResult<bool> {
+        Ok(self.sprite.hflip())
+    }
+    #[getter]
+    fn bg(&self) -> PyResult<bool> {
+        Ok(self.sprite.bg())
+    }
+    #[getter]
+    fn pal(&self) -> PyResult<u8> {
+        Ok(self.sprite.pal())
+    }
+    #[getter]
+    fn key(&self) -> PyResult<u32> {
+        Ok(self.sprite.key())
+    }
 }

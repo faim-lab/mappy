@@ -244,7 +244,6 @@ impl MappyState {
                 self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32,
             );
         }
-        // TODO: is it possible that the read-tiles-from-screen thing should take background scroll into account somehow differently?  or use sprite positions from the beginning of vblank instead of the end?
         t.stop();
         let t = self.timers.timer(Timing::ReadScreen).start();
         // Update current screen tile grid;
