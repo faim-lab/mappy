@@ -96,6 +96,8 @@ async fn main() {
     }
     let filter:Option<Py<PyModule>> = args.filter.map(|fpath| {
         Python::with_gil(|py| {
+            let basepath = fpath.parent().unwrap_or(Path::new("."));
+            pyo3::py_run!(py, basepath, r#"import sys; sys.path.append(basepath);"#);
             PyModule::from_code(
                 py,
                 &std::fs::read_to_string(&fpath)
@@ -355,7 +357,8 @@ struct Mappy {
     #[pyo3(get)]
     width:usize,
     #[pyo3(get)]
-    height:usize
+    height:usize,
+    // TODO: mouse position, held keys
 }
 
 #[pymethods]
@@ -368,6 +371,38 @@ impl Mappy {
     fn sprites(&self) -> PyResult<Vec<Sprite>> {
         Ok(self.mappy.borrow().prev_sprites.iter().filter_map(|s| if s.is_valid() { Some(Sprite{sprite:*s})} else { None }).collect::<Vec<_>>())
     }
+    #[getter]
+    fn playfield(&self) -> PyResult<(i32,i32,u32,u32)> {
+        let mappy::Rect {x,y,w,h} = self.mappy.borrow().split_region();
+        Ok((x,y,w,h))
+    }
+    fn screen_tile_at(&self, x:i32, y:i32) -> PyResult<u32> {
+        let mappy = self.mappy.borrow();
+        let t = mappy.current_room.as_ref().unwrap().get(x,y).unwrap();
+        Ok(t.index())
+    }
+    fn tile_hash(&self, idx:usize) -> PyResult<u128> {
+        let mappy = self.mappy.borrow();
+        let db = mappy.tiles.read().unwrap();
+        let tgfx = db.get_tile_by_index(idx).unwrap();
+        Ok(tgfx.perceptual_hash())
+        }
+    /// Fills `into` with the pixels of tile_gfx.
+    fn read_tile_gfx(&self, idx:usize, into:&pyo3::types::PyByteArray) -> PyResult<()> {
+        let mappy = self.mappy.borrow();
+        let db = mappy.tiles.read().unwrap();
+        assert!(into.len() >= mappy::tile::TILE_NUM_PX*3);
+        let tgfx = db.get_tile_by_index(idx).unwrap();
+        tgfx.write_rgb888(unsafe {into.as_bytes_mut()});
+        Ok(())
+    }
+    fn room_tile_at(&self, x:i32, y:i32) -> PyResult<(u16,u16)> {
+        let mappy = self.mappy.borrow();
+        let db = mappy.tiles.read().unwrap();
+        let tc = db.get_change_by_id(mappy.current_room.as_ref().unwrap().get(x,y).unwrap()).unwrap();
+        Ok((tc.from.index(),tc.to.index()))
+    }
+    // TODO queries for tracks, ...
 }
 #[pyclass]
 struct Sprite {

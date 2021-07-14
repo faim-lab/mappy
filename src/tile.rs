@@ -1,5 +1,5 @@
 use crate::framebuffer::Framebuffer;
-use id_arena::{Arena, Id};
+use id_arena::{Arena,ArenaBehavior};
 use retro_rs::pixels;
 use std::collections::HashMap;
 use std::fmt;
@@ -88,9 +88,32 @@ impl fmt::Debug for TileGfx {
     }
 }
 
-pub type TileGfxId = Id<TileGfx>;
+#[derive(Clone,Copy,PartialOrd,Ord,PartialEq,Eq,Hash,Debug)]
+pub struct TileGfxId(u16);
+
+impl TileGfxId {
+    pub fn index(&self) -> u16 {
+        self.0
+    }
+}
 impl Tile for TileGfxId {}
 
+struct TileGfxArenaBehavior();
+impl ArenaBehavior for TileGfxArenaBehavior {
+    type Id=TileGfxId;
+    fn new_id(_arena_id:u32, index:usize) -> Self::Id {
+        TileGfxId(index as u16)
+    }
+    fn index(id:Self::Id) -> usize {
+        id.0 as usize
+    }
+    fn arena_id(_id:Self::Id) -> u32 {
+        0
+    }
+    fn new_arena_id() -> u32 {
+        0
+    }
+}
 // use std::collections::HashSet;
 // struct Chain<T: Ord + Eq + Copy> {
 //     elts: Vec<T>,
@@ -146,7 +169,31 @@ impl Tile for TileGfxId {}
 //     }
 // }
 
-pub type TileChange = Id<TileChangeData>;
+#[derive(Clone,Copy,PartialOrd,Ord,PartialEq,Eq,Hash,Debug)]
+pub struct TileChange(u32);
+impl TileChange {
+    pub fn index(&self) -> u32 {
+        self.0
+    }
+}
+struct TileChangeArenaBehavior();
+impl ArenaBehavior for TileChangeArenaBehavior {
+    type Id=TileChange;
+    fn new_id(_arena_id:u32, index:usize) -> Self::Id {
+        TileChange(index as u32)
+    }
+    fn index(id:Self::Id) -> usize {
+        id.0 as usize
+    }
+    fn arena_id(_id:Self::Id) -> u32 {
+        0
+    }
+    fn new_arena_id() -> u32 {
+        0
+    }
+}
+
+
 impl Tile for TileChange {}
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -157,9 +204,11 @@ pub struct TileChangeData {
     count: usize,
 }
 
+type GfxArena = Arena<TileGfx,TileGfxArenaBehavior>;
+type ChangeArena = Arena<TileChangeData,TileChangeArenaBehavior>;
 pub struct TileDB {
-    gfx_arena: Arena<TileGfx>,
-    change_arena: Arena<TileChangeData>,
+    gfx_arena: GfxArena,
+    change_arena: ChangeArena,
     initial: TileGfxId,
     initial_change: TileChange,
 
@@ -229,6 +278,12 @@ impl TileDB {
     }
     pub fn get_change_by_id(&self, tc: TileChange) -> Option<&TileChangeData> {
         self.change_arena.get(tc)
+    }
+    pub fn get_tile_by_index(&self, tg: usize) -> Option<&TileGfx> {
+        self.gfx_arena.get(TileGfxArenaBehavior::new_id(0,tg))
+    }
+    pub fn get_change_by_index(&self, tc: usize) -> Option<&TileChangeData> {
+        self.change_arena.get(TileChangeArenaBehavior::new_id(0,tc))
     }
     pub fn gfx_iter(&self) -> impl Iterator<Item = &TileGfx> {
         self.gfx_arena.iter().map(|(_id, t)| t)
