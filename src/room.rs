@@ -68,7 +68,8 @@ impl Room {
         for s in self.screens.iter_mut() {
             s.reregister_at(s.region.x + xoff, s.region.y + yoff);
         }
-        println!("rereg {:?}", self.region());
+        // carl
+        // println!("rereg {:?}", self.region());
         let r = self.region();
         let sr = self.screens_region();
         assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);

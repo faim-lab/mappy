@@ -79,12 +79,14 @@ impl Merges {
         room: usize,
         merges: &[(MetaroomID, (i32, i32), f32)],
     ) -> MetaroomID {
-        println!("Final merge {}->{:?}", room, merges);
+        // carl
+        // println!("Final merge {}->{:?}", room, merges);
         if merges.is_empty() {
             let mid = MetaroomID(self.metarooms.len());
             let meta = Metaroom::new_single(mid, room);
             // definitely still sorted!
-            println!("pushed meta a {:?}", mid);
+            // carl
+            // println!("pushed meta a {:?}", mid);
             self.metarooms.insert(0, meta);
             return mid;
         }
@@ -96,7 +98,8 @@ impl Merges {
             let room_mid = MetaroomID(self.metarooms.len());
             let mut meta = Metaroom::new_single(room_mid, room);
             meta.merged_into.push(mid);
-            println!("pushed meta b {:?}", mid);
+            // carl
+            // println!("pushed meta b {:?}", mid);
             self.metarooms.insert(0, meta);
         }
 
@@ -110,7 +113,8 @@ impl Merges {
             }
             meta.merged_into.push(mid);
         }
-        println!("pushed meta c {:?} {:?}", mid, regs);
+        // carl
+        // println!("pushed meta c {:?} {:?}", mid, regs);
 
         self.metarooms.push(Metaroom::new_merge(mid, regs));
         //resort everything

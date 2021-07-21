@@ -224,7 +224,8 @@ impl SpriteTrack {
                 // self.negative_hits += 1;
             // }
             if self.positions[0].2.index == 1 {
-                dbg!(input_changed,
+                // carl
+                /* dbg!(input_changed,
                      (before_velocity_x,before_velocity_y),
                      (now_velocity_x,now_velocity_y),
                      before_modes,
@@ -232,6 +233,7 @@ impl SpriteTrack {
                      self.positive_hits,
                      self.negative_hits
                 );
+                */
             }
         }
     }

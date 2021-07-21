@@ -235,12 +235,13 @@ async fn main() {
                     .unwrap()
                     .save(format!("{}/{}.png", image_folder.display(), frame_counter))
                     .unwrap();
-                println!(
+                // carl
+                /* println!(
                     "{},{},{}",
                     frame_counter,
                     mappy.scroll.0 - sx,
                     mappy.scroll.1 - sy
-                );
+                ); */
                 csv.write_fmt(format_args!(
                     "{},{}\n",
                     mappy.scroll.0 - sx,

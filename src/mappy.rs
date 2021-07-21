@@ -244,6 +244,8 @@ impl MappyState {
             // dbg!(old_align.1, self.grid_align.1, scrolling::find_offset(old_align.1, self.grid_align.1, 240));
             let offset_x = scrolling::find_offset(old_align.0, self.grid_align.0, 256) as i32;
             let offset_y = scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32; 
+            let (sdx, sdy) = scroll_diff(self.scroll, self.last_controlled_scroll);
+            println!("{}, {} || {}, {}", sdx, sdy, offset_x, offset_y);
             self.scroll = (
                 self.scroll.0 + offset_x,
                 self.scroll.1 + offset_y, 
@@ -278,16 +280,19 @@ impl MappyState {
         if self.has_control {
             let sdiff = scroll_diff(self.scroll, self.last_controlled_scroll);
             if !had_control {
-                println!(
+                // carl
+                /* println!(
                     "{:?}: Regained control after {:?}; scrolldiff {:?}",
                     self.now.0,
                     self.now.0 - last_control_time.0,
                     sdiff
-                );
+                ); */
             }
             if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD || sdiff.0.abs() as u32 >= (sw*3)/4 || sdiff.1.abs() as u32 >= (sh*3)/4 {
                 let diff = self.current_screen.difference(&self.last_control_screen);
                 if !had_control {
+                    // carl
+                    /*
                     println!(
                         "{:?}: Regained control after {:?}; diff {:?}, scrolldiff {:?}",
                         self.now.0,
@@ -295,6 +300,7 @@ impl MappyState {
                         diff,
                         scroll_diff(self.scroll, self.last_controlled_scroll)
                     );
+                    */
                 }
                 let moderate_difference = diff > Self::SCREEN_ROOM_CHANGE_DIFF_MODERATE;
                 let big_difference = diff > Self::SCREEN_ROOM_CHANGE_DIFF_BIG;
@@ -351,10 +357,14 @@ impl MappyState {
                     MergePhase::Intermediate => {
                         for (metaroom, posn, cost) in metas {
                             //metarooms[meta].merge_room(room_id, posn, cost);
+                            // carl
+                            /*
                             println!(
                                 "Temp merge {} with {:?}: {}@{:?}",
                                 room_id, metaroom, cost, posn
                             );
+                            */
+
                             // println!(
                             //     "RR:{:?}\nMRR:{:?}",
                             //     self.current_room.as_ref().unwrap().region(),
@@ -383,7 +393,8 @@ impl MappyState {
                     let cur = self.current_room.as_ref().unwrap();
                     cur.id + 1
                 };
-                println!("Enter room {}", id);
+                // carl
+                // println!("Enter room {}", id);
                 self.current_room
                     .replace(Room::new(
                         id,
@@ -393,18 +404,26 @@ impl MappyState {
                     .unwrap()
             } else {
                 let old_room = self.current_room.take().unwrap();
-                println!("Room end {}: {:?}", old_room.id, old_room.region());
+                // carl 
+                // println!("Room end {}: {:?}", old_room.id, old_room.region());
                 old_room
             };
             old_room = old_room.finalize(self.tiles.read().unwrap().get_initial_change());
             // dbg!(old_room.region());
             let (sdx, sdy) = scroll_diff(self.scroll, self.last_controlled_scroll);
-            old_room.set_exit_dir(Some((sdx, sdy))); 
+            // carl
+            println!("Transition: {}, {}", sdx, sdy);
+            if sdx.abs() > 86 || sdy.abs() > 86 {
+                old_room.set_exit_dir(Some((sdx, sdy))); 
+            } else {
+                old_room.set_exit_dir(Some((0, 0))); 
+            }
             self.kickoff_merge_calc(old_room.clone(), MergePhase::Finalize);
             self.rooms.write().unwrap().push(old_room);
         } else if start_new {
             let id = self.rooms.read().unwrap().len();
-            println!("Room refresh {}", id);
+            // carl 
+            // println!("Room refresh {}", id);
             self.current_room.replace(Room::new(
                 id,
                 &self.current_screen,
@@ -491,7 +510,8 @@ impl MappyState {
             }
         }
         if new_ts > 10 {
-            println!("{:?} new tiles", new_ts);
+            // carl
+            // println!("{:?} new tiles", new_ts);
             MappyState::dump_tiles_single(
                 &Path::new("out").join(format!("tiles_{}.png", self.now.0)),
                 &tiles,
@@ -838,12 +858,12 @@ impl MappyState {
                     let direction: DirectionLabel = match exit_scroll {
                         None => DirectionLabel::VeryBad, 
                         Some((x,y)) => {
-                            println!("exit scroll: {},{}",x,y);
+                            // println!("exit scroll: {},{}",x,y);
                             if x == 0 && y == 0 {
                                 DirectionLabel::NoDirection
-                            } else if x > 0 && y == 0 {
-                                DirectionLabel::Right
                             } else if x < 0 && y == 0 {
+                                DirectionLabel::Right
+                            } else if x > 0 && y == 0 {
                                 DirectionLabel::Left
                             } else if x == 0 && y >0 {
                                 DirectionLabel::Up

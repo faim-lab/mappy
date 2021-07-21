@@ -23,14 +23,15 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
         emu.run(*inp);
         mappy.process_screen(emu, *inp);
         if frames % 300 == 0 {
-            println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
+            // carl
+            /* println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
             println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
             println!(
                 "Net: {:} for {:} inputs, avg {:}",
                 start.elapsed().as_secs_f64(),
                 frames,
                 start.elapsed().as_secs_f64() / (frames as f64)
-            );
+            ); */
         }
     }
 }
@@ -114,14 +115,16 @@ zxcvbnm,./ for debug displays"
                 speed - 1
             };
 
-            println!("Speed {:?}", speed);
+            // carl
+            // println!("Speed {:?}", speed);
         } else if is_key_pressed(KeyCode::P) {
             speed = if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {
                 6
             } else {
                 (speed + 1).min(speeds.len() - 1)
             };
-            println!("Speed {:?}", speed);
+            // carl
+            // println!("Speed {:?}", speed);
         }
         if is_key_pressed(KeyCode::Z) {
             draw_grid = !draw_grid;
@@ -193,7 +196,8 @@ zxcvbnm,./ for debug displays"
             ));
             if shifted {
                 mappy::write_fm2(&inputs, &path);
-                println!("Dumped {}", n);
+                // carl
+                // println!("Dumped {}", n);
             } else {
                 // TODO clear mappy too?
                 emu.load(&start_state);
@@ -261,12 +265,14 @@ zxcvbnm,./ for debug displays"
             if frame_counter % 300 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
                 // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
-                println!(
+                // carl
+                /* println!(
                     "Net: {:} for {:} inputs, avg {:}",
                     start.elapsed().as_secs_f64(),
                     frame_counter,
                     start.elapsed().as_secs_f64() / (frame_counter as f64)
                 );
+                */
             }
             accum -= 1.0;
         }
@@ -343,7 +349,8 @@ zxcvbnm,./ for debug displays"
         if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
             let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
             if shifted {
-                println!(
+                // carl 
+                /* println!(
                     "{},{}  csr {:?}\nsr {:?}\nsc {:?}\ncrr {:?}",
                     tx,
                     ty,
@@ -352,18 +359,21 @@ zxcvbnm,./ for debug displays"
                     mappy.scroll,
                     mappy.current_room.as_ref().unwrap().region()
                 );
+                */
             }
             let change = mappy.current_room.as_ref().unwrap().get(tx, ty).unwrap();
             let tiles = mappy.tiles.read().unwrap();
             let change_data = tiles.get_change_by_id(change);
             // todo print screen tile gfx at this position
-            println!("{},{} -- {:?},{:?}", tx, ty, change, change_data);
+            // carl
+            // println!("{},{} -- {:?},{:?}", tx, ty, change, change_data);
         }
         if is_mouse_button_down(MouseButton::Left) {
             for track in mappy.live_tracks.iter() {
                 let (mx,my) = mouse_position();
                 if mappy::sprites::overlapping_sprite((mx/SCALE) as usize,(my / SCALE) as usize,2,2,&[*track.current_data()]) {
-                    println!("S:{:?}",track.positions.last().unwrap());
+                    // carl
+                    // println!("S:{:?}",track.positions.last().unwrap());
                 }
             }
         }
@@ -442,7 +452,8 @@ zxcvbnm,./ for debug displays"
         // }
     }
     mappy.finish();
-    println!("{}", mappy.timers);
+    // carl
+    /* println!("{}", mappy.timers);*/
     //mappy.dump_tiles(Path::new("out/"));
 }
 
