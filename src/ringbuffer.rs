@@ -6,30 +6,31 @@
 
 // in get, 0 could give you the last thing that was written. 1 could give you the thing before that
 
-
 #[derive(Debug, Clone)]
-pub struct RingBuffer<T:Copy + std::fmt::Debug> {
-    buf:Vec<T>,
-    now:usize
+pub struct RingBuffer<T: Copy + std::fmt::Debug> {
+    buf: Vec<T>,
+    now: usize,
 }
-impl<T:Copy + std::fmt::Debug> RingBuffer<T> {
-    pub fn new(t:T, sz:usize) -> Self {
-        RingBuffer{
-            buf: vec![t;sz],
+impl<T: Copy + std::fmt::Debug> RingBuffer<T> {
+    pub fn new(t: T, sz: usize) -> Self {
+        RingBuffer {
+            buf: vec![t; sz],
             now: 0,
         }
     }
     pub fn to_string(&self) -> String {
         format!("{:?} {:?}", self.buf, self.now)
     }
-    pub fn push(&mut self, t:T) {
+    pub fn push(&mut self, t: T) {
         self.now = (self.now + 1) % self.buf.len();
         self.buf[self.now] = t;
     }
-    pub fn get(&self, since:usize) -> T {
+    pub fn get(&self, since: usize) -> T {
         // self.buf[(self.buf.len() - since) - 1]
         let mut idx = self.now as i64 - since as i64;
-        while idx < 0 { idx += self.buf.len() as i64 }
+        while idx < 0 {
+            idx += self.buf.len() as i64
+        }
         self.buf[idx as usize]
     }
     pub fn get_sz(&self) -> usize {
@@ -42,7 +43,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_get() {
-        let mut rb = RingBuffer::new(0,3);
+        let mut rb = RingBuffer::new(0, 3);
         assert_eq!(rb.get(0), 0);
         assert_eq!(rb.get(1), 0);
         assert_eq!(rb.get(2), 0);

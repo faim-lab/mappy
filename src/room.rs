@@ -86,7 +86,7 @@ impl Room {
         self
     }
     pub fn get(&self, x: i32, y: i32) -> Option<TileChange> {
-        self.get_screen_for(x,y).map(|s| self.screens[s][(x,y)])
+        self.get_screen_for(x, y).map(|s| self.screens[s][(x, y)])
     }
 
     pub fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
@@ -218,7 +218,7 @@ fn extend_tile(
     assert!(s.region.contains(x, y), "{},{} : {:?}", x, y, s.region);
     assert!(rs.region.contains(x, y), "{},{} : {:?}", x, y, rs.region);
     if s[(x, y)] != db.get_initial_tile() {
-        let change = db.change_from_to(rs[(x,y)], s[(x,y)]);
+        let change = db.change_from_to(rs[(x, y)], s[(x, y)]);
         // seen.push(change);
         rs.set(change, x, y);
     }

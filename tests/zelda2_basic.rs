@@ -5,9 +5,7 @@ use common::run;
 fn test_zelda2_basic() {
     let mappy = run(
         Path::new("roms/zelda2.nes"),
-        &[
-            Path::new("tests/data/zelda2_basic.fm2"),
-        ],
+        &[Path::new("tests/data/zelda2_basic.fm2")],
     );
     let rooms = mappy.rooms.read().unwrap();
     assert_eq!(rooms.len(), 9);

@@ -24,14 +24,8 @@ pub fn run(rom: &Path, fm2s: &[&Path]) -> MappyState {
 pub fn print_testcase(mappy: &MappyState) {
     let rooms = mappy.rooms.read().unwrap();
     let metarooms: Vec<_> = mappy.metarooms.metarooms().collect();
-   println!(
-        "assert_eq!(rooms.len(), {:?});",
-        rooms.len()
-    );
-    println!(
-        "assert_eq!(metarooms.len(), {:?});",
-        metarooms.len()
-    );
+    println!("assert_eq!(rooms.len(), {:?});", rooms.len());
+    println!("assert_eq!(metarooms.len(), {:?});", metarooms.len());
     for (mi, m) in metarooms.iter().enumerate() {
         println!(
             "assert_eq!(metarooms[{}].registrations, {:?});",

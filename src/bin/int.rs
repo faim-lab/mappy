@@ -1,5 +1,5 @@
 use macroquad::*;
-use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
+use mappy::{MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -370,10 +370,15 @@ zxcvbnm,./ for debug displays"
         }
         if is_mouse_button_down(MouseButton::Left) {
             for track in mappy.live_tracks.iter() {
-                let (mx,my) = mouse_position();
-                if mappy::sprites::overlapping_sprite((mx/SCALE) as usize,(my / SCALE) as usize,2,2,&[*track.current_data()]) {
-                    // carl
-                    // println!("S:{:?}",track.positions.last().unwrap());
+                let (mx, my) = mouse_position();
+                if mappy::sprites::overlapping_sprite(
+                    (mx / SCALE) as usize,
+                    (my / SCALE) as usize,
+                    2,
+                    2,
+                    &[*track.current_data()],
+                ) {
+                    //println!("S:{:?}", track.positions.last().unwrap());
                 }
             }
         }
@@ -434,12 +439,7 @@ zxcvbnm,./ for debug displays"
                     let mappy::sprites::At(_, (sx0, sy0), sd0) = track.positions.last().unwrap();
                     let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
                     let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
-                    draw_circle(
-                        x0 as f32 * SCALE,
-                        y0 as f32 * SCALE,
-                        4.0,
-                        DARKBLUE
-                    );
+                    draw_circle(x0 as f32 * SCALE, y0 as f32 * SCALE, 4.0, DARKBLUE);
                 }
             }
         }
@@ -456,7 +456,6 @@ zxcvbnm,./ for debug displays"
     /* println!("{}", mappy.timers);*/
     //mappy.dump_tiles(Path::new("out/"));
 }
-
 
 fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let x = (x / SCALE) as i32;
