@@ -203,60 +203,124 @@ impl SpriteTrack {
         let dist = (dx * dx + dy * dy) as f32;
         dist.sqrt()
     }
-    pub fn move_count(&self) -> i32 {
-        // this function calculates the number of moves of a track.
-        // iterate through the positions property
-        // calculate the distance between a position and the position one index after it
-        // if the distance is greater than 0 then we consider the track position to have moved.
-        // increment counter
-        let mut count = 0;
-
-        for i in 0..(self.positions.len() - 1) {
-            let dist = Self::distance(self, i, i + 1);
-            // when do we increment count??
-            if dist > 0.0 {
-                count = count + 1;
+    /// Returns the frequency that a track is world stationary and screen stationary
+    ///
+    /// # Arguments
+    /// None
+    ///
+    pub fn stationary_ratio(&self) -> (f32, f32) {
+        let mut world_count = 0;
+        let mut screen_count = 0;
+        for window in self.positions.windows(2) {
+            let At(time, (sx, sy), sd) = window[0];
+            let At(time2, (sx2, sy2), sd2) = window[1];
+            let (dispx, dispy) = (
+                (sx + sd.x as i32) - (sx2 + sd2.x as i32),
+                (sy + sd.y as i32) - (sy2 + sd2.y as i32),
+            );
+            let world_dist = ((dispx * dispx + dispy * dispy) as f32).sqrt();
+            let screen_dist = (((sx - sx2) * (sx - sx2) + (sy * sy2) * (sy * sy2)) as f32).sqrt();
+            if world_dist == 0.0 {
+                world_count += 1;
+            }
+            if screen_dist == 0.0 {
+                screen_count += 1;
             }
         }
 
-        return count as i32;
+        return (world_count as f32, screen_count as f32);
     }
-    pub fn continuous_move_ratio(&self, threshold: usize) -> f32 {
-        // this function computes the ratio that looks at the changes in the tracks' position over time.
 
-        // 0 - 10 stationary track: the positions rarely move
-        // ex: a green pipe
-        // we get this score if the track has a low move count
+    /// Returns a boolean pair of whether or not a track is world stationary and screen stationary
+    ///
+    /// # Arguments
+    /// None
+    ///
+    /// Note that tracks can be both world stationary and screen stationary. The two are not exclusive.
+    ///
+    pub fn stationary_bool(&self) -> (bool, bool) {
+        let world_bool: bool;
+        let screen_bool: bool;
+        let move_count = (self.positions.len() - 1) as f32; // how many moves there are ex: 3 positions -> 2 moves
+        let (world_count, screen_count) = self.stationary_ratio();
+        let (world_freq, screen_freq) = (world_count / move_count, screen_count / move_count);
 
-        // 11 - 69 discretely warping: the positions jump in big jumps
-        // ex: a scoreboard jumping from position to position
-        // we get this score if the track has a relatively high move count but we deduct points in these scenarios:
-        // .. the distance between the two positions surpass a given threshold
-        // .. the distances between two positions consistantly jump in 8+ pixels.
-        //
+        if world_freq > 0.97 {
+            world_bool = true;
+        } else {
+            world_bool = false;
+        }
+        if screen_freq > 0.97 {
+            screen_bool = true;
+        } else {
+            screen_bool = false;
+        }
+        return (world_bool, screen_bool);
+    }
 
-        // 70 - 100 if continuously moving: goomba, fireballs,
-        let total_positions = self.positions.len() - 1; // total position changes
-        let mut move_count = self.move_count(); // total moves or actual changes in distance
+    /// Returns the frequency at which a track is continuously moving and discretely moving
+    ///
+    /// # Arguments
+    /// None
+    ///
+    pub fn moving_ratio(&self) -> (f32, f32) {
+        let mut continuous_count = 0;
+        let mut world_count = 0;
+        let mut screen_count = 0;
+        let mut discrete_count = 0;
 
-        for i in 0..total_positions {
-            let At(_, (sx, sy), sd) = &self.positions[i];
-            let At(_, (sx2, sy2), sd2) = &self.positions[i + 1];
-            let x1 = sx + sd.x as i32;
-            let x2 = sx2 + sd2.x as i32;
-            let y1 = sy + sd.y as i32;
-            let y2 = sy2 + sd2.y as i32;
-            let dispx = x1 - x2;
-            let dispy = y1 - y2;
-            let distance = ((dispx * dispx + dispy * dispy) as f32).sqrt();
+        for window in self.positions.windows(2) {
+            let At(time, (sx, sy), sd) = window[0];
+            let At(time2, (sx2, sy2), sd2) = window[1];
+            let (dispx, dispy) = (
+                (sx + sd.x as i32) - (sx2 + sd2.x as i32),
+                (sy + sd.y as i32) - (sy2 + sd2.y as i32),
+            );
+            let world_dist = ((dispx * dispx + dispy * dispy) as f32).sqrt();
+            let screen_dist = (((sx - sx2) * (sx - sx2) + (sy * sy2) * (sy * sy2)) as f32).sqrt();
 
-            // if the position move in 8+ pixel jumps than decrease the move count
-            if distance > threshold as f32 {
-                move_count = move_count - 1;
+            if world_dist > 0.0 && world_dist <= 8.0 {
+                continuous_count += 1;
+            }
+            if world_dist > 8.0 || screen_dist > 8.0 {
+                discrete_count += 1;
+            }
+            if world_dist > 0.0 {
+                world_count += 1;
+            }
+            if screen_dist > 0.0 {
+                screen_count += 1;
             }
         }
+        return (continuous_count as f32, discrete_count as f32);
+    }
 
-        return move_count as f32 / total_positions as f32;
+    /// Returns the boolean pair of whether or not a track is continuously moving and discretely moving
+    ///
+    /// # Arguments
+    /// None
+    ///
+    /// Note that tracks cannot be both continuously moving or discretely moving.
+    /// enemies in the game should be continuously moving while menu cursors for example should be discretely moving
+    ///
+    pub fn moving_bool(&self) -> (bool, bool) {
+        let continuous: bool;
+        let discrete: bool;
+        let move_count = (self.positions.len() - 1) as f32;
+        let (cont_count, discrete_count) = self.moving_ratio();
+        let (cont_freq, discrete_freq) = (cont_count / move_count, discrete_count / move_count);
+
+        if cont_freq > 0.95 {
+            continuous = true;
+            discrete = false;
+        } else if discrete_freq > 0.95 {
+            discrete = true;
+            continuous = false;
+        } else {
+            continuous = false;
+            discrete = false;
+        }
+        return (continuous, discrete);
     }
 }
 
