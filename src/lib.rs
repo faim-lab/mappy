@@ -29,6 +29,18 @@ impl std::ops::Sub<Time> for Time {
         Time(self.0 - other.0)
     }
 }
+impl std::ops::Add<usize> for Time {
+    type Output = Time;
+    fn add(self, other: usize) -> Self::Output {
+        Time(self.0 + other)
+    }
+}
+impl std::ops::Sub<usize> for Time {
+    type Output = Time;
+    fn sub(self, other: usize) -> Self::Output {
+        Time(self.0 - other)
+    }
+}
 
 impl std::ops::Deref for Time {
     type Target = usize;
@@ -60,6 +72,14 @@ impl Rect {
             && r.x < (self.x + self.w as i32)
             && self.y < (r.y + r.h as i32)
             && r.y < (self.y + self.h as i32)
+    }
+    pub fn expand(&self, amt:u32) -> Rect {
+        Rect {
+            x: self.x - amt as i32,
+            y: self.y - amt as i32,
+            w: self.w + amt*2,
+            h: self.h + amt*2
+        }
     }
     pub fn union(&self, other: &Rect) -> Rect {
         let x0 = self.x.min(other.x);

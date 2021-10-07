@@ -63,6 +63,7 @@ async fn main() {
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
+    let mut draw_live_blobs = false;
     let mut avatar_indicator = false;
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
@@ -131,6 +132,9 @@ zxcvbnm,./ for debug displays"
         }
         if is_key_pressed(KeyCode::C) {
             draw_live_tracks = !draw_live_tracks;
+        }
+        if is_key_pressed(KeyCode::B) {
+            draw_live_blobs = !draw_live_blobs;
         }
         if is_key_pressed(KeyCode::N) {
             std::fs::create_dir_all("out").unwrap_or(());
@@ -412,6 +416,26 @@ zxcvbnm,./ for debug displays"
                         );
                     }
                 }
+            }
+        }
+        if draw_live_blobs {
+            for blob in mappy.live_blobs.iter() {
+                let col = Color::new(
+                    (*(blob.positions[0].0) * 31 % 256) as f32 / 255.,
+                    (*(blob.positions[0].0) * 127 % 256) as f32 / 255.,
+                    (*(blob.positions[0].0) * 91 % 256) as f32 / 255.,
+                    1.,
+                );
+                // let (_time, x, y) = blob.positions.last().unwrap();
+                let (_time, bbox) = blob.bounding_boxes.last().unwrap();
+                draw_rectangle_lines(
+                    (bbox.x.max(0) - mappy.scroll.0) as f32 * SCALE,
+                    (bbox.y.max(0) - mappy.scroll.1) as f32 * SCALE,
+                    bbox.w as f32 * SCALE,
+                    bbox.h as f32 * SCALE,
+                    2.0,
+                    col,
+                );
             }
         }
         if mappy.mapping {

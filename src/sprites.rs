@@ -1,5 +1,5 @@
 use crate::ringbuffer::RingBuffer;
-use crate::Time;
+use crate::{Rect,Time};
 use retro_rs::{Buttons, Emulator};
 use std::collections::HashSet;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -148,8 +148,11 @@ impl SpriteTrack {
         let At(_, (sx, sy), sd) = &self.positions.last().unwrap();
         (sx + sd.x as i32, sy + sd.y as i32)
     }
+    pub fn data_at(&self, t:Time) -> Option<SpriteData> {
+        self.position_at(t).map(|At(_,_,sd)| sd).copied()
+    }
     pub fn position_at(&self, t: Time) -> Option<&At> {
-        self.positions.iter().rev().find(|At(t0, _, _)| t0 < &t)
+        self.positions.iter().rev().find(|At(t0, _, _)| t0 <= &t)
     }
     pub fn point_at(&self, t: Time) -> Option<(i32, i32)> {
         self.position_at(t)
@@ -172,6 +175,9 @@ impl SpriteTrack {
                 (t2x - t1x, t2y - t1y)
             })
             .collect()
+    }
+    pub fn world_positions(&self, times: std::ops::Range<usize>) -> Vec<(i32, i32)> {
+        times.map(|t| self.point_at(Time(t)).unwrap()).collect()
     }
     pub fn sprites(&self, times: std::ops::Range<usize>) -> Vec<(u8, u8, u8)> {
         times
@@ -310,6 +316,9 @@ pub struct BlobID(usize);
 pub struct SpriteBlob {
     pub id: BlobID,
     pub positions: Vec<(Time, i32, i32)>,
+    // A little redundant, maybe better not to store Time in both places
+    // Anyway, won't Time be dense?
+    pub bounding_boxes: Vec<(Time, Rect)>,
     pub live_tracks: Vec<TrackID>,
     pub dead_tracks: Vec<TrackID>,
 }
@@ -319,6 +328,7 @@ impl SpriteBlob {
         Self {
             id: BlobID(id),
             positions: vec![],
+            bounding_boxes: vec![],
             live_tracks: vec![],
             dead_tracks: vec![],
         }
@@ -340,23 +350,47 @@ impl SpriteBlob {
     pub fn is_dead(&self) -> bool {
         self.live_tracks.is_empty()
     }
-    pub fn blob_score_pair(_t1: &SpriteTrack, _t2: &SpriteTrack, _lookback: usize) -> f32 {
+    pub fn blob_score_pair(t1: &SpriteTrack, t2: &SpriteTrack, lookback: usize, now:Time) -> f32 {
         // closeness score: 0 if touching over lookback and diff ID, 100 otherwise; use min among all self.live tracks with id != t.id
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
         // closeness + moving
-        100.0
+
+        assert_ne!(t1.id, t2.id);
+
+        if now.0 <= lookback || now - lookback <= t1.starting_time() || now - lookback <= t2.starting_time() {
+            return 100.0;
+        }
+        let range = (now.0 - lookback)..now.0;
+        let vels1 = t1.velocities(range.clone());
+        let vels2 = t2.velocities(range.clone());
+        let moving = 100.0*vels1.into_iter().zip(vels2.into_iter()).map(|((dx1,dy1),(dx2,dy2))| if dx1 == dx2 && dy1 == dy2 { 0.0 } else { 1.0 }).mean();
+        // TODO use world_positions is fine, refactor
+        let closeness = range.map(|t| {
+            let r1 = {
+                let (x,y) = t1.point_at(Time(t)).unwrap();
+                Rect::new(x,y,t1.data_at(Time(t)).unwrap().width() as u32, t1.data_at(Time(t)).unwrap().height() as u32)
+            };
+            let r2 = {
+                let (x,y) = t2.point_at(Time(t)).unwrap();
+                Rect::new(x,y,t2.data_at(Time(t)).unwrap().width() as u32, t2.data_at(Time(t)).unwrap().height() as u32)
+            };
+            if r1.expand(1).overlaps(&r2.expand(1)) { 0.0 } else { 100.0 }
+        }).max_by(|a,b| a.partial_cmp(b).unwrap()).unwrap();
+        closeness + moving
     }
     pub fn blob_score(
         &self,
-        _t: &SpriteTrack,
-        _all_tracks: &[SpriteTrack],
-        _lookback: usize,
+        t: &SpriteTrack,
+        all_tracks: &[SpriteTrack],
+        lookback: usize,
+        now: Time
     ) -> f32 {
-        // closeness score: 0 if touching, 100 otherwise; use min among all self.live tracks with id != t.id
-        // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
-        // closeness + moving
         // return min blob score of all of self.live_tracks with id != t.id
-        100.0
+        self.live_tracks.iter().map(|&tid| {
+            let track = all_tracks.iter().find(|track| track.id == tid).unwrap();
+            if track.id == t.id { 100.0 }
+            else { Self::blob_score_pair(track, t, lookback, now) }
+        }).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(100.0)
     }
     pub fn use_track(&mut self, t: TrackID) {
         // add to live if not present
@@ -377,6 +411,20 @@ impl SpriteBlob {
                         .current_point();
                     (t, ax + bx / tl, ay + by / tl)
                 }),
+        );
+        let (_,lx,ly) = self.positions.last().unwrap();
+        self.bounding_boxes.push(
+            self.live_tracks
+                .iter()
+                .fold((t, Rect::new(*lx, *ly, 1, 1)), | (t, r), &tid | {
+                    let track = tracks
+                        .iter()
+                        .find(|&tk| tk.id == tid)
+                        .unwrap();
+                    let (px,py) = track.current_point();
+                    let dat = track.current_data();
+                    (t, r.union(&Rect::new(px, py, dat.width() as u32, dat.height() as u32)))
+                })
         );
     }
 }

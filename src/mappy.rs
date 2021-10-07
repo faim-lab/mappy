@@ -100,7 +100,7 @@ impl MappyState {
     // This is meant to help with situations where the room does some fade-in or something and we get spurious tiles
     const CONTROL_ROOM_ENTER_DURATION: usize = 60;
 
-    const BLOB_THRESHOLD: f32 = 1.0;
+    const BLOB_THRESHOLD: f32 = 10.0;
     const BLOB_LOOKBACK: usize = 30;
 
     const BUTTON_HISTORY: usize = 60;
@@ -721,6 +721,7 @@ impl MappyState {
                             &self.live_tracks[*tx],
                             &self.live_tracks,
                             Self::BLOB_LOOKBACK,
+                            self.now
                         ),
                     )
                 })
@@ -765,6 +766,7 @@ impl MappyState {
                     &self.live_tracks[tx],
                     &self.live_tracks[ty],
                     Self::BLOB_LOOKBACK,
+                    self.now
                 ) < Self::BLOB_THRESHOLD
                 {
                     let mut blob = SpriteBlob::new(self.dead_blobs.len() + self.live_blobs.len());
@@ -780,6 +782,7 @@ impl MappyState {
                             &self.live_tracks[tz],
                             &self.live_tracks,
                             Self::BLOB_LOOKBACK,
+                            self.now
                         ) < Self::BLOB_THRESHOLD
                         {
                             blob.use_track(self.live_tracks[tz].id);
