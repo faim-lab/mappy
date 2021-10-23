@@ -9,6 +9,7 @@ pub mod sprites;
 pub mod tile;
 pub mod time;
 pub use crate::mappy::*;
+
 use retro_rs::Buttons;
 use std::fs::File;
 use std::path::Path;

@@ -1,0 +1,15 @@
+[package]
+name = "access"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+argh = "0.1.5"
+macroquad = { git = "https://github.com/not-fl3/macroquad", rev="31cff5d89ed17a6c83f39cf6568348dab25145dc" }
+mappy = {path="../mappy"}
+retro-rs = { git = "https://github.com/JoeOsborn/retro-rs", branch="master" }
+[dependencies.pyo3]
+version = "0.14.1"
+features = ["auto-initialize"]

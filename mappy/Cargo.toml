@@ -1,0 +1,18 @@
+[package]
+name = "mappy"
+version = "0.1.0"
+authors = ["Joseph C. Osborn <jcoa2018@pomona.edu>", "Nathan Dailey", "Soksamnang Lim"]
+edition = "2021"
+
+[dependencies]
+retro-rs = { git = "https://github.com/JoeOsborn/retro-rs", branch="master" }
+image = "0.21.0"
+libc = "0.2.69"
+libloading = "0.6.1"
+itertools = "0.8.0"
+id-arena = { version="2.2.1", features=["rayon"] }
+uuid = { version="0.8.1", features=["v4"] }
+crossbeam = "0.8.0"
+rayon="1.5.0"
+tabbycat={version="0.1.1", features=["attributes"]}
+num-traits = "0.2"
