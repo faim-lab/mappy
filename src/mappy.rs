@@ -61,9 +61,9 @@ pub struct MappyState {
     pub live_sprites: [SpriteData; SPRITE_COUNT],
     pub prev_sprites: [SpriteData; SPRITE_COUNT],
     pub live_tracks: Vec<SpriteTrack>,
-    dead_tracks: Vec<SpriteTrack>,
+    pub dead_tracks: Vec<SpriteTrack>,
     pub live_blobs: Vec<SpriteBlob>,
-    dead_blobs: Vec<SpriteBlob>,
+    pub dead_blobs: Vec<SpriteBlob>,
     pub current_screen: Screen<TileGfxId>,
     last_control_screen: Screen<TileGfxId>,
     fb: Framebuffer,
@@ -100,7 +100,11 @@ impl MappyState {
     // This is meant to help with situations where the room does some fade-in or something and we get spurious tiles
     const CONTROL_ROOM_ENTER_DURATION: usize = 60;
 
-    const BLOB_THRESHOLD: f32 = 10.0;
+    const CREATE_COST: u32 = 20;
+    const DISTANCE_MAX: u32 = 12;
+    const DESTROY_COAST: usize = 5;
+
+    const BLOB_THRESHOLD: f32 = 5.0;
     const BLOB_LOOKBACK: usize = 30;
 
     const BUTTON_HISTORY: usize = 60;
@@ -198,6 +202,8 @@ impl MappyState {
             .for_each(|s| *s = SpriteData::default());
         self.live_tracks.clear();
         self.dead_tracks.clear();
+        self.live_blobs.clear();
+        self.dead_blobs.clear();
         self.changes.clear();
         self.change_count = 0;
         let s0 = Screen::new(
@@ -253,16 +259,8 @@ impl MappyState {
         }
         t.stop();
 
-        let t = self.timers.timer(Timing::Track).start();
-        self.prev_sprites.copy_from_slice(&self.live_sprites);
-        sprites::get_sprites(&emu, &mut self.live_sprites);
-        // Relate current sprites to previous sprites
-        self.track_sprites(input);
-        t.stop();
-
-        let t = self.timers.timer(Timing::Blob).start();
-        self.blob_sprites();
-        t.stop();
+        // avatar identification related:
+        self.button_inputs.push(input[0]);
 
         // Do we have control?
         let had_control = self.has_control;
@@ -336,8 +334,26 @@ impl MappyState {
             );
         }
         self.process_merges();
+
+        let t = self.timers.timer(Timing::Track).start();
+        // Relate current sprites to previous sprites
+        self.track_sprites();
+        for track in self.live_tracks.iter_mut() {
+            track.determine_avatar(self.now, &self.button_inputs);
+        }
+
+        t.stop();
+
+        let t = self.timers.timer(Timing::Blob).start();
+        self.blob_sprites();
+        t.stop();
+
         // Update `now`
         self.now.0 += 1;
+
+        // Read sprite data for next frame
+        self.prev_sprites.copy_from_slice(&self.live_sprites);
+        sprites::get_sprites(&emu, &mut self.live_sprites);
     }
     fn process_merges(&mut self) {
         if !self.room_merge_rx.is_empty() {
@@ -586,16 +602,11 @@ impl MappyState {
         t.stop();
     }
 
-    const CREATE_COST: u32 = 20;
-    const DISTANCE_MAX: u32 = 14;
-    const DESTROY_COAST: usize = 5;
     // TODO: increase cost if this would alter blobbing?
     fn sprite_change_cost(new_s: &SpriteData, old: &SpriteTrack) -> u32 {
         let sd2 = old.current_data();
         new_s.distance(sd2) as u32
-            // questionable
-            //+ (if sd2.index == new_s.index { 0 } else { 12 })
-            // okay
+            // avast, ye magic numbers
             + (if old.seen_pattern(new_s.pattern_id) {
                 0
             } else {
@@ -604,11 +615,11 @@ impl MappyState {
             + (if old.seen_table(new_s.table) { 0 } else { 4 })
             + (if old.seen_attrs(new_s.attrs) { 0 } else { 4 })
             + (if new_s.height() == sd2.height() { 0 } else { 8 })
+            + (if new_s.index == sd2.index { 0 } else { 4 })
     }
 
-    fn track_sprites(&mut self, input: [Buttons; 2]) {
-        use matching::{greedy_match, Match, MatchTo, Target};
-        let input = input[0];
+    fn track_sprites(&mut self) {
+        use matching::{bnb_match, Match, MatchTo, Target};
         let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
         let live_blobs = &mut self.live_blobs;
@@ -616,6 +627,7 @@ impl MappyState {
         self.live_tracks.retain(|t| {
             if now.0 - t.last_observation_time().0 > Self::DESTROY_COAST {
                 let id = t.id;
+                println!("{:?} kill {:?}",now,id);
                 // TODO this clone shouldn't be necessary
                 dead_tracks.push(t.clone());
                 // mark t as dead in all blobs using t;
@@ -623,6 +635,7 @@ impl MappyState {
                 for b in live_blobs.iter_mut() {
                     b.kill_track(id);
                     if b.is_dead() {
+                        println!("{:?} kill blob {:?}", now, b.id);
                         dead_blob_ids.push(b.id);
                     }
                 }
@@ -649,17 +662,23 @@ impl MappyState {
         let candidates: Vec<_> = live
             .iter()
             .map(|s| {
+                let mut options:Vec<_> = self.live_tracks.iter().enumerate().filter_map(|(ti, old)| {
+                    if (s.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
+                        Some(Target(Some(ti), Self::sprite_change_cost(s, &old)))
+                    } else {
+                        None
+                    }
+                }).collect();
+                // possible degenerate case: all sprites in same place
+                if options.len() > 16 {
+                    // fall back to identity match if possible or else None
+                    options = vec![options.into_iter().find(|Target(oi,_cost)| *oi == Some(s.index as usize)).unwrap_or(Target(None, Self::CREATE_COST))];
+                } else {
+                    options.insert(0, Target(None, Self::CREATE_COST));
+                }
                 MatchTo(
                     s.index as usize,
-                    std::iter::once(Target(None, Self::CREATE_COST))
-                        .chain(self.live_tracks.iter().enumerate().filter_map(|(ti, old)| {
-                            if (s.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
-                                Some(Target(Some(ti), Self::sprite_change_cost(s, &old)))
-                            } else {
-                                None
-                            }
-                        }))
-                        .collect(),
+                    options,
                 )
             })
             .collect();
@@ -667,46 +686,85 @@ impl MappyState {
             // no new sprites at all
             return;
         }
-        // branch and bound should quickly find the global optimum? maybe later
-        let matching = greedy_match(candidates, self.live_tracks.len());
-        // println!("Matched with cost {:?}",cost);
-        let mut _new_count = 0;
-        let mut _matched_count = 0;
-        // println!("Go through {:?}", self.now);
-        for Match(new, maybe_oldi) in matching.into_iter() {
-            match maybe_oldi {
-                None => {
-                    // println!("Create new {:?}", new);
-                    _new_count += 1;
-                    self.live_tracks.push(SpriteTrack::new(
-                        self.live_tracks.len() + self.dead_tracks.len(),
-                        self.now,
-                        self.scroll,
-                        self.live_sprites[new],
-                    ));
+        // break up the candidates vec into separate vecs with options that overlap on any index
+        fn connected_components(candidates:Vec<MatchTo>) -> Vec<Vec<MatchTo>> {
+            fn opts_overlap(opts1:&[Target], opts2:&[Target]) -> bool {
+                opts1.iter().find(| Target(maybe_old1, _) |
+                                  maybe_old1.is_some() && opts2.iter().find(| Target(maybe_old2, _) | maybe_old2 == maybe_old1).is_some()
+                ).is_some()
+            }
+            fn spider(candidates:&[MatchTo], gis:&mut [usize], ci1:usize) {
+                // recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
+                for (ci2,MatchTo(_new, opts)) in candidates.iter().enumerate() {
+                    if gis[ci2] != 0 { continue; }
+                    if opts_overlap(opts, &candidates[ci1].1) {
+                        gis[ci2] = gis[ci1];
+                        spider(candidates, gis, ci2);
+                    }
                 }
-                Some(oldi) => {
-                    // match
-                    // println!("Update {:?} {:?}", oldi, newi);
-                    _matched_count += 1;
-                    self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[new]);
+            }
+            let mut components = Vec::with_capacity(64);
+            let mut gis = vec![0; candidates.len()];
+            for ci in 0..candidates.len() {
+                // if it's already in a group, do nothing
+                if gis[ci] != 0 { continue; }
+                // otherwise, make a new group
+                gis[ci] = components.len()+1;
+                components.push(vec![]);
+                // and recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
+                spider(&candidates, &mut gis, ci);
+            }
+            // now everything has been grouped.
+            for (ci,c) in candidates.into_iter().enumerate() {
+                assert!(gis[ci] > 0);
+                // translate group IDs to indices in components and add components to group.
+                components[gis[ci]-1].push(c);
+            }
+            components
+        }
+        let _cl = candidates.len();
+        let groups = connected_components(candidates);
+        // println!("Turned {:?} candidates into {:?} CCs of sizes {:?}", cl, groups.len(), groups.iter().map(|g| g.len()).collect::<Vec<_>>());
+        // branch and bound should find the global optimum...
+        for candidates in groups.into_iter() {
+            // would it be better to phrase this as bipartite matching/flow instead?
+            let matching = bnb_match(candidates, self.live_tracks.len());
+            // println!("Matched with cost {:?}",cost);
+            let mut _new_count = 0;
+            let mut _matched_count = 0;
+            // println!("Go through {:?}", self.now);
+            for Match(new, maybe_oldi) in matching.into_iter() {
+                match maybe_oldi {
+                    None => {
+                        // println!("Create new {:?}", new);
+                        _new_count += 1;
+                        self.live_tracks.push(SpriteTrack::new(
+                            self.live_tracks.len() + self.dead_tracks.len(),
+                            self.now,
+                            self.scroll,
+                            self.live_sprites[new],
+                        ));
+                        println!("{:?} create {:?}", now, self.live_tracks.last().unwrap().id);
+                    }
+                    Some(oldi) => {
+                        // match
+                        // println!("Update {:?} {:?}", oldi, newi);
+                        _matched_count += 1;
+                        self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[new]);
+                    }
                 }
             }
         }
-        // avatar identification related:
-        self.button_inputs.push(input);
-        // let btn_x = if self.button_inputs.get(30).get_left() { -1 } else if self.button_inputs.get(30).get_right() { 1 } else { 0 };
-        // dbg!(btn_x);
-        for track in self.live_tracks.iter_mut() {
-            track.determine_avatar(self.now, &self.button_inputs);
-        }
+        // println!("{:?} LTL {:?}", now, self.live_tracks.len());
     }
 
     fn blob_sprites(&mut self) {
         // group track IDs together if they...
         //    tend to be touching
         //    tend to move in the same direction
+        let now = self.now;
         let mut unassigned_tracks: Vec<_> = (0..self.live_tracks.len()).collect();
+        // TODO: remove from unassigned_tracks any tracks that belong to blobs currently?
         let mut assigned_tracks = Vec::with_capacity(self.live_tracks.len());
         unassigned_tracks.retain(|tx| {
             //find the blob t is best for
@@ -728,6 +786,7 @@ impl MappyState {
                 .min_by(|(_b1, s1), (_b2, s2)| s1.partial_cmp(s2).unwrap())
             {
                 if score < Self::BLOB_THRESHOLD {
+                    // TODO: is this already part of some other blob?  give some penalty?
                     assigned_tracks.push((*tx, bi));
                     // assign
                     false
@@ -744,12 +803,31 @@ impl MappyState {
         for &tx in unassigned_tracks.iter() {
             let id = self.live_tracks[tx].id;
             for b in self.live_blobs.iter_mut() {
-                b.forget_track(id);
+                if b.contains_live_track(id) {
+                    // println!("{:?} remove {:?} from {:?}", now, id, b.id);
+                    b.forget_track(id);
+                }
             }
+            assert!(assigned_tracks.iter().find(|(txx,_bx)| *txx == tx).is_none(),
+                    "track {:?} both assigned and unassigned {:?}",
+                    tx,
+                    now);
         }
         // for all assigned_tracks, push this track onto the blob
         for (tx, bx) in assigned_tracks {
-            self.live_blobs[bx].use_track(self.live_tracks[tx].id);
+            let bxid = self.live_blobs[bx].id;
+            let txid = self.live_tracks[tx].id;
+            assert!(!unassigned_tracks.contains(&tx), "track {:?} both assigned to {:?} and unassigned {:?}", txid, bxid, now);
+            // println!("{:?} assign {:?} to {:?}", now, txid, bxid);
+            for b in self.live_blobs.iter_mut() {
+                if b.id != bxid {
+                    if b.contains_live_track(txid) {
+                        // println!("{:?} blob {:?} stole track {:?} from {:?}", now, bxid, txid, b.id);
+                        b.forget_track(txid);
+                    }
+                }
+            }
+            self.live_blobs[bx].use_track(txid);
         }
 
         let mut blobbed = vec![];
@@ -772,6 +850,7 @@ impl MappyState {
                     let mut blob = SpriteBlob::new(self.dead_blobs.len() + self.live_blobs.len());
                     blob.use_track(self.live_tracks[tx].id);
                     blob.use_track(self.live_tracks[ty].id);
+                    println!("{:?} create blob {:?} from {:?} {:?}", now, blob.id, self.live_tracks[tx].id, self.live_tracks[ty].id);
                     blobbed.push(txi);
                     blobbed.push(tyi);
                     for (tzi, &tz) in unassigned_tracks.iter().enumerate().skip(tyi + 1) {
@@ -786,6 +865,7 @@ impl MappyState {
                         ) < Self::BLOB_THRESHOLD
                         {
                             blob.use_track(self.live_tracks[tz].id);
+                            println!("{:?} extend blob {:?} with {:?}", now, blob.id, self.live_tracks[tz].id);
                             blobbed.push(tzi);
                         }
                     }
@@ -797,6 +877,14 @@ impl MappyState {
         // update centroids of all blobs
         for b in self.live_blobs.iter_mut() {
             b.update_position(self.now, &self.live_tracks);
+        }
+
+        for (b1i, b1) in self.live_blobs.iter().enumerate() {
+            for b2 in self.live_blobs.iter().skip(b1i+1) {
+                for t in b1.live_tracks.iter() {
+                    assert!(!b2.live_tracks.contains(t), "track {:?} appears in two blobs {:?} {:?} at {:?}", t, b1.id, b2.id, now);
+                }
+            }
         }
     }
 
