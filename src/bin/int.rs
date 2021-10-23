@@ -259,6 +259,11 @@ zxcvbnm,./ for debug displays"
                 // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
                 emu.copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
+                let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
+                assert!(pre.is_empty());
+                assert!(post.is_empty());
+                assert_eq!(mid.len(), w * h);
+                game_img.update(&mid);
             }
             mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
             frame_counter += 1;
@@ -274,11 +279,7 @@ zxcvbnm,./ for debug displays"
             }
             accum -= 1.0;
         }
-        let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
-        assert!(pre.is_empty());
-        assert!(post.is_empty());
-        assert_eq!(mid.len(), w * h);
-        game_img.update(&mid);
+
         update_texture(game_tex, &game_img);
         draw_texture_ex(
             game_tex,
@@ -415,6 +416,15 @@ zxcvbnm,./ for debug displays"
                             col,
                         );
                     }
+                    let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
+                    draw_rectangle_lines(
+                        sd.x as f32 * SCALE,
+                        sd.y as f32 * SCALE,
+                        sd.width() as f32 * SCALE,
+                        sd.height() as f32 * SCALE,
+                        2.0,
+                        col,
+                    );
                 }
             }
         }
