@@ -1,9 +1,12 @@
 use macroquad::*;
 use mappy::{MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
-use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
+use std::{
+    io::{Read, Write},
+    path::PathBuf,
+};
 
 const SCALE: f32 = 3.0;
 
@@ -18,20 +21,9 @@ fn window_conf() -> Conf {
 }
 
 fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
-    let start = Instant::now();
-    for (frames, inp) in inputs.iter().enumerate() {
+    for (_frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
         mappy.process_screen(emu, *inp);
-        if frames % 300 == 0 {
-            println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-            println!("Known tiles: {:?}", mappy.tiles.read().unwrap().gfx_count());
-            println!(
-                "Net: {:} for {:} inputs, avg {:}",
-                start.elapsed().as_secs_f64(),
-                frames,
-                start.elapsed().as_secs_f64() / (frames as f64)
-            );
-        }
     }
 }
 
@@ -43,8 +35,16 @@ async fn main() {
     let romfile = Path::new(args[1].as_str());
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
+    let mut scroll_dumper = Some(ScrollDumper::new(
+        Path::new("images/"),
+        romname.to_str().unwrap(),
+    ));
 
-    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
+    let mut emu = Emulator::create(
+        Path::new("../libretro-fceumm/fceumm_libretro"),
+        Path::new(romfile),
+    );
+    // let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
     let mut start_state = vec![0; emu.save_size()];
     let mut save_buf = vec![0; emu.save_size()];
@@ -200,6 +200,11 @@ zxcvbnm,./ for debug displays"
                 println!("Dumped {}", n);
             } else {
                 // TODO clear mappy too?
+                scroll_dumper.take().map(|d| d.finish(&inputs));
+                scroll_dumper = Some(ScrollDumper::new(
+                    Path::new("images/"),
+                    romname.to_str().unwrap(),
+                ));
                 emu.load(&start_state);
                 mappy.handle_reset();
                 frame_counter = 0;
@@ -267,6 +272,9 @@ zxcvbnm,./ for debug displays"
             }
             mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
             frame_counter += 1;
+            scroll_dumper
+                .as_mut()
+                .map(|dump| dump.update(&mappy, &mut fb, &emu));
             if frame_counter % 300 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
                 // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
@@ -478,6 +486,7 @@ zxcvbnm,./ for debug displays"
     }
     mappy.finish();
     println!("{}", mappy.timers);
+    scroll_dumper.take().map(|d| d.finish(&inputs));
     //mappy.dump_tiles(Path::new("out/"));
 }
 
@@ -487,4 +496,70 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let tx = (x + mappy.scroll.0) / TILE_SIZE as i32;
     let ty = (y + mappy.scroll.1) / TILE_SIZE as i32;
     (tx, ty)
+}
+
+struct ScrollDumper {
+    csv: std::fs::File,
+    fm2_path: PathBuf,
+    image_folder: PathBuf,
+    // Since we don't output relative scrolls every frame,
+    scroll: (i32, i32),
+    output_interval: usize,
+    frame_counter: usize,
+}
+
+impl ScrollDumper {
+    fn new(data_root: &Path, rom_name: &str) -> Self {
+        let date_str = format!("{}", chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"));
+        let image_folder = data_root
+            .join(Path::new(&rom_name))
+            .join(Path::new(&date_str));
+        std::fs::create_dir_all(image_folder.clone()).unwrap();
+        let base_path = data_root.join(Path::new(&rom_name));
+        let csv_path = base_path.join(Path::new(&(date_str.clone() + ".csv")));
+        let csv = std::fs::File::create(csv_path).unwrap();
+        let fm2_path = base_path.join(Path::new(&(date_str + ".fm2")));
+        Self {
+            csv,
+            fm2_path,
+            image_folder,
+            scroll: (0, 0),
+            output_interval: 7,
+            frame_counter: 0,
+        }
+    }
+    fn update(&mut self, mappy: &MappyState, fb: &mut [u8], emu: &Emulator) {
+        self.frame_counter += 1;
+        if self.frame_counter % self.output_interval == 0 {
+            use image::ImageBuffer;
+            emu.copy_framebuffer_rgba8888(fb)
+                .expect("Couldn't copy emulator framebuffer");
+            let (w, h) = emu.framebuffer_size();
+            let img: ImageBuffer<image::Rgba<u8>, &mut [u8]> =
+                ImageBuffer::from_raw(w as u32, h as u32, fb).unwrap();
+            img.save(format!(
+                "{}/{}.png",
+                self.image_folder.display(),
+                self.frame_counter
+            ))
+            .unwrap();
+            println!(
+                "{},{},{}",
+                self.frame_counter,
+                mappy.scroll.0 - self.scroll.0,
+                mappy.scroll.1 - self.scroll.1
+            );
+            self.csv
+                .write_fmt(format_args!(
+                    "{},{}\n",
+                    mappy.scroll.0 - self.scroll.0,
+                    mappy.scroll.1 - self.scroll.1
+                ))
+                .expect("Couldn't write scroll data to csv");
+            self.scroll = mappy.scroll;
+        }
+    }
+    fn finish(self, inputs: &[[Buttons; 2]]) {
+        mappy::write_fm2(inputs, &self.fm2_path);
+    }
 }

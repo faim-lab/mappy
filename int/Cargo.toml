@@ -10,3 +10,5 @@ edition = "2021"
 macroquad = { git = "https://github.com/not-fl3/macroquad", rev="31cff5d89ed17a6c83f39cf6568348dab25145dc" }
 mappy = {path="../mappy"}
 retro-rs = { git = "https://github.com/JoeOsborn/retro-rs", branch="master" }
+chrono="0.4.22"
+image = "0.24.4"
