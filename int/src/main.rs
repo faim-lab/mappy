@@ -517,7 +517,8 @@ impl ScrollDumper {
         std::fs::create_dir_all(image_folder.clone()).unwrap();
         let base_path = data_root.join(Path::new(&rom_name));
         let csv_path = base_path.join(Path::new(&(date_str.clone() + ".csv")));
-        let csv = std::fs::File::create(csv_path).unwrap();
+        let mut csv = std::fs::File::create(csv_path).unwrap();
+        csv.write_all("x,y\n".as_bytes()).unwrap();
         let fm2_path = base_path.join(Path::new(&(date_str + ".fm2")));
         Self {
             csv,
