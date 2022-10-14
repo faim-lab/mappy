@@ -1,12 +1,10 @@
-use macroquad::*;
+use macroquad::prelude::*;
 use mappy::{MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
-use std::{
-    io::{Read, Write},
-    path::PathBuf,
-};
+mod scroll;
 
 const SCALE: f32 = 3.0;
 
@@ -35,7 +33,7 @@ async fn main() {
     let romfile = Path::new(args[1].as_str());
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
-    let mut scroll_dumper = Some(ScrollDumper::new(
+    let mut scroll_dumper = Some(scroll::ScrollDumper::new(
         Path::new("images/"),
         romname.to_str().unwrap(),
     ));
@@ -59,7 +57,7 @@ async fn main() {
 
     let mut game_img = Image::gen_image_color(w as u16, h as u16, WHITE);
     let mut fb = vec![0_u8; w * h * 4];
-    let game_tex = load_texture_from_image(&game_img);
+    let game_tex = macroquad::texture::Texture2D::from_image(&game_img);
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
@@ -201,7 +199,7 @@ zxcvbnm,./ for debug displays"
             } else {
                 // TODO clear mappy too?
                 scroll_dumper.take().map(|d| d.finish(&inputs));
-                scroll_dumper = Some(ScrollDumper::new(
+                scroll_dumper = Some(scroll::ScrollDumper::new(
                     Path::new("images/"),
                     romname.to_str().unwrap(),
                 ));
@@ -264,11 +262,7 @@ zxcvbnm,./ for debug displays"
                 // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
                 emu.copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
-                let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
-                assert!(pre.is_empty());
-                assert!(post.is_empty());
-                assert_eq!(mid.len(), w * h);
-                game_img.update(&mid);
+                game_img.bytes.copy_from_slice(&fb);
             }
             mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
             frame_counter += 1;
@@ -288,7 +282,7 @@ zxcvbnm,./ for debug displays"
             accum -= 1.0;
         }
 
-        update_texture(game_tex, &game_img);
+        game_tex.update(&game_img);
         draw_texture_ex(
             game_tex,
             0.,
@@ -401,8 +395,8 @@ zxcvbnm,./ for debug displays"
                         as f32,
                 );
                 draw_rectangle(
-                    SCALE * (startp.x().max(0.)).min(w as f32) - SCALE * 2.,
-                    SCALE * (startp.y().max(0.)).min(h as f32) - SCALE * 2.,
+                    SCALE * (startp.x.max(0.)).min(w as f32) - SCALE * 2.,
+                    SCALE * (startp.y.max(0.)).min(h as f32) - SCALE * 2.,
                     SCALE * 4.,
                     SCALE * 4.,
                     col,
@@ -458,12 +452,7 @@ zxcvbnm,./ for debug displays"
         }
         if mappy.mapping {
             //draw a little red circle in the corner
-            draw_circle(
-                8.0 * SCALE,
-                8.0 * SCALE,
-                4.0 * SCALE,
-                Color([255, 0, 0, 255]),
-            );
+            draw_circle(8.0 * SCALE, 8.0 * SCALE, 4.0 * SCALE, RED);
         }
         // Avatar ID visualizer (press m to activate)
         if avatar_indicator {
@@ -494,71 +483,4 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let x = (x / SCALE) as i32;
     let y = (y / SCALE) as i32;
     mappy.screen_to_tile(x, y)
-}
-
-struct ScrollDumper {
-    csv: std::fs::File,
-    fm2_path: PathBuf,
-    image_folder: PathBuf,
-    // Since we don't output relative scrolls every frame,
-    scroll: (i32, i32),
-    output_interval: usize,
-    frame_counter: usize,
-}
-
-impl ScrollDumper {
-    fn new(data_root: &Path, rom_name: &str) -> Self {
-        let date_str = format!("{}", chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"));
-        let image_folder = data_root
-            .join(Path::new(&rom_name))
-            .join(Path::new(&date_str));
-        std::fs::create_dir_all(image_folder.clone()).unwrap();
-        let base_path = data_root.join(Path::new(&rom_name));
-        let csv_path = base_path.join(Path::new(&(date_str.clone() + ".csv")));
-        let mut csv = std::fs::File::create(csv_path).unwrap();
-        csv.write_all("x,y\n".as_bytes()).unwrap();
-        let fm2_path = base_path.join(Path::new(&(date_str + ".fm2")));
-        Self {
-            csv,
-            fm2_path,
-            image_folder,
-            scroll: (0, 0),
-            output_interval: 7,
-            frame_counter: 0,
-        }
-    }
-    fn update(&mut self, mappy: &MappyState, fb: &mut [u8], emu: &Emulator) {
-        self.frame_counter += 1;
-        if self.frame_counter % self.output_interval == 0 {
-            use image::ImageBuffer;
-            emu.copy_framebuffer_rgba8888(fb)
-                .expect("Couldn't copy emulator framebuffer");
-            let (w, h) = emu.framebuffer_size();
-            let img: ImageBuffer<image::Rgba<u8>, &mut [u8]> =
-                ImageBuffer::from_raw(w as u32, h as u32, fb).unwrap();
-            img.save(format!(
-                "{}/{}.png",
-                self.image_folder.display(),
-                self.frame_counter
-            ))
-            .unwrap();
-            println!(
-                "{},{},{}",
-                self.frame_counter,
-                mappy.scroll.0 - self.scroll.0,
-                mappy.scroll.1 - self.scroll.1
-            );
-            self.csv
-                .write_fmt(format_args!(
-                    "{},{}\n",
-                    mappy.scroll.0 - self.scroll.0,
-                    mappy.scroll.1 - self.scroll.1
-                ))
-                .expect("Couldn't write scroll data to csv");
-            self.scroll = mappy.scroll;
-        }
-    }
-    fn finish(self, inputs: &[[Buttons; 2]]) {
-        mappy::write_fm2(inputs, &self.fm2_path);
-    }
 }
