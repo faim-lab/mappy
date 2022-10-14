@@ -271,12 +271,12 @@ impl MappyState {
         if self.has_control {
             let sdiff = scroll_diff(self.scroll, self.last_controlled_scroll);
             if !had_control {
-                println!(
-                    "{:?}: Regained control after {:?}; scrolldiff {:?}",
-                    self.now.0,
-                    self.now.0 - last_control_time.0,
-                    sdiff
-                );
+                // println!(
+                //     "{:?}: Regained control after {:?}; scrolldiff {:?}",
+                //     self.now.0,
+                //     self.now.0 - last_control_time.0,
+                //     sdiff
+                // );
             }
             if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
                 || sdiff.0.abs() as u32 >= (sw * 3) / 4
@@ -284,13 +284,13 @@ impl MappyState {
             {
                 let diff = self.current_screen.difference(&self.last_control_screen);
                 if !had_control {
-                    println!(
-                        "{:?}: Regained control after {:?}; diff {:?}, scrolldiff {:?}",
-                        self.now.0,
-                        self.now.0 - last_control_time.0,
-                        diff,
-                        scroll_diff(self.scroll, self.last_controlled_scroll)
-                    );
+                    // println!(
+                    //     "{:?}: Regained control after {:?}; diff {:?}, scrolldiff {:?}",
+                    //     self.now.0,
+                    //     self.now.0 - last_control_time.0,
+                    //     diff,
+                    //     scroll_diff(self.scroll, self.last_controlled_scroll)
+                    // );
                 }
                 let moderate_difference = diff > Self::SCREEN_ROOM_CHANGE_DIFF_MODERATE;
                 let big_difference = diff > Self::SCREEN_ROOM_CHANGE_DIFF_BIG;
@@ -361,20 +361,20 @@ impl MappyState {
             while let Ok(DoMerge(phase, room_id, metas)) = self.room_merge_rx.try_recv() {
                 match phase {
                     MergePhase::Intermediate => {
-                        for (metaroom, posn, cost) in metas {
-                            //metarooms[meta].merge_room(room_id, posn, cost);
-                            println!(
-                                "Temp merge {} with {:?}: {}@{:?}",
-                                room_id, metaroom, cost, posn
-                            );
-                            // println!(
-                            //     "RR:{:?}\nMRR:{:?}",
-                            //     self.current_room.as_ref().unwrap().region(),
-                            //     self.metarooms
-                            //         .metaroom(metaroom.0)
-                            //         .region(&(*self.rooms.read().unwrap()))
-                            // )
-                        }
+                        // for (metaroom, posn, cost) in metas {
+                        //metarooms[meta].merge_room(room_id, posn, cost);
+                        // println!(
+                        //     "Temp merge {} with {:?}: {}@{:?}",
+                        //     room_id, metaroom, cost, posn
+                        // );
+                        // println!(
+                        //     "RR:{:?}\nMRR:{:?}",
+                        //     self.current_room.as_ref().unwrap().region(),
+                        //     self.metarooms
+                        //         .metaroom(metaroom.0)
+                        //         .region(&(*self.rooms.read().unwrap()))
+                        // )
+                        // }
                     }
                     MergePhase::Finalize => {
                         //let room_meta = self.metarooms.insert(room_id);
@@ -395,7 +395,7 @@ impl MappyState {
                     let cur = self.current_room.as_ref().unwrap();
                     cur.id + 1
                 };
-                println!("Enter room {}", id);
+                // println!("Enter room {}", id);
                 self.current_room
                     .replace(Room::new(
                         id,
@@ -405,7 +405,7 @@ impl MappyState {
                     .unwrap()
             } else {
                 let old_room = self.current_room.take().unwrap();
-                println!("Room end {}: {:?}", old_room.id, old_room.region());
+                // println!("Room end {}: {:?}", old_room.id, old_room.region());
                 old_room
             };
             old_room = old_room.finalize(self.tiles.read().unwrap().get_initial_change());
@@ -414,7 +414,7 @@ impl MappyState {
             self.rooms.write().unwrap().push(old_room);
         } else if start_new {
             let id = self.rooms.read().unwrap().len();
-            println!("Room refresh {}", id);
+            // println!("Room refresh {}", id);
             self.current_room.replace(Room::new(
                 id,
                 &self.current_screen,
@@ -502,7 +502,7 @@ impl MappyState {
             }
         }
         if new_ts > 10 {
-            println!("{:?} new tiles", new_ts);
+            // println!("{:?} new tiles", new_ts);
             MappyState::dump_tiles_single(
                 &Path::new("out").join(format!("tiles_{}.png", self.now.0)),
                 &tiles,
@@ -627,7 +627,7 @@ impl MappyState {
         self.live_tracks.retain(|t| {
             if now.0 - t.last_observation_time().0 > Self::DESTROY_COAST {
                 let id = t.id;
-                println!("{:?} kill {:?}",now,id);
+                // println!("{:?} kill {:?}",now,id);
                 // TODO this clone shouldn't be necessary
                 dead_tracks.push(t.clone());
                 // mark t as dead in all blobs using t;
@@ -635,7 +635,7 @@ impl MappyState {
                 for b in live_blobs.iter_mut() {
                     b.kill_track(id);
                     if b.is_dead() {
-                        println!("{:?} kill blob {:?}", now, b.id);
+                        // println!("{:?} kill blob {:?}", now, b.id);
                         dead_blob_ids.push(b.id);
                     }
                 }
@@ -662,24 +662,29 @@ impl MappyState {
         let candidates: Vec<_> = live
             .iter()
             .map(|s| {
-                let mut options:Vec<_> = self.live_tracks.iter().enumerate().filter_map(|(ti, old)| {
-                    if (s.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
-                        Some(Target(Some(ti), Self::sprite_change_cost(s, &old)))
-                    } else {
-                        None
-                    }
-                }).collect();
+                let mut options: Vec<_> = self
+                    .live_tracks
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(ti, old)| {
+                        if (s.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
+                            Some(Target(Some(ti), Self::sprite_change_cost(s, &old)))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
                 // possible degenerate case: all sprites in same place
                 if options.len() > 16 {
                     // fall back to identity match if possible or else None
-                    options = vec![options.into_iter().find(|Target(oi,_cost)| *oi == Some(s.index as usize)).unwrap_or(Target(None, Self::CREATE_COST))];
+                    options = vec![options
+                        .into_iter()
+                        .find(|Target(oi, _cost)| *oi == Some(s.index as usize))
+                        .unwrap_or(Target(None, Self::CREATE_COST))];
                 } else {
                     options.insert(0, Target(None, Self::CREATE_COST));
                 }
-                MatchTo(
-                    s.index as usize,
-                    options,
-                )
+                MatchTo(s.index as usize, options)
             })
             .collect();
         if candidates.is_empty() {
@@ -687,16 +692,25 @@ impl MappyState {
             return;
         }
         // break up the candidates vec into separate vecs with options that overlap on any index
-        fn connected_components(candidates:Vec<MatchTo>) -> Vec<Vec<MatchTo>> {
-            fn opts_overlap(opts1:&[Target], opts2:&[Target]) -> bool {
-                opts1.iter().find(| Target(maybe_old1, _) |
-                                  maybe_old1.is_some() && opts2.iter().find(| Target(maybe_old2, _) | maybe_old2 == maybe_old1).is_some()
-                ).is_some()
+        fn connected_components(candidates: Vec<MatchTo>) -> Vec<Vec<MatchTo>> {
+            fn opts_overlap(opts1: &[Target], opts2: &[Target]) -> bool {
+                opts1
+                    .iter()
+                    .find(|Target(maybe_old1, _)| {
+                        maybe_old1.is_some()
+                            && opts2
+                                .iter()
+                                .find(|Target(maybe_old2, _)| maybe_old2 == maybe_old1)
+                                .is_some()
+                    })
+                    .is_some()
             }
-            fn spider(candidates:&[MatchTo], gis:&mut [usize], ci1:usize) {
+            fn spider(candidates: &[MatchTo], gis: &mut [usize], ci1: usize) {
                 // recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
-                for (ci2,MatchTo(_new, opts)) in candidates.iter().enumerate() {
-                    if gis[ci2] != 0 { continue; }
+                for (ci2, MatchTo(_new, opts)) in candidates.iter().enumerate() {
+                    if gis[ci2] != 0 {
+                        continue;
+                    }
                     if opts_overlap(opts, &candidates[ci1].1) {
                         gis[ci2] = gis[ci1];
                         spider(candidates, gis, ci2);
@@ -707,18 +721,20 @@ impl MappyState {
             let mut gis = vec![0; candidates.len()];
             for ci in 0..candidates.len() {
                 // if it's already in a group, do nothing
-                if gis[ci] != 0 { continue; }
+                if gis[ci] != 0 {
+                    continue;
+                }
                 // otherwise, make a new group
-                gis[ci] = components.len()+1;
+                gis[ci] = components.len() + 1;
                 components.push(vec![]);
                 // and recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
                 spider(&candidates, &mut gis, ci);
             }
             // now everything has been grouped.
-            for (ci,c) in candidates.into_iter().enumerate() {
+            for (ci, c) in candidates.into_iter().enumerate() {
                 assert!(gis[ci] > 0);
                 // translate group IDs to indices in components and add components to group.
-                components[gis[ci]-1].push(c);
+                components[gis[ci] - 1].push(c);
             }
             components
         }
@@ -744,13 +760,17 @@ impl MappyState {
                             self.scroll,
                             self.live_sprites[new],
                         ));
-                        println!("{:?} create {:?}", now, self.live_tracks.last().unwrap().id);
+                        // println!("{:?} create {:?}", now, self.live_tracks.last().unwrap().id);
                     }
                     Some(oldi) => {
                         // match
                         // println!("Update {:?} {:?}", oldi, newi);
                         _matched_count += 1;
-                        self.live_tracks[oldi].update(self.now, self.scroll, self.live_sprites[new]);
+                        self.live_tracks[oldi].update(
+                            self.now,
+                            self.scroll,
+                            self.live_sprites[new],
+                        );
                     }
                 }
             }
@@ -779,7 +799,7 @@ impl MappyState {
                             &self.live_tracks[*tx],
                             &self.live_tracks,
                             Self::BLOB_LOOKBACK,
-                            self.now
+                            self.now,
                         ),
                     )
                 })
@@ -808,16 +828,27 @@ impl MappyState {
                     b.forget_track(id);
                 }
             }
-            assert!(assigned_tracks.iter().find(|(txx,_bx)| *txx == tx).is_none(),
-                    "track {:?} both assigned and unassigned {:?}",
-                    tx,
-                    now);
+            assert!(
+                assigned_tracks
+                    .iter()
+                    .find(|(txx, _bx)| *txx == tx)
+                    .is_none(),
+                "track {:?} both assigned and unassigned {:?}",
+                tx,
+                now
+            );
         }
         // for all assigned_tracks, push this track onto the blob
         for (tx, bx) in assigned_tracks {
             let bxid = self.live_blobs[bx].id;
             let txid = self.live_tracks[tx].id;
-            assert!(!unassigned_tracks.contains(&tx), "track {:?} both assigned to {:?} and unassigned {:?}", txid, bxid, now);
+            assert!(
+                !unassigned_tracks.contains(&tx),
+                "track {:?} both assigned to {:?} and unassigned {:?}",
+                txid,
+                bxid,
+                now
+            );
             // println!("{:?} assign {:?} to {:?}", now, txid, bxid);
             for b in self.live_blobs.iter_mut() {
                 if b.id != bxid {
@@ -844,13 +875,13 @@ impl MappyState {
                     &self.live_tracks[tx],
                     &self.live_tracks[ty],
                     Self::BLOB_LOOKBACK,
-                    self.now
+                    self.now,
                 ) < Self::BLOB_THRESHOLD
                 {
                     let mut blob = SpriteBlob::new(self.dead_blobs.len() + self.live_blobs.len());
                     blob.use_track(self.live_tracks[tx].id);
                     blob.use_track(self.live_tracks[ty].id);
-                    println!("{:?} create blob {:?} from {:?} {:?}", now, blob.id, self.live_tracks[tx].id, self.live_tracks[ty].id);
+                    // println!("{:?} create blob {:?} from {:?} {:?}", now, blob.id, self.live_tracks[tx].id, self.live_tracks[ty].id);
                     blobbed.push(txi);
                     blobbed.push(tyi);
                     for (tzi, &tz) in unassigned_tracks.iter().enumerate().skip(tyi + 1) {
@@ -861,11 +892,11 @@ impl MappyState {
                             &self.live_tracks[tz],
                             &self.live_tracks,
                             Self::BLOB_LOOKBACK,
-                            self.now
+                            self.now,
                         ) < Self::BLOB_THRESHOLD
                         {
                             blob.use_track(self.live_tracks[tz].id);
-                            println!("{:?} extend blob {:?} with {:?}", now, blob.id, self.live_tracks[tz].id);
+                            // println!("{:?} extend blob {:?} with {:?}", now, blob.id, self.live_tracks[tz].id);
                             blobbed.push(tzi);
                         }
                     }
@@ -880,9 +911,16 @@ impl MappyState {
         }
 
         for (b1i, b1) in self.live_blobs.iter().enumerate() {
-            for b2 in self.live_blobs.iter().skip(b1i+1) {
+            for b2 in self.live_blobs.iter().skip(b1i + 1) {
                 for t in b1.live_tracks.iter() {
-                    assert!(!b2.live_tracks.contains(t), "track {:?} appears in two blobs {:?} {:?} at {:?}", t, b1.id, b2.id, now);
+                    assert!(
+                        !b2.live_tracks.contains(t),
+                        "track {:?} appears in two blobs {:?} {:?} at {:?}",
+                        t,
+                        b1.id,
+                        b2.id,
+                        now
+                    );
                 }
             }
         }
@@ -1222,7 +1260,7 @@ pub fn merge_cost(
             // dbg!(room.id,xo,yo,comparisons,cost);
             // }
             if cost < threshold && comparisons > overlap_req {
-                dbg!(room.id, comparisons, cost, (xo, yo));
+                // dbg!(room.id, comparisons, cost, (xo, yo));
                 // assert!(room.id != 1);
                 threshold = cost;
                 best = Some(((xo, yo), cost));

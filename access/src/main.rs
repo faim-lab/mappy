@@ -1,12 +1,13 @@
-use macroquad::*;
+use macroquad::prelude::*;
+// use macroquad::input::KeyCode;
 use mappy::{MappyState, TILE_SIZE};
 use pyo3::prelude::*;
 use retro_rs::{Buttons, Emulator};
+use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
-use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Instant;
 
 const SCALE: f32 = 3.0;
 
@@ -61,7 +62,10 @@ async fn main() {
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
 
-    let emu = Rc::new(RefCell::new(Emulator::create(Path::new("cores/fceumm_libretro"), &romfile)));
+    let emu = Rc::new(RefCell::new(Emulator::create(
+        Path::new("cores/fceumm_libretro"),
+        &romfile,
+    )));
     let (start_state, mut save_buf) = {
         let mut emu = emu.borrow_mut();
         // Have to run emu for one frame before we can get the framebuffer size
@@ -80,7 +84,7 @@ async fn main() {
 
     let mut game_img = Image::gen_image_color(w as u16, h as u16, WHITE);
     let mut fb = vec![0_u8; w * h * 4];
-    let game_tex = load_texture_from_image(&game_img);
+    let game_tex = macroquad::texture::Texture2D::from_image(&game_img);
     let mut frame_counter: u64 = 0;
     let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
     let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
@@ -91,10 +95,14 @@ async fn main() {
     let mappy = Rc::new(RefCell::new(MappyState::new(w, h)));
     if let Some(replayfile) = args.replay {
         mappy::read_fm2(&mut replay_inputs, &replayfile);
-        replay(&mut emu.borrow_mut(), &mut mappy.borrow_mut(), &replay_inputs);
-        inputs.extend(replay_inputs.drain(..));
+        replay(
+            &mut emu.borrow_mut(),
+            &mut mappy.borrow_mut(),
+            &replay_inputs,
+        );
+        inputs.append(&mut replay_inputs);
     }
-    let filter:Option<Py<PyModule>> = args.filter.map(|fpath| {
+    let filter: Option<Py<PyModule>> = args.filter.map(|fpath| {
         Python::with_gil(|py| {
             let basepath = fpath.parent().unwrap_or(Path::new("."));
             pyo3::py_run!(py, basepath, r#"import sys; sys.path.append(basepath);"#);
@@ -105,9 +113,11 @@ async fn main() {
                 fpath.to_str().unwrap(),
                 "access_filter",
             )
-                .expect("Invalid Python filter module").into()
+            .expect("Invalid Python filter module")
+            .into()
         })
     });
+
     let start = Instant::now();
     println!(
         "Instructions
@@ -121,6 +131,8 @@ shift-# for dump inputs #
 
 zxcvbnm,./ for debug displays"
     );
+    let mut selected_sprite = None;
+    let mut selected_tile_pos = None;
     loop {
         // let frame_start = Instant::now();
         if is_key_down(KeyCode::Escape) {
@@ -239,26 +251,37 @@ zxcvbnm,./ for debug displays"
             emu.borrow_mut().run(inputs[inputs.len() - 1]);
             if accum < 2.0 {
                 // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
-                emu.borrow().copy_framebuffer_rgba8888(&mut fb)
+                emu.borrow()
+                    .copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
             }
             // wait for sprite updates...
-            mappy.borrow_mut().process_screen(&mut emu.borrow_mut(), inputs.last().copied().unwrap());
+            mappy
+                .borrow_mut()
+                .process_screen(&mut emu.borrow_mut(), inputs.last().copied().unwrap());
             // then filter
             if accum < 2.0 {
                 if let Some(filter_mod) = &filter {
                     Python::with_gil(|py| {
-                        let filter = filter_mod.getattr(py, "filter").expect("Python filter module does not define `filter` function");
+                        let filter = filter_mod
+                            .getattr(py, "filter")
+                            .expect("Python filter module does not define `filter` function");
                         let fb_len = fb.len();
                         // two copies, eugh
                         let fb_py = pyo3::types::PyByteArray::new(py, &fb);
                         filter
-                            .call1(py, (Mappy{
-                                emulator:Rc::clone(&emu),
-                                mappy:Rc::clone(&mappy),
-                                width:w,
-                                height:h
-                            }, fb_py))
+                            .call1(
+                                py,
+                                (
+                                    Mappy {
+                                        emulator: Rc::clone(&emu),
+                                        mappy: Rc::clone(&mappy),
+                                        width: w,
+                                        height: h,
+                                    },
+                                    fb_py,
+                                ),
+                            )
                             .unwrap_or_else(|e| {
                                 // We can't display Python exceptions via std::fmt::Display,
                                 // so print the error here manually.
@@ -266,7 +289,9 @@ zxcvbnm,./ for debug displays"
                                 panic!();
                             });
                         // and a third
-                        unsafe { fb.copy_from_slice(&fb_py.as_bytes()[..fb_len]); }
+                        unsafe {
+                            fb.copy_from_slice(&fb_py.as_bytes()[..fb_len]);
+                        }
                     });
                 }
             }
@@ -283,12 +308,8 @@ zxcvbnm,./ for debug displays"
             }
             accum -= 1.0;
         }
-        let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
-        assert!(pre.is_empty());
-        assert!(post.is_empty());
-        assert_eq!(mid.len(), w * h);
-        game_img.update(&mid);
-        update_texture(game_tex, &game_img);
+        game_img.bytes.copy_from_slice(&fb);
+        game_tex.update(&game_img);
         draw_texture_ex(
             game_tex,
             0.,
@@ -301,38 +322,69 @@ zxcvbnm,./ for debug displays"
         );
         {
             let mappy = mappy.borrow();
-        if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
-            let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
-            if shifted {
-                println!(
-                    "{},{}  csr {:?}\nsr {:?}\nsc {:?}\ncrr {:?}",
-                    tx,
-                    ty,
-                    mappy.current_screen.region,
-                    mappy.split_region(),
-                    mappy.scroll,
-                    mappy.current_room.as_ref().unwrap().region()
-                );
+            if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
+                let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
+                selected_tile_pos = Some((tx, ty));
             }
-            let change = mappy.current_room.as_ref().unwrap().get(tx, ty).unwrap();
-            let tiles = mappy.tiles.read().unwrap();
-            let change_data = tiles.get_change_by_id(change);
-            println!("{},{} -- {:?},{:?}", tx, ty, change, change_data);
-        }
-        if is_mouse_button_down(MouseButton::Left) {
-            for track in mappy.live_tracks.iter() {
-                let (mx, my) = mouse_position();
-                if mappy::sprites::overlapping_sprite(
-                    (mx / SCALE) as usize,
-                    (my / SCALE) as usize,
-                    2,
-                    2,
-                    &[*track.current_data()],
-                ) {
-                    println!("S:{:?}", track.positions.last().unwrap());
+            if let Some((tx, ty)) = selected_tile_pos {
+                let (sx, sy) = tile_to_screen((tx, ty), &mappy);
+                draw_rectangle_lines(sx, sy, 8.0 * SCALE, 8.0 * SCALE, 1.0 * SCALE, RED);
+                if let Some(change) = mappy.current_room.as_ref().unwrap().get(tx, ty) {
+                    let tiles = mappy.tiles.read().unwrap();
+                    let change_data = tiles.get_change_by_id(change);
+                    if let Some(cd) = change_data {
+                        let to = cd.to;
+                        let tile = tiles.get_tile_by_id(to).unwrap();
+                        println!("T: {},{} -- {:?}", tx, ty, tile.perceptual_hash());
+                        draw_text(
+                            &format!("{},{} -- {:?}", tx, ty, tile.perceptual_hash()),
+                            SCALE,
+                            SCALE * 16.0,
+                            SCALE * 16.0,
+                            RED,
+                        );
+                    }
                 }
             }
-        }
+            if is_mouse_button_down(MouseButton::Left) {
+                // selected_sprite = None;
+                for track in mappy.live_tracks.iter() {
+                    let (mx, my) = mouse_position();
+                    if mappy::sprites::overlapping_sprite(
+                        (mx / SCALE) as usize,
+                        (my / SCALE) as usize,
+                        2,
+                        2,
+                        &[*track.current_data()],
+                    ) {
+                        selected_sprite = Some(track.id);
+                    }
+                }
+            }
+            if let Some(track) = selected_sprite
+                .and_then(|track_id| mappy.live_tracks.iter().find(|t| t.id == track_id))
+            {
+                let (wx, wy) = track.current_point();
+                let (base_sx, base_sy) = (wx - mappy.scroll.0, wy - mappy.scroll.1);
+                draw_rectangle_lines(
+                    base_sx as f32 * SCALE,
+                    base_sy as f32 * SCALE,
+                    8.0 * SCALE,
+                    track.current_data().height() as f32 * SCALE,
+                    1.0 * SCALE,
+                    BLUE,
+                );
+                let data = track.current_data();
+                let (px, py) = track.current_point();
+                println!("S: {},{} -- {}", px, py, data.key());
+                draw_text(
+                    &format!("{},{} -- {}", wx, wy, data.key()),
+                    w as f32 * SCALE - 100.0 * SCALE,
+                    SCALE * 16.0,
+                    SCALE * 16.0,
+                    BLUE,
+                );
+            }
         }
         next_frame().await;
     }
@@ -347,66 +399,86 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let ty = (y + mappy.scroll.1) / TILE_SIZE as i32;
     (tx, ty)
 }
-
+fn tile_to_screen((x, y): (i32, i32), mappy: &MappyState) -> (f32, f32) {
+    let x = x as f32 * SCALE * TILE_SIZE as f32;
+    let y = y as f32 * SCALE * TILE_SIZE as f32;
+    let sx = x - mappy.scroll.0 as f32 * SCALE;
+    let sy = y - mappy.scroll.1 as f32 * SCALE;
+    (sx, sy)
+}
 
 #[pyclass(unsendable)]
 struct Mappy {
-    mappy:Rc<RefCell<MappyState>>,
+    mappy: Rc<RefCell<MappyState>>,
     #[allow(dead_code)]
-    emulator:Rc<RefCell<Emulator>>,
+    emulator: Rc<RefCell<Emulator>>,
     #[pyo3(get)]
-    width:usize,
+    width: usize,
     #[pyo3(get)]
-    height:usize,
+    height: usize,
     // TODO: mouse position, held keys
 }
 
 #[pymethods]
 impl Mappy {
     #[getter]
-    fn scroll(&self) -> PyResult<(i32,i32)> {
+    fn scroll(&self) -> PyResult<(i32, i32)> {
         Ok(self.mappy.borrow().scroll)
     }
     #[getter]
     fn sprites(&self) -> PyResult<Vec<Sprite>> {
-        Ok(self.mappy.borrow().prev_sprites.iter().filter_map(|s| if s.is_valid() { Some(Sprite{sprite:*s})} else { None }).collect::<Vec<_>>())
+        Ok(self
+            .mappy
+            .borrow()
+            .prev_sprites
+            .iter()
+            .filter_map(|s| {
+                if s.is_valid() {
+                    Some(Sprite { sprite: *s })
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>())
     }
     #[getter]
-    fn playfield(&self) -> PyResult<(i32,i32,u32,u32)> {
-        let mappy::Rect {x,y,w,h} = self.mappy.borrow().split_region();
-        Ok((x,y,w,h))
+    fn playfield(&self) -> PyResult<(i32, i32, u32, u32)> {
+        let mappy::Rect { x, y, w, h } = self.mappy.borrow().split_region();
+        Ok((x, y, w, h))
     }
-    fn screen_tile_at(&self, x:i32, y:i32) -> PyResult<u32> {
+    fn screen_tile_at(&self, x: i32, y: i32) -> PyResult<u32> {
         let mappy = self.mappy.borrow();
-        let t = mappy.current_room.as_ref().unwrap().get(x,y).unwrap();
+        let t = mappy.current_room.as_ref().unwrap().get(x, y).unwrap();
         Ok(t.index())
     }
-    fn tile_hash(&self, idx:usize) -> PyResult<u128> {
+    fn tile_hash(&self, idx: usize) -> PyResult<u128> {
         let mappy = self.mappy.borrow();
         let db = mappy.tiles.read().unwrap();
         let tgfx = db.get_tile_by_index(idx).unwrap();
         Ok(tgfx.perceptual_hash())
-        }
+    }
     /// Fills `into` with the pixels of tile_gfx.
-    fn read_tile_gfx(&self, idx:usize, into:&pyo3::types::PyByteArray) -> PyResult<()> {
+    fn read_tile_gfx(&self, idx: usize, into: &pyo3::types::PyByteArray) -> PyResult<()> {
         let mappy = self.mappy.borrow();
         let db = mappy.tiles.read().unwrap();
-        assert!(into.len() >= mappy::tile::TILE_NUM_PX*3);
+        assert!(into.len() >= mappy::tile::TILE_NUM_PX * 3);
         let tgfx = db.get_tile_by_index(idx).unwrap();
-        tgfx.write_rgb888(unsafe {into.as_bytes_mut()});
+        tgfx.write_rgb888(unsafe { into.as_bytes_mut() });
         Ok(())
     }
-    fn room_tile_at(&self, x:i32, y:i32) -> PyResult<(u16,u16)> {
+    fn room_tile_at(&self, x: i32, y: i32) -> PyResult<(u16, u16)> {
         let mappy = self.mappy.borrow();
         let db = mappy.tiles.read().unwrap();
-        let tc = db.get_change_by_id(mappy.current_room.as_ref().unwrap().get(x,y).unwrap()).unwrap();
-        Ok((tc.from.index(),tc.to.index()))
+        let tc = db
+            .get_change_by_id(mappy.current_room.as_ref().unwrap().get(x, y).unwrap())
+            .unwrap();
+        Ok((tc.from.index(), tc.to.index()))
     }
     // TODO queries for tracks, ...
 }
 #[pyclass]
 struct Sprite {
-    sprite:mappy::sprites::SpriteData
+    sprite: mappy::sprites::SpriteData,
 }
 
 #[pymethods]
