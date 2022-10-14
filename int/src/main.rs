@@ -493,9 +493,7 @@ zxcvbnm,./ for debug displays"
 fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let x = (x / SCALE) as i32;
     let y = (y / SCALE) as i32;
-    let tx = (x + mappy.scroll.0) / TILE_SIZE as i32;
-    let ty = (y + mappy.scroll.1) / TILE_SIZE as i32;
-    (tx, ty)
+    mappy.screen_to_tile(x, y)
 }
 
 struct ScrollDumper {

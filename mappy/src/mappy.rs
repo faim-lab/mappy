@@ -965,6 +965,31 @@ impl MappyState {
         }
         out_to
     }
+    pub fn world_to_tile(&self, wx: i32, wy: i32) -> (i32, i32) {
+        (wx / TILE_SIZE as i32, wy / TILE_SIZE as i32)
+    }
+    pub fn tile_to_world(&self, tx: i32, ty: i32) -> (i32, i32) {
+        (tx * TILE_SIZE as i32, ty * TILE_SIZE as i32)
+    }
+    pub fn world_to_screen(&self, wx: i32, wy: i32) -> (i32, i32) {
+        (wx - self.scroll.0, wy - self.scroll.1)
+    }
+    pub fn screen_to_world(&self, sx: i32, sy: i32) -> (i32, i32) {
+        (sx + self.scroll.0, sy + self.scroll.1)
+    }
+    pub fn screen_to_tile(&self, sx: i32, sy: i32) -> (i32, i32) {
+        (
+            sx + self.scroll.0 / TILE_SIZE as i32,
+            sy + self.scroll.1 / TILE_SIZE as i32,
+        )
+    }
+    pub fn tile_to_screen(&self, tx: i32, ty: i32) -> (i32, i32) {
+        (
+            tx * TILE_SIZE as i32 - self.scroll.0,
+            ty * TILE_SIZE as i32 - self.scroll.1,
+        )
+    }
+
     pub fn dump_map(&self, dotfolder: &Path) {
         use std::collections::BTreeMap;
         use std::fs;

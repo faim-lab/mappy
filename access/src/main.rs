@@ -1,13 +1,13 @@
 use macroquad::prelude::*;
 // use macroquad::input::KeyCode;
-use mappy::{MappyState, TILE_SIZE};
-use pyo3::prelude::*;
+use mappy::MappyState;
 use retro_rs::{Buttons, Emulator};
 use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Instant;
+mod mappy_py;
 
 const SCALE: f32 = 3.0;
 
@@ -102,22 +102,9 @@ async fn main() {
         );
         inputs.append(&mut replay_inputs);
     }
-    let filter: Option<Py<PyModule>> = args.filter.map(|fpath| {
-        Python::with_gil(|py| {
-            let basepath = fpath.parent().unwrap_or(Path::new("."));
-            pyo3::py_run!(py, basepath, r#"import sys; sys.path.append(basepath);"#);
-            PyModule::from_code(
-                py,
-                &std::fs::read_to_string(&fpath)
-                    .expect("Python filter module: file not found at given path"),
-                fpath.to_str().unwrap(),
-                "access_filter",
-            )
-            .expect("Invalid Python filter module")
-            .into()
-        })
-    });
-
+    let filter = args
+        .filter
+        .map(|fpath| mappy_py::load_module(&fpath, "access_filter"));
     let start = Instant::now();
     println!(
         "Instructions
@@ -262,32 +249,19 @@ zxcvbnm,./ for debug displays"
             // then filter
             if accum < 2.0 {
                 if let Some(filter_mod) = &filter {
-                    Python::with_gil(|py| {
+                    mappy_py::with_mappy(Rc::clone(&emu), Rc::clone(&mappy), |py, mappy_py| {
                         let filter = filter_mod
                             .getattr(py, "filter")
                             .expect("Python filter module does not define `filter` function");
                         let fb_len = fb.len();
                         // two copies, eugh
                         let fb_py = pyo3::types::PyByteArray::new(py, &fb);
-                        filter
-                            .call1(
-                                py,
-                                (
-                                    Mappy {
-                                        emulator: Rc::clone(&emu),
-                                        mappy: Rc::clone(&mappy),
-                                        width: w,
-                                        height: h,
-                                    },
-                                    fb_py,
-                                ),
-                            )
-                            .unwrap_or_else(|e| {
-                                // We can't display Python exceptions via std::fmt::Display,
-                                // so print the error here manually.
-                                e.print_and_set_sys_last_vars(py);
-                                panic!();
-                            });
+                        filter.call1(py, (mappy_py, fb_py)).unwrap_or_else(|e| {
+                            // We can't display Python exceptions via std::fmt::Display,
+                            // so print the error here manually.
+                            e.print_and_set_sys_last_vars(py);
+                            panic!();
+                        });
                         // and a third
                         unsafe {
                             fb.copy_from_slice(&fb_py.as_bytes()[..fb_len]);
@@ -365,7 +339,7 @@ zxcvbnm,./ for debug displays"
                 .and_then(|track_id| mappy.live_tracks.iter().find(|t| t.id == track_id))
             {
                 let (wx, wy) = track.current_point();
-                let (base_sx, base_sy) = (wx - mappy.scroll.0, wy - mappy.scroll.1);
+                let (base_sx, base_sy) = mappy.world_to_screen(wx, wy);
                 draw_rectangle_lines(
                     base_sx as f32 * SCALE,
                     base_sy as f32 * SCALE,
@@ -395,132 +369,9 @@ zxcvbnm,./ for debug displays"
 fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let x = (x / SCALE) as i32;
     let y = (y / SCALE) as i32;
-    let tx = (x + mappy.scroll.0) / TILE_SIZE as i32;
-    let ty = (y + mappy.scroll.1) / TILE_SIZE as i32;
-    (tx, ty)
+    mappy.screen_to_tile(x, y)
 }
 fn tile_to_screen((x, y): (i32, i32), mappy: &MappyState) -> (f32, f32) {
-    let x = x as f32 * SCALE * TILE_SIZE as f32;
-    let y = y as f32 * SCALE * TILE_SIZE as f32;
-    let sx = x - mappy.scroll.0 as f32 * SCALE;
-    let sy = y - mappy.scroll.1 as f32 * SCALE;
-    (sx, sy)
-}
-
-#[pyclass(unsendable)]
-struct Mappy {
-    mappy: Rc<RefCell<MappyState>>,
-    #[allow(dead_code)]
-    emulator: Rc<RefCell<Emulator>>,
-    #[pyo3(get)]
-    width: usize,
-    #[pyo3(get)]
-    height: usize,
-    // TODO: mouse position, held keys
-}
-
-#[pymethods]
-impl Mappy {
-    #[getter]
-    fn scroll(&self) -> PyResult<(i32, i32)> {
-        Ok(self.mappy.borrow().scroll)
-    }
-    #[getter]
-    fn sprites(&self) -> PyResult<Vec<Sprite>> {
-        Ok(self
-            .mappy
-            .borrow()
-            .prev_sprites
-            .iter()
-            .filter_map(|s| {
-                if s.is_valid() {
-                    Some(Sprite { sprite: *s })
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>())
-    }
-    #[getter]
-    fn playfield(&self) -> PyResult<(i32, i32, u32, u32)> {
-        let mappy::Rect { x, y, w, h } = self.mappy.borrow().split_region();
-        Ok((x, y, w, h))
-    }
-    fn screen_tile_at(&self, x: i32, y: i32) -> PyResult<u32> {
-        let mappy = self.mappy.borrow();
-        let t = mappy.current_room.as_ref().unwrap().get(x, y).unwrap();
-        Ok(t.index())
-    }
-    fn tile_hash(&self, idx: usize) -> PyResult<u128> {
-        let mappy = self.mappy.borrow();
-        let db = mappy.tiles.read().unwrap();
-        let tgfx = db.get_tile_by_index(idx).unwrap();
-        Ok(tgfx.perceptual_hash())
-    }
-    /// Fills `into` with the pixels of tile_gfx.
-    fn read_tile_gfx(&self, idx: usize, into: &pyo3::types::PyByteArray) -> PyResult<()> {
-        let mappy = self.mappy.borrow();
-        let db = mappy.tiles.read().unwrap();
-        assert!(into.len() >= mappy::tile::TILE_NUM_PX * 3);
-        let tgfx = db.get_tile_by_index(idx).unwrap();
-        tgfx.write_rgb888(unsafe { into.as_bytes_mut() });
-        Ok(())
-    }
-    fn room_tile_at(&self, x: i32, y: i32) -> PyResult<(u16, u16)> {
-        let mappy = self.mappy.borrow();
-        let db = mappy.tiles.read().unwrap();
-        let tc = db
-            .get_change_by_id(mappy.current_room.as_ref().unwrap().get(x, y).unwrap())
-            .unwrap();
-        Ok((tc.from.index(), tc.to.index()))
-    }
-    // TODO queries for tracks, ...
-}
-#[pyclass]
-struct Sprite {
-    sprite: mappy::sprites::SpriteData,
-}
-
-#[pymethods]
-impl Sprite {
-    #[getter]
-    fn index(&self) -> PyResult<u8> {
-        Ok(self.sprite.index)
-    }
-    #[getter]
-    fn x(&self) -> PyResult<u8> {
-        Ok(self.sprite.x)
-    }
-    #[getter]
-    fn y(&self) -> PyResult<u8> {
-        Ok(self.sprite.y)
-    }
-    #[getter]
-    fn width(&self) -> PyResult<u8> {
-        Ok(self.sprite.width())
-    }
-    #[getter]
-    fn height(&self) -> PyResult<u8> {
-        Ok(self.sprite.height())
-    }
-    #[getter]
-    fn vflip(&self) -> PyResult<bool> {
-        Ok(self.sprite.vflip())
-    }
-    #[getter]
-    fn hflip(&self) -> PyResult<bool> {
-        Ok(self.sprite.hflip())
-    }
-    #[getter]
-    fn bg(&self) -> PyResult<bool> {
-        Ok(self.sprite.bg())
-    }
-    #[getter]
-    fn pal(&self) -> PyResult<u8> {
-        Ok(self.sprite.pal())
-    }
-    #[getter]
-    fn key(&self) -> PyResult<u32> {
-        Ok(self.sprite.key())
-    }
+    let (x, y) = mappy.tile_to_screen(x, y);
+    (x as f32 * SCALE, y as f32 * SCALE)
 }
