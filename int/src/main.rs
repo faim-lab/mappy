@@ -33,10 +33,10 @@ async fn main() {
     let romfile = Path::new(args[1].as_str());
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
-    let mut scroll_dumper = Some(scroll::ScrollDumper::new(
-        Path::new("images/"),
-        romname.to_str().unwrap(),
-    ));
+    let mut scroll_dumper = None; /*Some(scroll::ScrollDumper::new(
+                                      Path::new("images/"),
+                                      romname.to_str().unwrap(),
+                                  ));*/
 
     let mut emu = Emulator::create(
         Path::new("../libretro-fceumm/fceumm_libretro"),
@@ -76,6 +76,8 @@ async fn main() {
         replay(&mut emu, &mut mappy, &replay_inputs);
         inputs.extend(replay_inputs.drain(..));
     }
+    let mut selected_sprite = None;
+    let mut selected_tile_pos = None;
 
     let start = Instant::now();
     println!(
@@ -198,7 +200,9 @@ zxcvbnm,./ for debug displays"
                 println!("Dumped {}", n);
             } else {
                 // TODO clear mappy too?
-                scroll_dumper.take().map(|d| d.finish(&inputs));
+                scroll_dumper
+                    .take()
+                    .map(|d: scroll::ScrollDumper| d.finish(&inputs));
                 scroll_dumper = Some(scroll::ScrollDumper::new(
                     Path::new("images/"),
                     romname.to_str().unwrap(),
@@ -347,39 +351,6 @@ zxcvbnm,./ for debug displays"
                 }
             }
         }
-        if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
-            let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
-            if shifted {
-                println!(
-                    "{},{}  csr {:?}\nsr {:?}\nsc {:?}\ncrr {:?}",
-                    tx,
-                    ty,
-                    mappy.current_screen.region,
-                    mappy.split_region(),
-                    mappy.scroll,
-                    mappy.current_room.as_ref().unwrap().region()
-                );
-            }
-            let change = mappy.current_room.as_ref().unwrap().get(tx, ty).unwrap();
-            let tiles = mappy.tiles.read().unwrap();
-            let change_data = tiles.get_change_by_id(change);
-            // todo print screen tile gfx at this position
-            println!("{},{} -- {:?},{:?}", tx, ty, change, change_data);
-        }
-        if is_mouse_button_down(MouseButton::Left) {
-            for track in mappy.live_tracks.iter() {
-                let (mx, my) = mouse_position();
-                if mappy::sprites::overlapping_sprite(
-                    (mx / SCALE) as usize,
-                    (my / SCALE) as usize,
-                    2,
-                    2,
-                    &[*track.current_data()],
-                ) {
-                    println!("S:{:?}", track.positions.last().unwrap());
-                }
-            }
-        }
         if draw_live_tracks {
             for track in mappy.live_tracks.iter() {
                 let col = Color::new(
@@ -450,6 +421,71 @@ zxcvbnm,./ for debug displays"
                 );
             }
         }
+        {
+            if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
+                let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
+                selected_tile_pos = Some((tx, ty));
+            }
+            if let Some((tx, ty)) = selected_tile_pos {
+                let (sx, sy) = tile_to_screen((tx, ty), &mappy);
+                draw_rectangle_lines(sx, sy, 8.0 * SCALE, 8.0 * SCALE, 1.0 * SCALE, RED);
+                if let Some(change) = mappy.current_room.as_ref().unwrap().get(tx, ty) {
+                    let tiles = mappy.tiles.read().unwrap();
+                    let change_data = tiles.get_change_by_id(change);
+                    if let Some(cd) = change_data {
+                        let to = cd.to;
+                        let tile = tiles.get_tile_by_id(to).unwrap();
+                        println!("T: {},{} -- {:?}", tx, ty, tile.perceptual_hash());
+                        draw_text(
+                            &format!("{},{} -- {:?}", tx, ty, tile.perceptual_hash()),
+                            SCALE,
+                            SCALE * 16.0,
+                            SCALE * 16.0,
+                            RED,
+                        );
+                    }
+                }
+            }
+            if is_mouse_button_down(MouseButton::Left) {
+                // selected_sprite = None;
+                for track in mappy.live_tracks.iter() {
+                    let (mx, my) = mouse_position();
+                    if mappy::sprites::overlapping_sprite(
+                        (mx / SCALE) as usize,
+                        (my / SCALE) as usize,
+                        2,
+                        2,
+                        &[*track.current_data()],
+                    ) {
+                        selected_sprite = Some(track.id);
+                    }
+                }
+            }
+            if let Some(track) = selected_sprite
+                .and_then(|track_id| mappy.live_tracks.iter().find(|t| t.id == track_id))
+            {
+                let (wx, wy) = track.current_point();
+                let (base_sx, base_sy) = mappy.world_to_screen(wx, wy);
+                draw_rectangle_lines(
+                    base_sx as f32 * SCALE,
+                    base_sy as f32 * SCALE,
+                    8.0 * SCALE,
+                    track.current_data().height() as f32 * SCALE,
+                    1.0 * SCALE,
+                    BLUE,
+                );
+                let data = track.current_data();
+                let (px, py) = track.current_point();
+                println!("S: {},{} -- {}", px, py, data.key());
+                draw_text(
+                    &format!("{},{} -- {}", wx, wy, data.key()),
+                    w as f32 * SCALE - 100.0 * SCALE,
+                    SCALE * 16.0,
+                    SCALE * 16.0,
+                    BLUE,
+                );
+            }
+        }
         if mappy.mapping {
             //draw a little red circle in the corner
             draw_circle(8.0 * SCALE, 8.0 * SCALE, 4.0 * SCALE, RED);
@@ -483,4 +519,8 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let x = (x / SCALE) as i32;
     let y = (y / SCALE) as i32;
     mappy.screen_to_tile(x, y)
+}
+fn tile_to_screen((x, y): (i32, i32), mappy: &MappyState) -> (f32, f32) {
+    let (x, y) = mappy.tile_to_screen(x, y);
+    (x as f32 * SCALE, y as f32 * SCALE)
 }

@@ -978,16 +978,12 @@ impl MappyState {
         (sx + self.scroll.0, sy + self.scroll.1)
     }
     pub fn screen_to_tile(&self, sx: i32, sy: i32) -> (i32, i32) {
-        (
-            sx + self.scroll.0 / TILE_SIZE as i32,
-            sy + self.scroll.1 / TILE_SIZE as i32,
-        )
+        let (wx, wy) = self.screen_to_world(sx, sy);
+        self.world_to_tile(wx, wy)
     }
     pub fn tile_to_screen(&self, tx: i32, ty: i32) -> (i32, i32) {
-        (
-            tx * TILE_SIZE as i32 - self.scroll.0,
-            ty * TILE_SIZE as i32 - self.scroll.1,
-        )
+        let (wx, wy) = self.tile_to_world(tx, ty);
+        self.world_to_screen(wx, wy)
     }
 
     pub fn dump_map(&self, dotfolder: &Path) {
