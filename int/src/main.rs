@@ -317,6 +317,7 @@ zxcvbnm,./ for debug displays"
             }
         }
         {
+            // TODO turn these into decos
             if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
                 let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
                 selected_tile_pos = Some((tx, ty));
@@ -381,6 +382,7 @@ zxcvbnm,./ for debug displays"
                 );
             }
         }
+        // TODO turn this into deco
         if mappy.mapping {
             //draw a little red circle in the corner
             draw_circle(8.0 * SCALE, 8.0 * SCALE, 4.0 * SCALE, RED);
