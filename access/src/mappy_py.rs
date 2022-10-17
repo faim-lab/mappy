@@ -6,13 +6,13 @@ use std::rc::Rc;
 
 pub fn load_module(fpath: &std::path::Path, name: &str) -> Py<PyModule> {
     Python::with_gil(|py| {
-        let basepath = fpath.parent().unwrap_or(std::path::Path::new("."));
+        let basepath = fpath.parent().unwrap_or_else(|| std::path::Path::new("."));
         pyo3::py_run!(py, basepath, r#"import sys; sys.path.append(basepath);"#);
         PyModule::from_code(
             py,
             &std::fs::read_to_string(&fpath).expect("Python module: file not found at given path"),
             fpath.to_str().unwrap(),
-            name.clone(),
+            name,
         )
         .expect("Invalid Python filter module")
         .into()

@@ -1,6 +1,5 @@
 use super::*;
-use macroquad::prelude::*;
-use mappy::*;
+
 pub struct Decorator {
     pub deco: Box<dyn Deco>,
     pub enabled: bool,
@@ -156,6 +155,95 @@ impl Deco for Avatar {
                 let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
                 draw_circle(x0 as f32 * SCALE, y0 as f32 * SCALE, 4.0, DARKBLUE);
             }
+        }
+    }
+}
+pub struct Recording {}
+impl Deco for Recording {
+    fn draw(&mut self, mappy: &MappyState) {
+        if mappy.mapping {
+            //draw a little red circle in the corner
+            draw_circle(8.0 * SCALE, 8.0 * SCALE, 4.0 * SCALE, RED);
+        }
+    }
+}
+
+pub struct SelectedTile {
+    pub selected_tile_pos: Option<(i32, i32)>,
+}
+impl Deco for SelectedTile {
+    fn draw(&mut self, mappy: &MappyState) {
+        if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
+            let (tx, ty) = screen_f32_to_tile(mouse_position(), mappy);
+            self.selected_tile_pos = Some((tx, ty));
+        }
+        if let Some((tx, ty)) = self.selected_tile_pos {
+            let (sx, sy) = tile_to_screen((tx, ty), mappy);
+            draw_rectangle_lines(sx, sy, 8.0 * SCALE, 8.0 * SCALE, 1.0 * SCALE, RED);
+            if let Some(change) = mappy.current_room.as_ref().unwrap().get(tx, ty) {
+                let tiles = mappy.tiles.read().unwrap();
+                let change_data = tiles.get_change_by_id(change);
+                if let Some(cd) = change_data {
+                    let to = cd.to;
+                    let tile = tiles.get_tile_by_id(to).unwrap();
+                    println!("T: {},{} -- {:?}", tx, ty, tile.perceptual_hash());
+                    draw_text(
+                        &format!("{},{} -- {:?}", tx, ty, tile.perceptual_hash()),
+                        SCALE,
+                        SCALE * 16.0,
+                        SCALE * 16.0,
+                        RED,
+                    );
+                }
+            }
+        }
+    }
+}
+pub struct SelectedSprite {
+    pub selected_sprite: Option<mappy::sprites::TrackID>,
+    pub dims: (usize, usize),
+}
+impl Deco for SelectedSprite {
+    fn draw(&mut self, mappy: &MappyState) {
+        if is_mouse_button_down(MouseButton::Left) {
+            // selected_sprite = None;
+            for track in mappy.live_tracks.iter() {
+                let (mx, my) = mouse_position();
+                if mappy::sprites::overlapping_sprite(
+                    (mx / SCALE) as usize,
+                    (my / SCALE) as usize,
+                    2,
+                    2,
+                    &[*track.current_data()],
+                ) {
+                    self.selected_sprite = Some(track.id);
+                }
+            }
+        }
+        if let Some(track) = self
+            .selected_sprite
+            .and_then(|track_id| mappy.live_tracks.iter().find(|t| t.id == track_id))
+        {
+            let (wx, wy) = track.current_point();
+            let (base_sx, base_sy) = mappy.world_to_screen(wx, wy);
+            draw_rectangle_lines(
+                base_sx as f32 * SCALE,
+                base_sy as f32 * SCALE,
+                8.0 * SCALE,
+                track.current_data().height() as f32 * SCALE,
+                1.0 * SCALE,
+                BLUE,
+            );
+            let data = track.current_data();
+            let (px, py) = track.current_point();
+            println!("S: {},{} -- {}", px, py, data.key());
+            draw_text(
+                &format!("{},{} -- {}", wx, wy, data.key()),
+                self.dims.0 as f32 * SCALE - 100.0 * SCALE,
+                SCALE * 16.0,
+                SCALE * 16.0,
+                BLUE,
+            );
         }
     }
 }

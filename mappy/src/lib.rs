@@ -74,12 +74,12 @@ impl Rect {
             && self.y < (r.y + r.h as i32)
             && r.y < (self.y + self.h as i32)
     }
-    pub fn expand(&self, amt:u32) -> Rect {
+    pub fn expand(&self, amt: u32) -> Rect {
         Rect {
             x: self.x - amt as i32,
             y: self.y - amt as i32,
-            w: self.w + amt*2,
-            h: self.h + amt*2
+            w: self.w + amt * 2,
+            h: self.h + amt * 2,
         }
     }
     pub fn union(&self, other: &Rect) -> Rect {
@@ -168,39 +168,37 @@ pub fn read_fm2(inputs: &mut Vec<[Buttons; 2]>, path: &Path) {
     use std::io::{BufRead, BufReader};
     let file = File::open(path).expect("Couldn't open file");
     let reader = BufReader::new(file);
-    for line in reader.lines() {
-        if let Ok(line) = line {
-            // scan ahead to second |
-            let mut pipenum = 0;
-            let mut bitstr = [false; 8];
-            let mut bitstr_idx = 0;
-            let mut buttons1: Option<Buttons> = None;
-            let mut buttons2: Option<Buttons> = None;
-            for c in line.chars() {
-                if c == '|' {
-                    pipenum += 1;
-                    if pipenum == 3 {
-                        buttons1 = Some(from_bitstring(bitstr));
-                        bitstr_idx = 0;
-                    } else if pipenum == 4 {
-                        buttons2 = Some(from_bitstring(bitstr));
-                        break;
-                    }
-                } else if pipenum >= 2 {
-                    assert!(bitstr_idx < 8);
-                    bitstr[bitstr_idx] = !(c == '.' || c == ' ');
-                    bitstr_idx += 1;
+    for line in reader.lines().flatten() {
+        // scan ahead to second |
+        let mut pipenum = 0;
+        let mut bitstr = [false; 8];
+        let mut bitstr_idx = 0;
+        let mut buttons1: Option<Buttons> = None;
+        let mut buttons2: Option<Buttons> = None;
+        for c in line.chars() {
+            if c == '|' {
+                pipenum += 1;
+                if pipenum == 3 {
+                    buttons1 = Some(from_bitstring(bitstr));
+                    bitstr_idx = 0;
+                } else if pipenum == 4 {
+                    buttons2 = Some(from_bitstring(bitstr));
+                    break;
                 }
+            } else if pipenum >= 2 {
+                assert!(bitstr_idx < 8);
+                bitstr[bitstr_idx] = !(c == '.' || c == ' ');
+                bitstr_idx += 1;
             }
-            match (buttons1, buttons2) {
-                (Some(buttons1), Some(buttons2)) => {
-                    inputs.push([buttons1, buttons2]);
-                }
-                (Some(buttons1), None) => {
-                    inputs.push([buttons1, Buttons::new()]);
-                }
-                _ => (),
+        }
+        match (buttons1, buttons2) {
+            (Some(buttons1), Some(buttons2)) => {
+                inputs.push([buttons1, buttons2]);
             }
+            (Some(buttons1), None) => {
+                inputs.push([buttons1, Buttons::new()]);
+            }
+            _ => (),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::framebuffer::Framebuffer;
-use id_arena::{Arena,ArenaBehavior};
+use id_arena::{Arena, ArenaBehavior};
 use retro_rs::pixels;
 use std::collections::HashMap;
 use std::fmt;
@@ -88,7 +88,7 @@ impl fmt::Debug for TileGfx {
     }
 }
 
-#[derive(Clone,Copy,PartialOrd,Ord,PartialEq,Eq,Hash,Debug)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
 pub struct TileGfxId(u16);
 
 impl TileGfxId {
@@ -100,14 +100,14 @@ impl Tile for TileGfxId {}
 
 struct TileGfxArenaBehavior();
 impl ArenaBehavior for TileGfxArenaBehavior {
-    type Id=TileGfxId;
-    fn new_id(_arena_id:u32, index:usize) -> Self::Id {
+    type Id = TileGfxId;
+    fn new_id(_arena_id: u32, index: usize) -> Self::Id {
         TileGfxId(index as u16)
     }
-    fn index(id:Self::Id) -> usize {
+    fn index(id: Self::Id) -> usize {
         id.0 as usize
     }
-    fn arena_id(_id:Self::Id) -> u32 {
+    fn arena_id(_id: Self::Id) -> u32 {
         0
     }
     fn new_arena_id() -> u32 {
@@ -169,7 +169,7 @@ impl ArenaBehavior for TileGfxArenaBehavior {
 //     }
 // }
 
-#[derive(Clone,Copy,PartialOrd,Ord,PartialEq,Eq,Hash,Debug)]
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
 pub struct TileChange(u32);
 impl TileChange {
     pub fn index(&self) -> u32 {
@@ -178,21 +178,20 @@ impl TileChange {
 }
 struct TileChangeArenaBehavior();
 impl ArenaBehavior for TileChangeArenaBehavior {
-    type Id=TileChange;
-    fn new_id(_arena_id:u32, index:usize) -> Self::Id {
+    type Id = TileChange;
+    fn new_id(_arena_id: u32, index: usize) -> Self::Id {
         TileChange(index as u32)
     }
-    fn index(id:Self::Id) -> usize {
+    fn index(id: Self::Id) -> usize {
         id.0 as usize
     }
-    fn arena_id(_id:Self::Id) -> u32 {
+    fn arena_id(_id: Self::Id) -> u32 {
         0
     }
     fn new_arena_id() -> u32 {
         0
     }
 }
-
 
 impl Tile for TileChange {}
 
@@ -204,8 +203,8 @@ pub struct TileChangeData {
     count: usize,
 }
 
-type GfxArena = Arena<TileGfx,TileGfxArenaBehavior>;
-type ChangeArena = Arena<TileChangeData,TileChangeArenaBehavior>;
+type GfxArena = Arena<TileGfx, TileGfxArenaBehavior>;
+type ChangeArena = Arena<TileChangeData, TileChangeArenaBehavior>;
 pub struct TileDB {
     gfx_arena: GfxArena,
     change_arena: ChangeArena,
@@ -280,10 +279,11 @@ impl TileDB {
         self.change_arena.get(tc)
     }
     pub fn get_tile_by_index(&self, tg: usize) -> Option<&TileGfx> {
-        self.gfx_arena.get(TileGfxArenaBehavior::new_id(0,tg))
+        self.gfx_arena.get(TileGfxArenaBehavior::new_id(0, tg))
     }
     pub fn get_change_by_index(&self, tc: usize) -> Option<&TileChangeData> {
-        self.change_arena.get(TileChangeArenaBehavior::new_id(0,tc))
+        self.change_arena
+            .get(TileChangeArenaBehavior::new_id(0, tc))
     }
     pub fn gfx_iter(&self) -> impl Iterator<Item = &TileGfx> {
         self.gfx_arena.iter().map(|(_id, t)| t)
@@ -300,11 +300,7 @@ impl TileDB {
             0.25
         } else if tc1_c.to == tc2_c.to {
             0.10
-        }
-        // else if self.changes.contains_key(&(tc1_c.to,tc2_c.from)) || self.changes.contains_key(&(tc2_c.to,tc1_c.from)) { //self.change_closure.goes_to(tc1, tc2) || self.change_closure.goes_to(tc2, tc1) {
-        //     0.1
-        // }
-        else {
+        } else {
             1.00
         }
     }

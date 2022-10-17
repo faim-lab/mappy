@@ -1,4 +1,4 @@
-use macroquad::*;
+use macroquad::prelude::*;
 use mappy::MappyState;
 use mappy::TILE_SIZE;
 use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
@@ -39,7 +39,7 @@ async fn main() {
     let image_folder = Path::new("images/")
         .join(Path::new(&romname))
         .join(Path::new(&date_str));
-    std::fs::create_dir_all(image_folder.clone()).unwrap_or_else(|_err| {});
+    std::fs::create_dir_all(image_folder.clone()).unwrap();
     let csv_path = Path::new("images/")
         .join(Path::new(&romname))
         .join(Path::new(&(date_str + ".csv")));
@@ -55,7 +55,7 @@ async fn main() {
 
     let mut game_img = Image::gen_image_color(w as u16, h as u16, WHITE);
     let mut fb = vec![0_u8; w * h * 4];
-    let game_tex = load_texture_from_image(&game_img);
+    let game_tex = Texture2D::from_image(&game_img);
     let mut draw_grid = false;
     let mut draw_tile_standins = false;
     let mut draw_live_tracks = false;
@@ -70,9 +70,9 @@ async fn main() {
     let args: Vec<_> = env::args().collect();
     let mut mappy = MappyState::new(w, h);
     if args.len() > 1 {
-        mappy::read_fm2(&mut replay_inputs, &Path::new(&args[1]));
+        mappy::read_fm2(&mut replay_inputs, Path::new(&args[1]));
         replay(&mut emu, &mut mappy, &replay_inputs);
-        inputs.extend(replay_inputs.drain(..));
+        inputs.append(&mut replay_inputs);
     }
     let mut sx = 0;
     let mut sy = 0;
@@ -252,12 +252,8 @@ async fn main() {
             }
             accum -= 1.0;
         }
-        let (pre, mid, post): (_, &[Color], _) = unsafe { fb.align_to() };
-        assert!(pre.is_empty());
-        assert!(post.is_empty());
-        assert_eq!(mid.len(), w * h);
-        game_img.update(&mid);
-        update_texture(game_tex, &game_img);
+        game_img.bytes.copy_from_slice(&fb);
+        game_tex.update(&game_img);
         draw_texture_ex(
             game_tex,
             0.,
@@ -337,8 +333,8 @@ async fn main() {
                         as f32,
                 );
                 draw_rectangle(
-                    SCALE * (startp.x().max(0.)).min(w as f32) - SCALE * 2.,
-                    SCALE * (startp.y().max(0.)).min(h as f32) - SCALE * 2.,
+                    SCALE * (startp.x.max(0.)).min(w as f32) - SCALE * 2.,
+                    SCALE * (startp.y.max(0.)).min(h as f32) - SCALE * 2.,
                     SCALE * 4.,
                     SCALE * 4.,
                     col,

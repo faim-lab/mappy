@@ -226,13 +226,13 @@ impl MappyState {
     pub fn process_screen(&mut self, emu: &mut Emulator, input: [Buttons; 2]) {
         // Read new data from emulator
         let t = self.timers.timer(Timing::FBRead).start();
-        self.fb.read_from(&emu);
+        self.fb.read_from(emu);
         t.stop();
         let t = self.timers.timer(Timing::Scroll).start();
-        self.get_changes(&emu);
+        self.get_changes(emu);
 
         // What can we learn from hardware screen splitting operations?
-        if self.changes.len() > 0 || self.splits.is_empty() {
+        if !self.changes.is_empty() || self.splits.is_empty() {
             let (lo, hi, latch) = splits::get_main_split(&self.changes, self.latch, &self.fb);
             self.latch = latch;
             self.splits = [(lo, hi)];
@@ -279,8 +279,8 @@ impl MappyState {
                 // );
             }
             if self.now.0 - last_control_time.0 > Self::CONTROL_ROOM_CHANGE_THRESHOLD
-                || sdiff.0.abs() as u32 >= (sw * 3) / 4
-                || sdiff.1.abs() as u32 >= (sh * 3) / 4
+                || sdiff.0.unsigned_abs() >= (sw * 3) / 4
+                || sdiff.1.unsigned_abs() >= (sh * 3) / 4
             {
                 let diff = self.current_screen.difference(&self.last_control_screen);
                 if !had_control {
@@ -353,7 +353,7 @@ impl MappyState {
 
         // Read sprite data for next frame
         self.prev_sprites.copy_from_slice(&self.live_sprites);
-        sprites::get_sprites(&emu, &mut self.live_sprites);
+        sprites::get_sprites(emu, &mut self.live_sprites);
     }
     fn process_merges(&mut self) {
         if !self.room_merge_rx.is_empty() {
@@ -404,9 +404,8 @@ impl MappyState {
                     ))
                     .unwrap()
             } else {
-                let old_room = self.current_room.take().unwrap();
+                self.current_room.take().unwrap()
                 // println!("Room end {}: {:?}", old_room.id, old_room.region());
-                old_room
             };
             old_room = old_room.finalize(self.tiles.read().unwrap().get_initial_change());
             // dbg!(old_room.region());
@@ -538,7 +537,7 @@ impl MappyState {
             emu.run([down_left, Buttons::default()]);
         }
         // What can we learn from hardware screen splitting operations?
-        self.get_changes(&emu);
+        self.get_changes(emu);
         let latch = self.latch;
         let (dl_splits, _latch) = splits::get_splits(&self.changes, latch);
         // Store positions of all sprites P1
@@ -555,7 +554,7 @@ impl MappyState {
         for _ in 0..CONTROL_CHECK_K {
             emu.run([up_right, Buttons::default()]);
         }
-        self.get_changes(&emu);
+        self.get_changes(emu);
         let latch = self.latch;
         let (ur_splits, _latch) = splits::get_splits(&self.changes, latch);
         // Store positions of all sprites P2
@@ -668,7 +667,7 @@ impl MappyState {
                     .enumerate()
                     .filter_map(|(ti, old)| {
                         if (s.distance(old.current_data()) as u32) < Self::DISTANCE_MAX {
-                            Some(Target(Some(ti), Self::sprite_change_cost(s, &old)))
+                            Some(Target(Some(ti), Self::sprite_change_cost(s, old)))
                         } else {
                             None
                         }
@@ -694,16 +693,12 @@ impl MappyState {
         // break up the candidates vec into separate vecs with options that overlap on any index
         fn connected_components(candidates: Vec<MatchTo>) -> Vec<Vec<MatchTo>> {
             fn opts_overlap(opts1: &[Target], opts2: &[Target]) -> bool {
-                opts1
-                    .iter()
-                    .find(|Target(maybe_old1, _)| {
-                        maybe_old1.is_some()
-                            && opts2
-                                .iter()
-                                .find(|Target(maybe_old2, _)| maybe_old2 == maybe_old1)
-                                .is_some()
-                    })
-                    .is_some()
+                opts1.iter().any(|Target(maybe_old1, _)| {
+                    maybe_old1.is_some()
+                        && opts2
+                            .iter()
+                            .any(|Target(maybe_old2, _)| maybe_old2 == maybe_old1)
+                })
             }
             fn spider(candidates: &[MatchTo], gis: &mut [usize], ci1: usize) {
                 // recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
@@ -829,10 +824,7 @@ impl MappyState {
                 }
             }
             assert!(
-                assigned_tracks
-                    .iter()
-                    .find(|(txx, _bx)| *txx == tx)
-                    .is_none(),
+                !assigned_tracks.iter().any(|(txx, _bx)| *txx == tx),
                 "track {:?} both assigned and unassigned {:?}",
                 tx,
                 now
@@ -851,11 +843,8 @@ impl MappyState {
             );
             // println!("{:?} assign {:?} to {:?}", now, txid, bxid);
             for b in self.live_blobs.iter_mut() {
-                if b.id != bxid {
-                    if b.contains_live_track(txid) {
-                        // println!("{:?} blob {:?} stole track {:?} from {:?}", now, bxid, txid, b.id);
-                        b.forget_track(txid);
-                    }
+                if b.id != bxid && b.contains_live_track(txid) {
+                    b.forget_track(txid);
                 }
             }
             self.live_blobs[bx].use_track(txid);
@@ -1018,7 +1007,7 @@ impl MappyState {
         let mut all_stmts = StmtList::new();
         for mr in self.metarooms.all_metarooms() {
             self.dump_metaroom(
-                &mr,
+                mr,
                 &dotfolder.join(Path::new(&node_image_paths[&mr.id.0].clone())),
             );
         }
@@ -1028,10 +1017,10 @@ impl MappyState {
             let mut attrs = AttrList::new()
                 .add_pair(xlabel(&node_labels[&mr.id.0]))
                 .add_pair(image(&node_image_paths[&mr.id.0]));
-            if let Some(_) = mr
+            if mr
                 .registrations
                 .iter()
-                .find(|(rid, _pos)| *rid == 0 || self.resets.contains(rid))
+                .any(|(rid, _pos)| *rid == 0 || self.resets.contains(rid))
             {
                 attrs = attrs.add_pair(shape(Shape::Box));
             } else {
@@ -1109,7 +1098,7 @@ impl MappyState {
             for x in region.x..(region.x + region.w as i32) {
                 let tile = room.get(x, y);
                 let tile_change_data_db =
-                    tiles.get_change_by_id(tile.unwrap_or(tiles.get_initial_change()));
+                    tiles.get_change_by_id(tile.unwrap_or_else(|| tiles.get_initial_change()));
                 let to_tile_gfx_id = tile_change_data_db.unwrap().to;
                 let corresponding_tile_gfx = tiles.get_tile_by_id(to_tile_gfx_id);
                 corresponding_tile_gfx.unwrap().write_rgb888_at(
@@ -1256,9 +1245,9 @@ pub fn merge_cost(
                             best_tile_cost = Some(tc);
                         }
                     }
-                    if best_tile_cost.is_some() {
+                    if let Some(best_cost) = best_tile_cost {
                         comparisons += 1;
-                        cost += best_tile_cost.unwrap();
+                        cost += best_cost;
                     }
                     if cost >= threshold {
                         // if room.id == 2 && metaroom_id.0 == 0 && xo == 0 && yo == 0 {

@@ -35,7 +35,7 @@ impl<T: Tile> Screen<T> {
     pub fn combine(screens: Vec<Screen<T>>, init: T) -> Screen<T> {
         let mut r = screens[0].region;
         for Screen { region, .. } in screens.iter().skip(1) {
-            r = r.union(&region);
+            r = r.union(region);
         }
         let mut s = Screen::new(r, init);
         for s2 in screens {

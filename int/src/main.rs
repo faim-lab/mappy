@@ -33,10 +33,10 @@ async fn main() {
     let romfile = Path::new(args[1].as_str());
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
-    let mut scroll_dumper = None; /*Some(scroll::ScrollDumper::new(
-                                      Path::new("images/"),
-                                      romname.to_str().unwrap(),
-                                  ));*/
+    let mut scroll_dumper: Option<scroll::ScrollDumper> = None; /*Some(scroll::ScrollDumper::new(
+                                                                    Path::new("images/"),
+                                                                    romname.to_str().unwrap(),
+                                                                ));*/
 
     let mut emu = Emulator::create(
         Path::new("../libretro-fceumm/fceumm_libretro"),
@@ -81,6 +81,26 @@ async fn main() {
                 enabled: false,
                 toggle: KeyCode::M,
             },
+            Decorator {
+                deco: Box::new(Recording {}),
+                enabled: true,
+                toggle: KeyCode::F20,
+            },
+            Decorator {
+                deco: Box::new(SelectedTile {
+                    selected_tile_pos: None,
+                }),
+                enabled: true,
+                toggle: KeyCode::F20,
+            },
+            Decorator {
+                deco: Box::new(SelectedSprite {
+                    selected_sprite: None,
+                    dims: (w, h),
+                }),
+                enabled: true,
+                toggle: KeyCode::F20,
+            },
         ]
     };
 
@@ -98,12 +118,10 @@ async fn main() {
     let mut accum: f32 = 0.0;
     let mut mappy = MappyState::new(w, h);
     if args.len() > 2 {
-        mappy::read_fm2(&mut replay_inputs, &Path::new(&args[2]));
+        mappy::read_fm2(&mut replay_inputs, Path::new(&args[2]));
         replay(&mut emu, &mut mappy, &replay_inputs);
-        inputs.extend(replay_inputs.drain(..));
+        inputs.append(&mut replay_inputs);
     }
-    let mut selected_sprite = None;
-    let mut selected_tile_pos = None;
 
     let start = Instant::now();
     println!(
@@ -210,9 +228,9 @@ zxcvbnm,./ for debug displays"
                 println!("Dumped {}", n);
             } else {
                 // TODO clear mappy too?
-                scroll_dumper
-                    .take()
-                    .map(|d: scroll::ScrollDumper| d.finish(&inputs));
+                if let Some(dump) = scroll_dumper.take() {
+                    dump.finish(&inputs);
+                }
                 scroll_dumper = Some(scroll::ScrollDumper::new(
                     Path::new("images/"),
                     romname.to_str().unwrap(),
@@ -280,9 +298,9 @@ zxcvbnm,./ for debug displays"
             }
             mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
             frame_counter += 1;
-            scroll_dumper
-                .as_mut()
-                .map(|dump| dump.update(&mappy, &mut fb, &emu));
+            if let Some(dump) = scroll_dumper.as_mut() {
+                dump.update(&mappy, &mut fb, &emu);
+            }
             if frame_counter % 300 == 0 {
                 // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
                 // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
@@ -316,88 +334,13 @@ zxcvbnm,./ for debug displays"
                 deco.deco.draw(&mappy);
             }
         }
-        {
-            // TODO turn these into decos
-            if is_mouse_button_down(MouseButton::Left) && mappy.current_room.is_some() {
-                let (tx, ty) = screen_f32_to_tile(mouse_position(), &mappy);
-                selected_tile_pos = Some((tx, ty));
-            }
-            if let Some((tx, ty)) = selected_tile_pos {
-                let (sx, sy) = tile_to_screen((tx, ty), &mappy);
-                draw_rectangle_lines(sx, sy, 8.0 * SCALE, 8.0 * SCALE, 1.0 * SCALE, RED);
-                if let Some(change) = mappy.current_room.as_ref().unwrap().get(tx, ty) {
-                    let tiles = mappy.tiles.read().unwrap();
-                    let change_data = tiles.get_change_by_id(change);
-                    if let Some(cd) = change_data {
-                        let to = cd.to;
-                        let tile = tiles.get_tile_by_id(to).unwrap();
-                        println!("T: {},{} -- {:?}", tx, ty, tile.perceptual_hash());
-                        draw_text(
-                            &format!("{},{} -- {:?}", tx, ty, tile.perceptual_hash()),
-                            SCALE,
-                            SCALE * 16.0,
-                            SCALE * 16.0,
-                            RED,
-                        );
-                    }
-                }
-            }
-            if is_mouse_button_down(MouseButton::Left) {
-                // selected_sprite = None;
-                for track in mappy.live_tracks.iter() {
-                    let (mx, my) = mouse_position();
-                    if mappy::sprites::overlapping_sprite(
-                        (mx / SCALE) as usize,
-                        (my / SCALE) as usize,
-                        2,
-                        2,
-                        &[*track.current_data()],
-                    ) {
-                        selected_sprite = Some(track.id);
-                    }
-                }
-            }
-            if let Some(track) = selected_sprite
-                .and_then(|track_id| mappy.live_tracks.iter().find(|t| t.id == track_id))
-            {
-                let (wx, wy) = track.current_point();
-                let (base_sx, base_sy) = mappy.world_to_screen(wx, wy);
-                draw_rectangle_lines(
-                    base_sx as f32 * SCALE,
-                    base_sy as f32 * SCALE,
-                    8.0 * SCALE,
-                    track.current_data().height() as f32 * SCALE,
-                    1.0 * SCALE,
-                    BLUE,
-                );
-                let data = track.current_data();
-                let (px, py) = track.current_point();
-                println!("S: {},{} -- {}", px, py, data.key());
-                draw_text(
-                    &format!("{},{} -- {}", wx, wy, data.key()),
-                    w as f32 * SCALE - 100.0 * SCALE,
-                    SCALE * 16.0,
-                    SCALE * 16.0,
-                    BLUE,
-                );
-            }
-        }
-        // TODO turn this into deco
-        if mappy.mapping {
-            //draw a little red circle in the corner
-            draw_circle(8.0 * SCALE, 8.0 * SCALE, 4.0 * SCALE, RED);
-        }
         next_frame().await;
-        // let frame_interval = Duration::new(0, 1_000_000_000u32 / 60);
-        // // let frame_interval = Duration::new(0, 1);
-        // let elapsed = frame_start.elapsed();
-        // if frame_interval > elapsed {
-        //     ::std::thread::sleep(frame_interval - elapsed);
-        // }
     }
     mappy.finish();
     println!("{}", mappy.timers);
-    scroll_dumper.take().map(|d| d.finish(&inputs));
+    if let Some(dump) = scroll_dumper.take() {
+        dump.finish(&inputs);
+    }
     //mappy.dump_tiles(Path::new("out/"));
 }
 

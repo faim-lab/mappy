@@ -33,7 +33,7 @@ impl Room {
             bottom_right: (screen.region.x + 1, screen.region.y + 1),
         };
         if screen.region.w != 0 && screen.region.h != 0 {
-            ret.register_screen(&screen, db);
+            ret.register_screen(screen, db);
         }
         ret
     }
@@ -149,34 +149,34 @@ impl Room {
         let ulr = self.screens[ul].region;
         let lr_split = xmax.min(ulr.x + ulr.w as i32);
         let ud_split = ymax.min(ulr.y + ulr.h as i32);
-        let mut seen = Vec::with_capacity(s.region.w as usize * s.region.h as usize);
+        //let mut seen = Vec::with_capacity(s.region.w as usize * s.region.h as usize);
         // TODO any way to avoid bounds checking within these loops?
         // ul
         let ul = &mut self.screens[ul];
         for y in s.region.y..ud_split {
             for x in s.region.x..lr_split {
-                extend_tile(ul, s, &mut seen, x, y, db);
+                extend_tile(ul, s, x, y, db);
             }
         }
         // ur
         let ur = &mut self.screens[ur];
         for y in s.region.y..ud_split {
             for x in lr_split..xmax {
-                extend_tile(ur, s, &mut seen, x, y, db);
+                extend_tile(ur, s, x, y, db);
             }
         }
         // bl
         let bl = &mut self.screens[bl];
         for y in ud_split..ymax {
             for x in s.region.x..lr_split {
-                extend_tile(bl, s, &mut seen, x, y, db);
+                extend_tile(bl, s, x, y, db);
             }
         }
         // br
         let br = &mut self.screens[br];
         for y in ud_split..ymax {
             for x in lr_split..xmax {
-                extend_tile(br, s, &mut seen, x, y, db);
+                extend_tile(br, s, x, y, db);
             }
         }
         // self.seen_changes.extend(seen.into_iter());
@@ -198,19 +198,11 @@ impl Room {
 }
 
 #[inline(always)]
-fn extend_tile(
-    rs: &mut RoomScreen,
-    s: &Screen<TileGfxId>,
-    _seen: &mut Vec<TileChange>,
-    x: i32,
-    y: i32,
-    db: &mut TileDB,
-) {
+fn extend_tile(rs: &mut RoomScreen, s: &Screen<TileGfxId>, x: i32, y: i32, db: &mut TileDB) {
     assert!(s.region.contains(x, y), "{},{} : {:?}", x, y, s.region);
     assert!(rs.region.contains(x, y), "{},{} : {:?}", x, y, rs.region);
     if s[(x, y)] != db.get_initial_tile() {
         let change = db.change_from_to(rs[(x, y)], s[(x, y)]);
-        // seen.push(change);
         rs.set(change, x, y);
     }
 }

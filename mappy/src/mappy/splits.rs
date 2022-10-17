@@ -33,7 +33,7 @@ pub fn skim_rect(fb: &Framebuffer, start: i16, dir: i16) -> u8 {
     }
     let mut row = start;
     let mut last_good_row = start;
-    while 0 <= row && row < 240 {
+    while (0..240).contains(&row) {
         let left = fb.fb[row as usize * fb.w];
         let right = fb.fb[row as usize * fb.w + fb.w - 1];
         if left != right {
@@ -47,7 +47,7 @@ pub fn skim_rect(fb: &Framebuffer, start: i16, dir: i16) -> u8 {
         }
         row += dir;
     }
-    (last_good_row + 1 - start).abs() as u8
+    u8::try_from((last_good_row + 1 - start).unsigned_abs()).unwrap()
 }
 
 pub fn get_splits(changes: &[ScrollChange], mut latch: ScrollLatch) -> (Vec<Split>, ScrollLatch) {
@@ -129,15 +129,15 @@ pub fn get_splits(changes: &[ScrollChange], mut latch: ScrollLatch) -> (Vec<Spli
 
 fn get_best_effort_splits(fb: &Framebuffer, lo: Split, hi: Split) -> (Split, Split) {
     //If we can skim a rectangle bigger than 24px high at the top or the bottom, our split is height - that
-    let down_skim_len = skim_rect(&fb, 0, 1);
-    let up_skim_len = skim_rect(&fb, 239, -1);
+    let down_skim_len = skim_rect(fb, 0, 1);
+    let up_skim_len = skim_rect(fb, 239, -1);
     let mut s0 = lo;
     let mut s1 = hi;
-    if down_skim_len >= 24 && down_skim_len < 120 {
+    if (24..120).contains(&down_skim_len) {
         //move the top split lower
         s0.scanline = down_skim_len;
     }
-    if up_skim_len >= 24 && up_skim_len < 120 {
+    if (24..120).contains(&up_skim_len) {
         //move the bottom split higher
         s1.scanline = 240 - up_skim_len;
     }

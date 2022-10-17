@@ -7,19 +7,16 @@
 // in get, 0 could give you the last thing that was written. 1 could give you the thing before that
 
 #[derive(Debug, Clone)]
-pub struct RingBuffer<T: Copy + std::fmt::Debug> {
+pub struct RingBuffer<T: Copy> {
     buf: Vec<T>,
     now: usize,
 }
-impl<T: Copy + std::fmt::Debug> RingBuffer<T> {
+impl<T: Copy> RingBuffer<T> {
     pub fn new(t: T, sz: usize) -> Self {
         RingBuffer {
             buf: vec![t; sz],
             now: 0,
         }
-    }
-    pub fn to_string(&self) -> String {
-        format!("{:?} {:?}", self.buf, self.now)
     }
     pub fn push(&mut self, t: T) {
         self.now = (self.now + 1) % self.buf.len();
@@ -35,6 +32,11 @@ impl<T: Copy + std::fmt::Debug> RingBuffer<T> {
     }
     pub fn get_sz(&self) -> usize {
         self.buf.len()
+    }
+}
+impl<T: Copy + std::fmt::Debug> std::fmt::Display for RingBuffer<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} {:?}", self.buf, self.now)
     }
 }
 

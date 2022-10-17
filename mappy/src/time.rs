@@ -34,7 +34,7 @@ pub struct ReadyTimer<T: TimerID>(T, Arc<Sender<TimerMessage<T>>>);
 pub struct RunningTimer<T: TimerID>(T, Instant, Arc<Sender<TimerMessage<T>>>);
 
 impl<T: TimerID> Timers<T> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let (tx, t_rx) = bounded(1);
         let (t_tx, rx) = bounded(1);
         rayon::spawn(move || {

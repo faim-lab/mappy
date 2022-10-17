@@ -23,7 +23,7 @@ fn main() {
         emu.load(&start_state);
         mappy.handle_reset();
         let mut inputs = vec![];
-        mappy::read_fm2(&mut inputs, &Path::new(file.as_str()));
+        mappy::read_fm2(&mut inputs, Path::new(file.as_str()));
         all_inputs += inputs.len();
         for (_i, input_pair) in inputs.iter().enumerate() {
             emu.run(*input_pair);

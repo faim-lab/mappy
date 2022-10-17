@@ -55,11 +55,14 @@ pub struct Merges {
 }
 
 impl Merges {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { metarooms: vec![] }
     }
     pub fn len(&self) -> usize {
         self.metarooms.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.metarooms.is_empty()
     }
     pub fn metaroom(&self, id: usize) -> &Metaroom {
         self.metarooms.iter().find(|&mr| mr.id.0 == id).unwrap()
