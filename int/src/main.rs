@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
 mod debug_decorate;
+mod playback;
 mod scroll;
 const SCALE: f32 = 3.0;
 
@@ -33,6 +34,7 @@ async fn main() {
     let romfile = Path::new(args[1].as_str());
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
+    std::fs::create_dir_all("inputs").unwrap_or(());
     let mut scroll_dumper: Option<scroll::ScrollDumper> = None; /*Some(scroll::ScrollDumper::new(
                                                                     Path::new("images/"),
                                                                     romname.to_str().unwrap(),
@@ -109,21 +111,17 @@ async fn main() {
     let mut game_img = Image::gen_image_color(w as u16, h as u16, WHITE);
     let mut fb = vec![0_u8; w * h * 4];
     let game_tex = macroquad::texture::Texture2D::from_image(&game_img);
-    let mut frame_counter: u64 = 0;
-    let mut inputs: Vec<[Buttons; 2]> = Vec::with_capacity(1000);
-    let mut replay_inputs: Vec<[Buttons; 2]> = vec![];
-    let mut replay_index: usize = 0;
-    let speeds: [usize; 10] = [0, 1, 5, 15, 30, 60, 120, 240, 300, 360];
-    let mut speed: usize = 5;
-    let mut accum: f32 = 0.0;
+
+    let mut playback = playback::Playback::new();
+
     let mut mappy = MappyState::new(w, h);
     if args.len() > 2 {
-        mappy::read_fm2(&mut replay_inputs, Path::new(&args[2]));
-        replay(&mut emu, &mut mappy, &replay_inputs);
-        inputs.append(&mut replay_inputs);
+        mappy::read_fm2(&mut playback.replay_inputs, Path::new(&args[2]));
+        replay(&mut emu, &mut mappy, &playback.replay_inputs);
+        playback.inputs.append(&mut playback.replay_inputs);
     }
+    playback.start = Instant::now();
 
-    let start = Instant::now();
     println!(
         "Instructions
 op change playback speed (O for 0fps, P for 60fps)
@@ -148,41 +146,9 @@ zxcvbnm,./ for debug displays"
         //h: start
         //j: b (run)
         //k: a (jump)
-
-        if is_key_pressed(KeyCode::O) {
-            speed = if speed == 0
-                || is_key_down(KeyCode::LeftShift)
-                || is_key_down(KeyCode::RightShift)
-            {
-                0
-            } else {
-                speed - 1
-            };
-
-            println!("Speed {:?}", speed);
-        } else if is_key_pressed(KeyCode::P) {
-            speed = if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {
-                6
-            } else {
-                (speed + 1).min(speeds.len() - 1)
-            };
-            println!("Speed {:?}", speed);
-        }
+        playback.update_speed();
         if is_key_pressed(KeyCode::N) {
-            std::fs::create_dir_all("out").unwrap_or(());
-            mappy.dump_map(Path::new("out/"));
-            {
-                use std::process::Command;
-                let image = Command::new("dot")
-                    .current_dir("out")
-                    .arg("-T")
-                    .arg("png")
-                    .arg("graph.dot")
-                    .output()
-                    .expect("graphviz failed")
-                    .stdout;
-                std::fs::write(format!("out/{}.png", romname.to_str().unwrap()), &image).unwrap();
-            }
+            dump_mappy_map(romname.to_str().unwrap(), &mappy);
         }
         // if is_key_pressed(KeyCode::M) {
         //      std::fs::remove_dir_all("out/rooms").unwrap_or(());
@@ -191,45 +157,19 @@ zxcvbnm,./ for debug displays"
         //  }
 
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
-        let numkey = {
-            if is_key_pressed(KeyCode::Key0) {
-                Some(0)
-            } else if is_key_pressed(KeyCode::Key1) {
-                Some(1)
-            } else if is_key_pressed(KeyCode::Key2) {
-                Some(2)
-            } else if is_key_pressed(KeyCode::Key3) {
-                Some(3)
-            } else if is_key_pressed(KeyCode::Key4) {
-                Some(4)
-            } else if is_key_pressed(KeyCode::Key5) {
-                Some(5)
-            } else if is_key_pressed(KeyCode::Key6) {
-                Some(6)
-            } else if is_key_pressed(KeyCode::Key7) {
-                Some(7)
-            } else if is_key_pressed(KeyCode::Key8) {
-                Some(8)
-            } else if is_key_pressed(KeyCode::Key9) {
-                Some(9)
-            } else {
-                None
-            }
-        };
-        if let Some(n) = numkey {
-            std::fs::create_dir_all("inputs").unwrap_or(());
+        if let Some(n) = pressed_numkey() {
             let path = Path::new("inputs/").join(format!(
                 "{}_{}.fm2",
                 romname.to_str().expect("rom name not a valid utf-8 string"),
                 n
             ));
             if shifted {
-                mappy::write_fm2(&inputs, &path);
+                mappy::write_fm2(&playback.inputs, &path);
                 println!("Dumped {}", n);
             } else {
                 // TODO clear mappy too?
                 if let Some(dump) = scroll_dumper.take() {
-                    dump.finish(&inputs);
+                    dump.finish(&playback.inputs);
                 }
                 scroll_dumper = Some(scroll::ScrollDumper::new(
                     Path::new("images/"),
@@ -237,11 +177,7 @@ zxcvbnm,./ for debug displays"
                 ));
                 emu.load(&start_state);
                 mappy.handle_reset();
-                frame_counter = 0;
-                inputs.clear();
-                replay_inputs.clear();
-                mappy::read_fm2(&mut replay_inputs, &path);
-                replay_index = 0;
+                playback.replay(&path);
             }
         }
         if is_key_pressed(KeyCode::R) {
@@ -257,6 +193,8 @@ zxcvbnm,./ for debug displays"
                 .expect("Couldn't write all save file bytes!");
         }
         if is_key_pressed(KeyCode::Y) {
+            // This kind of clobbers the input record, if loads aren't part of the input sequence.
+            // TODO: deal with this probably by making inputs a sequence of buttons PLUS loads
             std::fs::create_dir_all("state").unwrap_or(());
             let save_path = Path::new("state/").join(format!(
                 "{}.state",
@@ -269,50 +207,19 @@ zxcvbnm,./ for debug displays"
         }
 
         // f/s * s = how many frames
-        let dt = get_frame_time();
-        // Add dt (s) * multiplier (frame/s) to get number of frames.
-        // e.g. 60 * 1/60 = 1
-        accum += speeds[speed] as f32 * dt;
-        while accum >= 1.0 {
-            let buttons = if replay_index >= replay_inputs.len() {
-                Buttons::new()
-                    .up(is_key_down(KeyCode::W))
-                    .down(is_key_down(KeyCode::S))
-                    .left(is_key_down(KeyCode::A))
-                    .right(is_key_down(KeyCode::D))
-                    .select(is_key_down(KeyCode::G))
-                    .start(is_key_down(KeyCode::H))
-                    .b(is_key_down(KeyCode::J))
-                    .a(is_key_down(KeyCode::K))
-            } else {
-                replay_index += 1;
-                replay_inputs[replay_index - 1][0]
-            };
-            inputs.push([buttons, Buttons::new()]);
-            emu.run(inputs[inputs.len() - 1]);
-            if accum < 2.0 {
+        playback.step(get_frame_time(), |remaining_acc, input| {
+            emu.run(input);
+            if remaining_acc < 2.0 {
                 // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
                 emu.copy_framebuffer_rgba8888(&mut fb)
                     .expect("Couldn't copy emulator framebuffer");
                 game_img.bytes.copy_from_slice(&fb);
             }
-            mappy.process_screen(&mut emu, inputs.last().copied().unwrap());
-            frame_counter += 1;
+            mappy.process_screen(&mut emu, input);
             if let Some(dump) = scroll_dumper.as_mut() {
                 dump.update(&mappy, &mut fb, &emu);
             }
-            if frame_counter % 300 == 0 {
-                // println!("Scroll: {:?} : {:?}", mappy.splits, mappy.scroll);
-                // println!("Known tiles: {:?}", mappy.tiles.gfx_count());
-                println!(
-                    "Net: {:} for {:} inputs, avg {:}",
-                    start.elapsed().as_secs_f64(),
-                    frame_counter,
-                    start.elapsed().as_secs_f64() / (frame_counter as f64)
-                );
-            }
-            accum -= 1.0;
-        }
+        });
 
         game_tex.update(&game_img);
         draw_texture_ex(
@@ -339,7 +246,7 @@ zxcvbnm,./ for debug displays"
     mappy.finish();
     println!("{}", mappy.timers);
     if let Some(dump) = scroll_dumper.take() {
-        dump.finish(&inputs);
+        dump.finish(&playback.inputs);
     }
     //mappy.dump_tiles(Path::new("out/"));
 }
@@ -352,4 +259,46 @@ fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
 fn tile_to_screen((x, y): (i32, i32), mappy: &MappyState) -> (f32, f32) {
     let (x, y) = mappy.tile_to_screen(x, y);
     (x as f32 * SCALE, y as f32 * SCALE)
+}
+
+fn dump_mappy_map(romname: &str, mappy: &MappyState) {
+    std::fs::create_dir_all("out").unwrap_or(());
+    mappy.dump_map(Path::new("out/"));
+    {
+        use std::process::Command;
+        let image = Command::new("dot")
+            .current_dir("out")
+            .arg("-T")
+            .arg("png")
+            .arg("graph.dot")
+            .output()
+            .expect("graphviz failed")
+            .stdout;
+        std::fs::write(format!("out/{}.png", romname), &image).unwrap();
+    }
+}
+fn pressed_numkey() -> Option<usize> {
+    if is_key_pressed(KeyCode::Key0) {
+        Some(0)
+    } else if is_key_pressed(KeyCode::Key1) {
+        Some(1)
+    } else if is_key_pressed(KeyCode::Key2) {
+        Some(2)
+    } else if is_key_pressed(KeyCode::Key3) {
+        Some(3)
+    } else if is_key_pressed(KeyCode::Key4) {
+        Some(4)
+    } else if is_key_pressed(KeyCode::Key5) {
+        Some(5)
+    } else if is_key_pressed(KeyCode::Key6) {
+        Some(6)
+    } else if is_key_pressed(KeyCode::Key7) {
+        Some(7)
+    } else if is_key_pressed(KeyCode::Key8) {
+        Some(8)
+    } else if is_key_pressed(KeyCode::Key9) {
+        Some(9)
+    } else {
+        None
+    }
 }
