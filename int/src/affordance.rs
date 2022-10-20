@@ -39,29 +39,7 @@ impl AffordanceTracker {
             brush: AffordanceMask::empty(),
         }
     }
-    pub fn update(&mut self, mappy: &MappyState, _emu: &Emulator) {
-        // update brush
-        if is_key_pressed(KeyCode::Kp7) {
-            self.brush.toggle(AffordanceMask::SOLID);
-        }
-        if is_key_pressed(KeyCode::Kp8) {
-            self.brush.toggle(AffordanceMask::DANGER);
-        }
-        if is_key_pressed(KeyCode::Kp9) {
-            self.brush.toggle(AffordanceMask::CHANGEABLE);
-        }
-        if is_key_pressed(KeyCode::Kp4) {
-            self.brush.toggle(AffordanceMask::USABLE);
-        }
-        if is_key_pressed(KeyCode::Kp5) {
-            self.brush.toggle(AffordanceMask::PORTAL);
-        }
-        if is_key_pressed(KeyCode::Kp6) {
-            self.brush.toggle(AffordanceMask::MOVABLE);
-        }
-        if is_key_pressed(KeyCode::Kp1) {
-            self.brush.toggle(AffordanceMask::BREAKABLE);
-        }
+    fn draw_brush_display(&self) {
         draw_text(
             &format!(
                 "{}{}{}\n{}{}{}\n{}",
@@ -150,6 +128,33 @@ impl AffordanceTracker {
             super::SCALE * 24.0,
             GRAY,
         );
+    }
+    fn update_brush(&mut self) {
+        // update brush
+        if is_key_pressed(KeyCode::Kp7) {
+            self.brush.toggle(AffordanceMask::SOLID);
+        }
+        if is_key_pressed(KeyCode::Kp8) {
+            self.brush.toggle(AffordanceMask::DANGER);
+        }
+        if is_key_pressed(KeyCode::Kp9) {
+            self.brush.toggle(AffordanceMask::CHANGEABLE);
+        }
+        if is_key_pressed(KeyCode::Kp4) {
+            self.brush.toggle(AffordanceMask::USABLE);
+        }
+        if is_key_pressed(KeyCode::Kp5) {
+            self.brush.toggle(AffordanceMask::PORTAL);
+        }
+        if is_key_pressed(KeyCode::Kp6) {
+            self.brush.toggle(AffordanceMask::MOVABLE);
+        }
+        if is_key_pressed(KeyCode::Kp1) {
+            self.brush.toggle(AffordanceMask::BREAKABLE);
+        }
+    }
+    pub fn update(&mut self, mappy: &MappyState, _emu: &Emulator) {
+        self.update_brush();
         // left click to grant, right click to copy affordances
         // shift right click to cut and erase (propagating to guesses)
         let action = match (
@@ -258,20 +263,47 @@ impl AffordanceTracker {
             },
         }
     }
-    pub fn modulate(&mut self, mappy: &MappyState, _emu: &Emulator, img: &mut Image) {
+    pub fn modulate(
+        &mut self,
+        mappy: &MappyState,
+        _emu: &Emulator,
+        in_img: &Image,
+        out_img: &mut Image,
+    ) {
         //Rendering: for now, desaturate/reduce contrast of ones with no affordances, tint danger red, make solid high contrast, make avatar green, tint usable/breakable/portal/etc blue.
         let tiles = mappy.tiles.read().unwrap();
         let region = mappy.split_region();
         let sr = mappy.current_screen.region;
+        use image::{GenericImage, GenericImageView};
+        use imageproc::{drawing as d, rect::Rect};
+        let in_img: image::ImageBuffer<image::Rgba<u8>, &[u8]> = image::ImageBuffer::from_raw(
+            in_img.width as u32,
+            in_img.height as u32,
+            in_img.bytes.as_slice(),
+        )
+        .unwrap();
+        let mut out_img: image::ImageBuffer<image::Rgba<u8>, &mut [u8]> =
+            image::ImageBuffer::from_raw(
+                out_img.width as u32,
+                out_img.height as u32,
+                out_img.bytes.as_mut_slice(),
+            )
+            .unwrap();
+        out_img.copy_from(&in_img, 0, 0).unwrap();
+        let mut canvas = d::Blend(out_img);
         for x in ((region.x)..(region.x + region.w as i32)).step_by(TILE_SIZE) {
             for y in ((region.y)..(region.y + region.h as i32)).step_by(TILE_SIZE) {
                 if let Some(gfx) = mappy
-                    .current_screen
-                    .get(
-                        sr.x + (x - region.x) / TILE_SIZE as i32,
-                        sr.y + (y - region.y) / TILE_SIZE as i32,
-                    )
-                    .and_then(|tile| tiles.get_tile_by_id(tile))
+                    .current_room
+                    .as_ref()
+                    .and_then(|r| {
+                        r.get(
+                            sr.x + (x - region.x) / TILE_SIZE as i32,
+                            sr.y + (y - region.y) / TILE_SIZE as i32,
+                        )
+                    })
+                    .and_then(|tile| tiles.get_change_by_id(tile))
+                    .and_then(|change| tiles.get_tile_by_id(change.to))
                 {
                     match self.tiles.get(&gfx.perceptual_hash()) {
                         None => {
@@ -279,17 +311,15 @@ impl AffordanceTracker {
                         }
                         Some(Affordance::Guessed(mask) | Affordance::Given(mask)) => {
                             let mask = (mask.bits() | 0x000F) as u32;
-                            draw_rectangle(
-                                (x as f32 * super::SCALE) as f32,
-                                (y as f32 * super::SCALE) as f32,
-                                TILE_SIZE as f32 * super::SCALE,
-                                TILE_SIZE as f32 * super::SCALE,
-                                Color::new(
-                                    (mask * 127 % 256) as f32 / 255.,
-                                    (mask * 33 % 256) as f32 / 255.,
-                                    (mask * 61 % 256) as f32 / 255.,
-                                    0.5,
-                                ),
+                            d::draw_filled_rect_mut(
+                                &mut canvas,
+                                Rect::at(x, y).of_size(TILE_SIZE as u32, TILE_SIZE as u32),
+                                image::Rgba([
+                                    (mask % 3) as u8,
+                                    (mask % 5) as u8,
+                                    (mask % 7) as u8,
+                                    128,
+                                ]),
                             );
                         }
                     }
@@ -305,24 +335,37 @@ impl AffordanceTracker {
                 Some(Affordance::Guessed(mask) | Affordance::Given(mask)) => {
                     let mask = (mask.bits() | 0x000F) as u32;
 
-                    let col = Color::new(
-                        (mask * 127 % 256) as f32 / 255.,
-                        (mask * 33 % 256) as f32 / 255.,
-                        (mask * 61 % 256) as f32 / 255.,
-                        0.5,
-                    );
+                    let col =
+                        image::Rgba([(mask % 3) as u8, (mask % 5) as u8, (mask % 7) as u8, 128]);
                     let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
-                    draw_rectangle(
-                        sd.x as f32 * super::SCALE,
-                        sd.y as f32 * super::SCALE,
-                        sd.width() as f32 * super::SCALE,
-                        sd.height() as f32 * super::SCALE,
-                        2.0,
+                    if sd.x as u32 + sd.width() as u32 > 255
+                        || sd.y as u32 + sd.height() as u32 > 240
+                    {
+                        continue;
+                    }
+                    canvas
+                        .0
+                        .copy_from(
+                            &*in_img.view(
+                                sd.x as u32,
+                                sd.y as u32,
+                                sd.width() as u32,
+                                sd.height() as u32,
+                            ),
+                            sd.x as u32,
+                            sd.y as u32,
+                        )
+                        .unwrap();
+                    d::draw_filled_rect_mut(
+                        &mut canvas,
+                        Rect::at(sd.x as i32, sd.y as i32)
+                            .of_size(sd.width() as u32, sd.height() as u32),
                         col,
                     );
                 }
             }
         }
+        self.draw_brush_display();
     }
 }
 

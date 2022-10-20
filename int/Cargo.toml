@@ -13,3 +13,4 @@ retro-rs = { git = "https://github.com/JoeOsborn/retro-rs", branch="master" }
 chrono="0.4.22"
 image = "0.24.4"
 bitflags = "1.3.2"
+imageproc = "0.23.0"

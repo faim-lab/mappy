@@ -111,6 +111,7 @@ async fn main() {
     assert_eq!((w, h), (256, 240));
 
     let mut game_img = Image::gen_image_color(w as u16, h as u16, WHITE);
+    let mut mod_img = Image::gen_image_color(w as u16, h as u16, WHITE);
     let mut fb = vec![0_u8; w * h * 4];
     let game_tex = macroquad::texture::Texture2D::from_image(&game_img);
 
@@ -223,7 +224,8 @@ zxcvbnm,./ for debug displays"
             }
         });
         affordances.update(&mappy, &emu);
-        game_tex.update(&game_img);
+        affordances.modulate(&mappy, &emu, &game_img, &mut mod_img);
+        game_tex.update(&mod_img);
         draw_texture_ex(
             game_tex,
             0.,
@@ -234,7 +236,6 @@ zxcvbnm,./ for debug displays"
                 ..DrawTextureParams::default()
             },
         );
-        affordances.modulate(&mappy, &emu, &mut game_img);
 
         for deco in decos.iter_mut() {
             if is_key_pressed(deco.toggle) {
