@@ -180,13 +180,12 @@ impl Deco for SelectedTile {
         if let Some((tx, ty)) = self.selected_tile_pos {
             let (sx, sy) = tile_to_screen((tx, ty), mappy);
             draw_rectangle_lines(sx, sy, 8.0 * SCALE, 8.0 * SCALE, 1.0 * SCALE, RED);
-            if let Some(change) = mappy.current_room.as_ref().unwrap().get(tx, ty) {
+            if let Some(change) = mappy.current_room.as_ref().and_then(|r| r.get(tx, ty)) {
                 let tiles = mappy.tiles.read().unwrap();
                 let change_data = tiles.get_change_by_id(change);
                 if let Some(cd) = change_data {
                     let to = cd.to;
                     let tile = tiles.get_tile_by_id(to).unwrap();
-                    println!("T: {},{} -- {:?}", tx, ty, tile.perceptual_hash());
                     draw_text(
                         &format!("{},{} -- {:?}", tx, ty, tile.perceptual_hash()),
                         SCALE,
@@ -235,8 +234,6 @@ impl Deco for SelectedSprite {
                 BLUE,
             );
             let data = track.current_data();
-            let (px, py) = track.current_point();
-            println!("S: {},{} -- {}", px, py, data.key());
             draw_text(
                 &format!("{},{} -- {}", wx, wy, data.key()),
                 self.dims.0 as f32 * SCALE - 100.0 * SCALE,

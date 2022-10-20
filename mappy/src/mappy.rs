@@ -915,6 +915,10 @@ impl MappyState {
         }
     }
 
+    pub fn live_track_with_id(&self, id: &sprites::TrackID) -> Option<&sprites::SpriteTrack> {
+        self.live_tracks.iter().find(|t| t.id == *id)
+    }
+
     pub fn split_region(&self) -> Rect {
         splits::split_region_for(
             self.splits[0].0.scanline as u32,

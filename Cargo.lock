@@ -589,6 +589,7 @@ dependencies = [
 name = "int"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "chrono",
  "image 0.24.4",
  "macroquad",

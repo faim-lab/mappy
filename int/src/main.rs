@@ -4,9 +4,11 @@ use retro_rs::{Buttons, Emulator};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
+mod affordance;
 mod debug_decorate;
 mod playback;
 mod scroll;
+
 const SCALE: f32 = 3.0;
 
 fn window_conf() -> Conf {
@@ -39,7 +41,7 @@ async fn main() {
                                                                     Path::new("images/"),
                                                                     romname.to_str().unwrap(),
                                                                 ));*/
-
+    let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     let mut emu = Emulator::create(
         Path::new("../libretro-fceumm/fceumm_libretro"),
         Path::new(romfile),
@@ -92,7 +94,7 @@ async fn main() {
                 deco: Box::new(SelectedTile {
                     selected_tile_pos: None,
                 }),
-                enabled: true,
+                enabled: false,
                 toggle: KeyCode::F20,
             },
             Decorator {
@@ -100,7 +102,7 @@ async fn main() {
                     selected_sprite: None,
                     dims: (w, h),
                 }),
-                enabled: true,
+                enabled: false,
                 toggle: KeyCode::F20,
             },
         ]
@@ -220,7 +222,7 @@ zxcvbnm,./ for debug displays"
                 dump.update(&mappy, &mut fb, &emu);
             }
         });
-
+        affordances.update(&mappy, &emu);
         game_tex.update(&game_img);
         draw_texture_ex(
             game_tex,
@@ -232,6 +234,7 @@ zxcvbnm,./ for debug displays"
                 ..DrawTextureParams::default()
             },
         );
+        affordances.modulate(&mappy, &emu, &mut game_img);
 
         for deco in decos.iter_mut() {
             if is_key_pressed(deco.toggle) {
@@ -241,6 +244,7 @@ zxcvbnm,./ for debug displays"
                 deco.deco.draw(&mappy);
             }
         }
+
         next_frame().await;
     }
     mappy.finish();
