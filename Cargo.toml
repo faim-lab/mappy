@@ -2,7 +2,7 @@
 members = ["mappy", "batch", "int", "access", "scrolls"]
 
 [profile.dev]
-opt-level = 3
+opt-level = 1
 lto = "thin"
 codegen-units = 1
 

@@ -52,6 +52,8 @@ impl Playback {
         // Add dt (s) * multiplier (frame/s) to get number of frames.
         // e.g. 60 * 1/60 = 1
         self.accum += SPEEDS[self.speed] as f32 * dt;
+        // avoid death spirals
+        self.accum = self.accum.min(SPEEDS[SPEEDS.len() - 1] as f32);
         while self.accum >= 1.0 {
             let buttons = if self.replay_index >= self.replay_inputs.len() {
                 Buttons::new()

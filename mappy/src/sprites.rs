@@ -91,6 +91,7 @@ pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[Spr
     false
 }
 
+// Time, scroll offset (redundant across sprites honestly), spritedata
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct At(pub Time, pub (i32, i32), pub SpriteData);
 

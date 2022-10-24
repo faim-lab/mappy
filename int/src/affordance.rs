@@ -263,6 +263,7 @@ impl AffordanceTracker {
             },
         }
     }
+    #[allow(clippy::map_entry)]
     pub fn modulate(
         &mut self,
         mappy: &MappyState,
@@ -310,62 +311,125 @@ impl AffordanceTracker {
                             // todo, highlight un-known nature
                         }
                         Some(Affordance::Guessed(mask) | Affordance::Given(mask)) => {
-                            let mask = (mask.bits() | 0x000F) as u32;
-                            d::draw_filled_rect_mut(
+                            apply_mask_to_area(
                                 &mut canvas,
-                                Rect::at(x, y).of_size(TILE_SIZE as u32, TILE_SIZE as u32),
-                                image::Rgba([
-                                    (mask % 3) as u8,
-                                    (mask % 5) as u8,
-                                    (mask % 7) as u8,
-                                    128,
-                                ]),
+                                *mask,
+                                x as u32,
+                                y as u32,
+                                TILE_SIZE as u32,
+                                TILE_SIZE as u32,
                             );
                         }
                     }
                 }
             }
         }
+        //let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
         for track in mappy.live_tracks.iter() {
             let cur = track.current_data();
+            // if every tile covered by this sprite is a known tile in the current _screen_, skip it
+            // TODO: later: mask out individual pixels of the sprite
+            // let sprite_is_clear = tiles_covered_by(mappy, cur)
+            //     .into_iter()
+            //     .all(|(tx, ty)| mappy.current_screen.get(tx, ty) != Some(initial_tile));
+            // if sprite_is_clear {
+            //     continue;
+            // }
+            if !self.sprites.contains_key(&cur.key()) {
+                if let Some(guess) = sprite_guesses(mappy, track).fold(None, |guess, track_key| {
+                    match (self.sprites.get(&track_key), guess) {
+                        (None, guess) => guess,
+                        (Some(guess), None) => Some(*guess),
+                        (Some(Affordance::Given(mask)), _old) => Some(Affordance::Given(*mask)),
+                        (Some(Affordance::Guessed(_mask)), better_guess) => better_guess,
+                    }
+                }) {
+                    self.sprites.insert(cur.key(), guess);
+                }
+            }
+            let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
+            if sd.x as u32 + sd.width() as u32 > 255 || sd.y as u32 + sd.height() as u32 > 240 {
+                continue;
+            }
+            canvas
+                .0
+                .copy_from(
+                    &*in_img.view(
+                        sd.x as u32,
+                        sd.y as u32,
+                        sd.width() as u32,
+                        sd.height() as u32,
+                    ),
+                    sd.x as u32,
+                    sd.y as u32,
+                )
+                .unwrap();
             match self.sprites.get(&cur.key()) {
                 None => {
                     // todo, highlight unknown nature
                 }
                 Some(Affordance::Guessed(mask) | Affordance::Given(mask)) => {
-                    let mask = (mask.bits() | 0x000F) as u32;
-
-                    let col =
-                        image::Rgba([(mask % 3) as u8, (mask % 5) as u8, (mask % 7) as u8, 128]);
-                    let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
-                    if sd.x as u32 + sd.width() as u32 > 255
-                        || sd.y as u32 + sd.height() as u32 > 240
-                    {
-                        continue;
-                    }
-                    canvas
-                        .0
-                        .copy_from(
-                            &*in_img.view(
-                                sd.x as u32,
-                                sd.y as u32,
-                                sd.width() as u32,
-                                sd.height() as u32,
-                            ),
-                            sd.x as u32,
-                            sd.y as u32,
-                        )
-                        .unwrap();
-                    d::draw_filled_rect_mut(
+                    apply_mask_to_area(
                         &mut canvas,
-                        Rect::at(sd.x as i32, sd.y as i32)
-                            .of_size(sd.width() as u32, sd.height() as u32),
-                        col,
+                        *mask,
+                        sd.x as u32,
+                        sd.y as u32,
+                        sd.width() as u32,
+                        sd.height() as u32,
                     );
+                    if track.get_is_avatar() {
+                        d::draw_filled_rect_mut(
+                            &mut canvas,
+                            Rect::at(sd.x as i32, sd.y as i32)
+                                .of_size(sd.width() as u32, sd.height() as u32),
+                            image::Rgba([0, 255, 0, 96]),
+                        );
+                    }
                 }
             }
         }
         self.draw_brush_display();
+    }
+}
+
+fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
+    canvas: &mut imageproc::drawing::Blend<I>,
+    mask: AffordanceMask,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+) {
+    use imageproc::{drawing as d, rect::Rect};
+    if mask.is_empty() {
+        //de-saturate and (later) blur output in rect
+        // this is way slow but I couldn't figure out the types
+        for py in y..(y + h) {
+            for px in x..(x + w) {
+                let mut p = canvas.0.get_pixel(px, py);
+                let wt = (p[0] as f32 + p[1] as f32 + p[2] as f32) / 3.0;
+                p[0] = wt as u8;
+                p[1] = wt as u8;
+                p[2] = wt as u8;
+                canvas.0.put_pixel(px, py, p);
+            }
+        }
+        image::imageops::colorops::contrast_in_place(&mut *canvas.0.sub_image(x, y, w, h), -50.0);
+    } else if mask.contains(AffordanceMask::DANGER) {
+        d::draw_filled_rect_mut(
+            canvas,
+            Rect::at(x as i32, y as i32).of_size(w, h),
+            image::Rgba([255, 0, 0, 64]),
+        );
+    } else if mask.contains(AffordanceMask::USABLE) || mask.contains(AffordanceMask::PORTAL) {
+        d::draw_filled_rect_mut(
+            canvas,
+            Rect::at(x as i32, y as i32).of_size(w, h),
+            image::Rgba([0, 0, 255, 64]),
+        );
+    } else if mask.contains(AffordanceMask::SOLID) {
+        // TODO: need to do this over a larger area than 8x8
+        image::imageops::colorops::contrast_in_place(&mut *canvas.0.sub_image(x, y, w, h), 50.0);
     }
 }
 
@@ -388,4 +452,16 @@ fn sprite_guesses(mappy: &MappyState, track: &SpriteTrack) -> impl Iterator<Item
         }
     }
     set.into_iter()
+}
+#[allow(dead_code)]
+fn tiles_covered_by(mappy: &MappyState, cur: &mappy::sprites::SpriteData) -> [(i32, i32); 4] {
+    [
+        mappy.screen_to_tile(cur.x as i32, cur.y as i32),
+        mappy.screen_to_tile(cur.x as i32 + cur.width() as i32 - 1, cur.y as i32),
+        mappy.screen_to_tile(cur.x as i32, cur.y as i32 + cur.height() as i32 - 1),
+        mappy.screen_to_tile(
+            cur.x as i32 + cur.width() as i32 - 1,
+            cur.y as i32 + cur.height() as i32 - 1,
+        ),
+    ]
 }
