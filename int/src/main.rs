@@ -21,10 +21,18 @@ fn window_conf() -> Conf {
     }
 }
 
-fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
+fn replay(
+    emu: &mut Emulator,
+    mappy: &mut MappyState,
+    inputs: &[[Buttons; 2]],
+    scroll: &mut Option<&mut scroll::ScrollDumper>,
+) {
     for (_frames, inp) in inputs.iter().enumerate() {
         emu.run(*inp);
         mappy.process_screen(emu, *inp);
+        if let Some(scroll) = scroll {
+            scroll.update(mappy, emu);
+        }
     }
 }
 
@@ -37,10 +45,10 @@ async fn main() {
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
     std::fs::create_dir_all("inputs").unwrap_or(());
-    let mut scroll_dumper: Option<scroll::ScrollDumper> = None; /*Some(scroll::ScrollDumper::new(
-                                                                    Path::new("images/"),
-                                                                    romname.to_str().unwrap(),
-                                                                ));*/
+    let mut scroll_dumper: Option<scroll::ScrollDumper> = /*Some(scroll::ScrollDumper::new(
+        Path::new("scroll_data/"),
+        romname.to_str().unwrap(),
+    ))*/ None;
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     let mut emu = Emulator::create(
         Path::new("../libretro-fceumm/fceumm_libretro"),
@@ -120,7 +128,12 @@ async fn main() {
     let mut mappy = MappyState::new(w, h);
     if args.len() > 2 {
         mappy::read_fm2(&mut playback.replay_inputs, Path::new(&args[2]));
-        replay(&mut emu, &mut mappy, &playback.replay_inputs);
+        replay(
+            &mut emu,
+            &mut mappy,
+            &playback.replay_inputs,
+            &mut scroll_dumper.as_mut(),
+        );
         playback.inputs.append(&mut playback.replay_inputs);
     }
     playback.start = Instant::now();
@@ -175,7 +188,7 @@ zxcvbnm,./ for debug displays"
                     dump.finish(&playback.inputs);
                 }
                 scroll_dumper = Some(scroll::ScrollDumper::new(
-                    Path::new("images/"),
+                    Path::new("scroll_data/"),
                     romname.to_str().unwrap(),
                 ));
                 emu.load(&start_state);
@@ -212,6 +225,12 @@ zxcvbnm,./ for debug displays"
         // f/s * s = how many frames
         playback.step(get_frame_time(), |remaining_acc, input| {
             emu.run(input);
+            // must do this before mappy processes the screen,
+            // since mappy messes with the framebuffer/emulation state.
+            // later, will need an early and late update?
+            if let Some(dump) = scroll_dumper.as_mut() {
+                dump.update(&mappy, &emu);
+            }
             if remaining_acc < 2.0 {
                 // must do this here since mappy causes saves and loads, and that messes with emu's framebuffer (not updated on a load)
                 emu.copy_framebuffer_rgba8888(&mut fb)
@@ -219,9 +238,6 @@ zxcvbnm,./ for debug displays"
                 game_img.bytes.copy_from_slice(&fb);
             }
             mappy.process_screen(&mut emu, input);
-            if let Some(dump) = scroll_dumper.as_mut() {
-                dump.update(&mappy, &mut fb, &emu);
-            }
         });
         affordances.update(&mappy, &emu);
         affordances.modulate(&mappy, &emu, &game_img, &mut mod_img);

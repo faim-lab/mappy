@@ -344,7 +344,13 @@ impl AffordanceTracker {
                         (Some(Affordance::Guessed(_mask)), better_guess) => better_guess,
                     }
                 }) {
-                    self.sprites.insert(cur.key(), guess);
+                    self.sprites.insert(
+                        cur.key(),
+                        Affordance::Guessed(match guess {
+                            Affordance::Given(mask) => mask,
+                            Affordance::Guessed(mask) => mask,
+                        }),
+                    );
                 }
             }
             let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
