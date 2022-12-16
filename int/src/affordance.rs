@@ -24,12 +24,24 @@ enum Action {
     Paste,     // propagates a guess which also clobbers other guesses
     Cut(bool), // false is copy, true is erase; erase clobbers guesses
 }
+struct ModulateSettings {
+    avatar_ratio: f32,
+    dangerous_ratio: f32,
+    usable_ratio: f32,
+    portal_ratio: f32,
+    changeable_ratio: f32,
+    breakable_ratio: f32,
+    solid_ratio: f32,
+    movable_saturation_change: f32,
+    no_affordance_saturation_change: f32,
+}
 pub struct AffordanceTracker {
     // later: output path, etc, like scroll dumper
     tiles: HashMap<u128, Affordance>,
     sprites: HashMap<u32, Affordance>,
 
     brush: AffordanceMask,
+    settings: ModulateSettings,
 }
 impl AffordanceTracker {
     pub fn new(_romname: &str) -> Self {
@@ -37,6 +49,17 @@ impl AffordanceTracker {
             tiles: HashMap::with_capacity(10_000),
             sprites: HashMap::with_capacity(10_000),
             brush: AffordanceMask::empty(),
+            settings: ModulateSettings {
+                avatar_ratio: 1.0,
+                dangerous_ratio: 1.0,
+                usable_ratio: 1.0,
+                portal_ratio: 1.0,
+                changeable_ratio: 1.0,
+                breakable_ratio: 1.0,
+                solid_ratio: 1.0,
+                movable_saturation_change: 2.0,
+                no_affordance_saturation_change: 0.5,
+            },
         }
     }
     fn draw_brush_display(&self) {
@@ -318,6 +341,7 @@ impl AffordanceTracker {
                                 y as u32,
                                 TILE_SIZE as u32,
                                 TILE_SIZE as u32,
+                                &self.settings,
                             );
                         }
                     }
@@ -375,20 +399,23 @@ impl AffordanceTracker {
                     // todo, highlight unknown nature
                 }
                 Some(Affordance::Guessed(mask) | Affordance::Given(mask)) => {
-                    apply_mask_to_area(
-                        &mut canvas,
-                        *mask,
-                        sd.x as u32,
-                        sd.y as u32,
-                        sd.width() as u32,
-                        sd.height() as u32,
-                    );
                     if track.get_is_avatar() {
-                        d::draw_filled_rect_mut(
+                        emphasize(
                             &mut canvas,
                             Rect::at(sd.x as i32, sd.y as i32)
                                 .of_size(sd.width() as u32, sd.height() as u32),
-                            image::Rgba([0, 255, 0, 96]),
+                            image::Rgba([0, 255, 0, 255]),
+                            self.settings.avatar_ratio,
+                        );
+                    } else {
+                        apply_mask_to_area(
+                            &mut canvas,
+                            *mask,
+                            sd.x as u32,
+                            sd.y as u32,
+                            sd.width() as u32,
+                            sd.height() as u32,
+                            &self.settings,
                         );
                     }
                 }
@@ -405,38 +432,76 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     y: u32,
     w: u32,
     h: u32,
+    settings: &ModulateSettings,
 ) {
-    use imageproc::{drawing as d, rect::Rect};
-    if mask.is_empty() {
-        //de-saturate and (later) blur output in rect
-        // this is way slow but I couldn't figure out the types
-        for py in y..(y + h) {
-            for px in x..(x + w) {
-                let mut p = canvas.0.get_pixel(px, py);
-                let wt = (p[0] as f32 + p[1] as f32 + p[2] as f32) / 3.0;
-                p[0] = wt as u8;
-                p[1] = wt as u8;
-                p[2] = wt as u8;
-                canvas.0.put_pixel(px, py, p);
-            }
-        }
-        image::imageops::colorops::contrast_in_place(&mut *canvas.0.sub_image(x, y, w, h), -50.0);
-    } else if mask.contains(AffordanceMask::DANGER) {
-        d::draw_filled_rect_mut(
+    use imageproc::rect::Rect;
+    let r = Rect::at(x as i32, y as i32).of_size(w, h);
+    if mask.contains(AffordanceMask::DANGER) {
+        emphasize(
             canvas,
-            Rect::at(x as i32, y as i32).of_size(w, h),
-            image::Rgba([255, 0, 0, 64]),
+            r,
+            image::Rgba([255, 0, 0, 255]),
+            settings.dangerous_ratio,
         );
-    } else if mask.contains(AffordanceMask::USABLE) || mask.contains(AffordanceMask::PORTAL) {
-        d::draw_filled_rect_mut(
+    } else if mask.contains(AffordanceMask::USABLE) {
+        emphasize(
             canvas,
-            Rect::at(x as i32, y as i32).of_size(w, h),
-            image::Rgba([0, 0, 255, 64]),
+            r,
+            image::Rgba([255, 255, 0, 255]),
+            settings.usable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::PORTAL) {
+        emphasize(
+            canvas,
+            r,
+            image::Rgba([0, 0, 255, 255]),
+            settings.portal_ratio,
+        );
+    } else if mask.contains(AffordanceMask::CHANGEABLE) {
+        emphasize(
+            canvas,
+            r,
+            image::Rgba([150, 75, 0, 255]),
+            settings.changeable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::BREAKABLE) {
+        emphasize(
+            canvas,
+            r,
+            image::Rgba([150, 75, 0, 255]),
+            settings.breakable_ratio,
         );
     } else if mask.contains(AffordanceMask::SOLID) {
-        // TODO: need to do this over a larger area than 8x8
-        image::imageops::colorops::contrast_in_place(&mut *canvas.0.sub_image(x, y, w, h), 50.0);
+        emphasize(
+            canvas,
+            r,
+            image::Rgba([196, 196, 196, 255]),
+            settings.solid_ratio,
+        );
+    } else if mask.contains(AffordanceMask::MOVABLE) {
+        emphasize_saturation(canvas, r, settings.movable_saturation_change);
+    } else {
+        emphasize_saturation(canvas, r, settings.no_affordance_saturation_change);
     }
+}
+
+fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
+    canvas: &mut imageproc::drawing::Blend<I>,
+    r: imageproc::rect::Rect,
+    target: image::Rgba<u8>,
+    ratio: f32,
+) {
+    // TODO: compute HSV of r in canvas, modulate each color towards target by ratio
+    imageproc::drawing::draw_filled_rect_mut(canvas, r, target);
+}
+
+fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
+    canvas: &mut imageproc::drawing::Blend<I>,
+    r: imageproc::rect::Rect,
+    change_by: f32,
+) {
+    // TODO: compute saturation of r in canvas, multiply by change_by, draw that into area; or use a saturate() command if it exists
+    imageproc::drawing::draw_filled_rect_mut(canvas, r, image::Rgba([255, 255, 255, 64]));
 }
 
 fn sprite_guesses(mappy: &MappyState, track: &SpriteTrack) -> impl Iterator<Item = u32> {
