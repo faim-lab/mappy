@@ -492,6 +492,8 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     ratio: f32,
 ) {
     // TODO: compute HSV of r in canvas, modulate each color towards target by ratio
+    // can't do a lerp exactly, or can I?
+    // what if I literally did a lerp in RGB and then blended the new and old pixels by ratio?
     imageproc::drawing::draw_filled_rect_mut(canvas, r, target);
 }
 
