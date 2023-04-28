@@ -11,5 +11,5 @@ macroquad = "0.3.24" #{ git = "https://github.com/not-fl3/macroquad", rev="31cff
 mappy = {path="../mappy"}
 retro-rs = { git = "https://github.com/JoeOsborn/retro-rs", branch="master" }
 [dependencies.pyo3]
-version = "0.17.2"
+version = "0.18.3"
 features = ["auto-initialize"]
