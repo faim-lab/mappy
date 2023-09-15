@@ -16,7 +16,8 @@ fn window_conf() -> Conf {
         window_title: "Mappy".to_owned(),
         fullscreen: false,
         window_width: 256 * SCALE as i32,
-        window_height: 240 * SCALE as i32,
+        window_height: 240 * SCALE as i32 + 128,
+        window_resizable: false,
         ..Conf::default()
     }
 }
@@ -39,6 +40,7 @@ fn replay(
 #[macroquad::main(window_conf)]
 async fn main() {
     use std::env;
+    std::fs::create_dir_all("out").unwrap_or(());
     let args: Vec<_> = env::args().collect();
 
     let romfile = Path::new(args[1].as_str());
@@ -50,10 +52,10 @@ async fn main() {
         romname.to_str().unwrap(),
     ))*/ None;
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
-    /*let mut emu = Emulator::create(
-        Path::new("../libretro-fceumm/fceumm_libretro"),
-        Path::new(romfile),
-    );*/
+    // let mut emu = Emulator::create(
+    // Path::new("cores/fceumm_libretro"),
+    // Path::new(romfile),
+    // );
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
     let mut start_state = vec![0; emu.save_size()];
@@ -243,7 +245,7 @@ zxcvbnm,./ for debug displays"
         affordances.modulate(&mappy, &emu, &game_img, &mut mod_img);
         game_tex.update(&mod_img);
         draw_texture_ex(
-            game_tex,
+            &game_tex,
             0.,
             0.,
             WHITE,
@@ -283,7 +285,6 @@ fn tile_to_screen((x, y): (i32, i32), mappy: &MappyState) -> (f32, f32) {
 }
 
 fn dump_mappy_map(romname: &str, mappy: &MappyState) {
-    std::fs::create_dir_all("out").unwrap_or(());
     mappy.dump_map(Path::new("out/"));
     {
         use std::process::Command;
