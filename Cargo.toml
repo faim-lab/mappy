@@ -1,5 +1,6 @@
 [workspace]
 members = ["mappy", "batch", "int", "access", "scrolls"]
+resolver = "2"
 
 [profile.dev]
 opt-level = 1
