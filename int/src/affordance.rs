@@ -154,25 +154,25 @@ impl AffordanceTracker {
     }
     fn update_brush(&mut self) {
         // update brush
-        if is_key_pressed(KeyCode::Kp7) {
+        if is_key_pressed(KeyCode::Kp7) || is_key_pressed (KeyCode::F1) {
             self.brush.toggle(AffordanceMask::SOLID);
         }
-        if is_key_pressed(KeyCode::Kp8) {
+        if is_key_pressed(KeyCode::Kp8) || is_key_pressed (KeyCode::F2) {
             self.brush.toggle(AffordanceMask::DANGER);
         }
-        if is_key_pressed(KeyCode::Kp9) {
+        if is_key_pressed(KeyCode::Kp9) || is_key_pressed (KeyCode::F3) {
             self.brush.toggle(AffordanceMask::CHANGEABLE);
         }
-        if is_key_pressed(KeyCode::Kp4) {
+        if is_key_pressed(KeyCode::Kp4) || is_key_pressed (KeyCode::F4) {
             self.brush.toggle(AffordanceMask::USABLE);
         }
-        if is_key_pressed(KeyCode::Kp5) {
+        if is_key_pressed(KeyCode::Kp5) || is_key_pressed (KeyCode::F5) {
             self.brush.toggle(AffordanceMask::PORTAL);
         }
-        if is_key_pressed(KeyCode::Kp6) {
+        if is_key_pressed(KeyCode::Kp6) || is_key_pressed (KeyCode::F6) {
             self.brush.toggle(AffordanceMask::MOVABLE);
         }
-        if is_key_pressed(KeyCode::Kp1) {
+        if is_key_pressed(KeyCode::Kp1) || is_key_pressed (KeyCode::F7) {
             self.brush.toggle(AffordanceMask::BREAKABLE);
         }
     }

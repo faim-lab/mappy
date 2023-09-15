@@ -9,7 +9,7 @@ mod debug_decorate;
 mod playback;
 mod scroll;
 
-const SCALE: f32 = 3.0;
+const SCALE: f32 = 1.0;
 
 fn window_conf() -> Conf {
     Conf {
@@ -50,11 +50,11 @@ async fn main() {
         romname.to_str().unwrap(),
     ))*/ None;
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
-    let mut emu = Emulator::create(
+    /*let mut emu = Emulator::create(
         Path::new("../libretro-fceumm/fceumm_libretro"),
         Path::new(romfile),
-    );
-    // let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
+    );*/
+    let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
     let mut start_state = vec![0; emu.save_size()];
     let mut save_buf = vec![0; emu.save_size()];
