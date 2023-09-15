@@ -19,7 +19,7 @@ pub struct ScrollDumper {
 
 impl ScrollDumper {
     pub fn new(data_root: &Path, rom_name: &str) -> Self {
-        video_rs::init();
+        video_rs::init().unwrap();
 
         let date_str = format!("{}", chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"));
         let data_folder = data_root
