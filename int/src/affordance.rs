@@ -14,6 +14,7 @@ bitflags! {
         const BREAKABLE  = 0b0000_0000_0100_0000;
     }
 }
+//how were bit flags selected? is there any more meaning?
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Affordance {
@@ -24,6 +25,8 @@ enum Action {
     Paste,     // propagates a guess which also clobbers other guesses
     Cut(bool), // false is copy, true is erase; erase clobbers guesses
 }
+//clobbers presumably overrides? so cut(false) is copy which preserves what you copy?
+// cut(true) is like C-X which removes the original?
 struct ModulateSettings {
     avatar_ratio: f32,
     dangerous_ratio: f32,
@@ -35,10 +38,13 @@ struct ModulateSettings {
     movable_saturation_change: f32,
     no_affordance_saturation_change: f32,
 }
+//are the ratios a saturation? an importence? what is it a ratio to?
+
 pub struct AffordanceTracker {
     // later: output path, etc, like scroll dumper
-    tiles: HashMap<u128, Affordance>,
-    sprites: HashMap<u32, Affordance>,
+    //this a TODO later or something that happens later in file?
+    tiles: HashMap<u128, Affordance>, //can map a specific game tile to an affordance (?)
+    sprites: HashMap<u32, Affordance>, //can map a specific sprite to an affordance (?)
 
     brush: AffordanceMask,
     settings: ModulateSettings,
@@ -62,7 +68,9 @@ impl AffordanceTracker {
             },
         }
     }
+    
     fn draw_brush_display(&self) {
+        //this is the lower screen that shows what brushes are active (?)
         draw_text(
             &format!(
                 "{}{}{}\n{}{}{}\n{}",
@@ -107,6 +115,7 @@ impl AffordanceTracker {
             super::SCALE * 24.0,
             RED,
         );
+        //this does the inactive brushes below the game display (?)
         draw_text(
             &format!(
                 "{}{}{}\n{}{}{}\n{}",
@@ -153,7 +162,7 @@ impl AffordanceTracker {
         );
     }
     fn update_brush(&mut self) {
-        // update brush
+        // update brush, adds the affordances to be annotated (?)
         if is_key_pressed(KeyCode::Kp7) || is_key_pressed (KeyCode::F1) {
             self.brush.toggle(AffordanceMask::SOLID);
         }
@@ -178,8 +187,10 @@ impl AffordanceTracker {
     }
     pub fn update(&mut self, mappy: &MappyState, _emu: &Emulator) {
         self.update_brush();
-        // left click to grant, right click to copy affordances
+        // left click to grant, right click to copy affordances 
         // shift right click to cut and erase (propagating to guesses)
+        //the copy goes from the ast granted? or what point? same with cut, where exactly is it
+        //erasing and taking from?
         let action = match (
             is_mouse_button_down(MouseButton::Left),
             is_mouse_button_down(MouseButton::Right),
@@ -189,6 +200,7 @@ impl AffordanceTracker {
             (false, true, shifted) => Some(Action::Cut(shifted)),
             (_, _, _) => None,
         };
+        //uses mouse postion + knowledge of sprite postion to set affordances (?)
         let (mx, my) = mouse_position();
         let sprite = mappy.live_tracks.iter().find(|track| {
             mappy::sprites::overlapping_sprite(
@@ -199,8 +211,9 @@ impl AffordanceTracker {
                 &[*track.current_data()],
             )
         });
+        //prioritizes sprite over tile, to accomodate the potential of overlap(?)
         let tile = if sprite.is_none() {
-            let (tx, ty) = super::screen_f32_to_tile((mx, my), mappy);
+            let (tx, ty) = super::screen_f32_to_tile((mx, my), mappy); //mappy gives tile/position mapping (?)
             mappy
                 .current_room
                 .as_ref()
@@ -218,14 +231,22 @@ impl AffordanceTracker {
         } else {
             None
         };
+        //action determined above by mouse command (?)
         match action {
             None => {}
             Some(Action::Paste) => {
                 match (sprite, tile) {
                     (Some(track), _) => {
                         // add given if not present, else upgrade to given if present
-                        let main_key = track.current_data().key();
+                        let main_key = track.current_data().key(); //so there is a prior affordance?
                         self.sprites.insert(main_key, Affordance::Given(self.brush));
+                        //this is a labelled affordance so is made the main key (?)
+
+                        //goes through all guesses- so propogated affordances(?)
+                        //what does this actually do? is there a reason for the vacant/occupied 
+                            //or is that a data handling check?
+                        //wait s this that any sprite position then should guess to hvae the same
+                        // affordance because we can follow sprite type? and sprites are a more limited scoped use (?)
                         for key in sprite_guesses(mappy, track) {
                             if key != main_key {
                                 use std::collections::hash_map::Entry;
@@ -253,14 +274,18 @@ impl AffordanceTracker {
             Some(Action::Cut(and_delete)) => match (sprite, tile) {
                 (Some(track), _) => {
                     // if there is no guess to cut, do nothing
+                    //so track is positioning data whcih is from mappy(?)
                     let key = track.current_data().key();
+                    //so the affordance is taken form the current sprte/tile, copied to the brush
+                    //so that future affordances will be this; and then optionally removed from the sprite/tile(?)
+                    //does this affordance copying continue until toggled off(?)
                     self.brush = match self.sprites.get(&key) {
                         Some(Affordance::Guessed(b)) => *b,
                         Some(Affordance::Given(b)) => *b,
                         None => self.brush,
                     };
                     if and_delete {
-                        self.sprites.remove(&key);
+                        self.sprites.remove(&key); //also removes propogated affordances(?)
                         for g in sprite_guesses(mappy, track) {
                             if g != key {
                                 if let Some(Affordance::Guessed(_guess)) = self.sprites.get(&g) {
@@ -287,6 +312,7 @@ impl AffordanceTracker {
         }
     }
     #[allow(clippy::map_entry)]
+    //this is going to be what allows for the visual differences (?)
     pub fn modulate(
         &mut self,
         mappy: &MappyState,
@@ -329,6 +355,7 @@ impl AffordanceTracker {
                     .and_then(|tile| tiles.get_change_by_id(tile))
                     .and_then(|change| tiles.get_tile_by_id(change.to))
                 {
+                    //checking for an affordance (?)
                     match self.tiles.get(&gfx.perceptual_hash()) {
                         None => {
                             // todo, highlight un-known nature
@@ -349,6 +376,7 @@ impl AffordanceTracker {
             }
         }
         //let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
+        //what are mappy tracks(?)
         for track in mappy.live_tracks.iter() {
             let cur = track.current_data();
             // if every tile covered by this sprite is a known tile in the current _screen_, skip it
@@ -359,7 +387,10 @@ impl AffordanceTracker {
             // if sprite_is_clear {
             //     continue;
             // }
+            //if this sprite is not in the current track (?)
             if !self.sprites.contains_key(&cur.key()) {
+                //with the fold this is trying to see is there is some type of affordance that can be attached to the sprite
+                //based on affrodances in ANY track(?)
                 if let Some(guess) = sprite_guesses(mappy, track).fold(None, |guess, track_key| {
                     match (self.sprites.get(&track_key), guess) {
                         (None, guess) => guess,
@@ -368,6 +399,7 @@ impl AffordanceTracker {
                         (Some(Affordance::Guessed(_mask)), better_guess) => better_guess,
                     }
                 }) {
+                    //uses affordances from THIS track (?)
                     self.sprites.insert(
                         cur.key(),
                         Affordance::Guessed(match guess {
@@ -394,6 +426,7 @@ impl AffordanceTracker {
                     sd.y as u32,
                 )
                 .unwrap();
+            //now that affordances are accounted for, can apply annotations (?)
             match self.sprites.get(&cur.key()) {
                 None => {
                     // todo, highlight unknown nature
@@ -408,6 +441,7 @@ impl AffordanceTracker {
                             self.settings.avatar_ratio,
                         );
                     } else {
+                        //sd is a last position known from the track(?)
                         apply_mask_to_area(
                             &mut canvas,
                             *mask,
@@ -425,6 +459,7 @@ impl AffordanceTracker {
     }
 }
 
+//mask is a broad function, takes rectangle area + pos, mask type and other settings(?)
 fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     mask: AffordanceMask,
@@ -491,9 +526,11 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     target: image::Rgba<u8>,
     ratio: f32,
 ) {
+    //so ratio is a blending between the orignal and the color to indiciate affrodance(?)
     // TODO: compute HSV of r in canvas, modulate each color towards target by ratio
     // can't do a lerp exactly, or can I?
     // what if I literally did a lerp in RGB and then blended the new and old pixels by ratio?
+    //^^^ did Cynthia write this line?
     imageproc::drawing::draw_filled_rect_mut(canvas, r, target);
 }
 
