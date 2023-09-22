@@ -531,9 +531,15 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     // can't do a lerp exactly, or can I?
     // what if I literally did a lerp in RGB and then blended the new and old pixels by ratio?
     //^^^ did Cynthia write this line?
+
+    //why would you want HSV?
+    //bracket_color library has a HSV lerp function for iteratoris
+    //pallette crate might have some useful image handling tools and types
     imageproc::drawing::draw_filled_rect_mut(canvas, r, target);
 }
 
+//what is going to be the defintion of saturation(?), does that need a specific file type(?)
+//what is the intended difference between emphasize and emphasize satruation(?)
 fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     r: imageproc::rect::Rect,
