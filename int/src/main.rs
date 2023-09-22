@@ -24,7 +24,7 @@ fn window_conf() -> Conf {
 
 fn replay(
     emu: &mut Emulator,
-    mappy: &mut MappyState,
+    mappy: &mut MappyState, //look up?
     inputs: &[[Buttons; 2]],
     scroll: &mut Option<&mut scroll::ScrollDumper>,
 ) {
@@ -43,14 +43,14 @@ async fn main() {
     std::fs::create_dir_all("out").unwrap_or(());
     let args: Vec<_> = env::args().collect();
 
-    let romfile = Path::new(args[1].as_str());
+    let romfile = Path::new(args[1].as_str()); //gamefile 
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
     std::fs::create_dir_all("inputs").unwrap_or(());
     let mut scroll_dumper: Option<scroll::ScrollDumper> = /*Some(scroll::ScrollDumper::new(
         Path::new("scroll_data/"),
         romname.to_str().unwrap(),
-    ))*/ None;
+    ))*/ None; //is the scroll dumper for current or past game play?
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     // let mut emu = Emulator::create(
     // Path::new("cores/fceumm_libretro"),
@@ -58,15 +58,16 @@ async fn main() {
     // );
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
-    let mut start_state = vec![0; emu.save_size()];
+    let mut start_state = vec![0; emu.save_size()];//state is saved in a vector, as image?
     let mut save_buf = vec![0; emu.save_size()];
-    emu.save(&mut start_state);
+    emu.save(&mut start_state); //sets size?
     emu.save(&mut save_buf);
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
     // So reset it afterwards
-    emu.load(&start_state);
+    emu.load(&start_state); //why?
 
+    //these are the visual annotations, but these are the debug annotations?
     let mut decos = {
         use debug_decorate::*;
         vec![
@@ -125,7 +126,7 @@ async fn main() {
     let mut fb = vec![0_u8; w * h * 4];
     let game_tex = macroquad::texture::Texture2D::from_image(&game_img);
 
-    let mut playback = playback::Playback::new();
+    let mut playback = playback::Playback::new(); //does this just mean game play???
 
     let mut mappy = MappyState::new(w, h);
     if args.len() > 2 {
@@ -174,6 +175,7 @@ zxcvbnm,./ for debug displays"
         //      mappy.dump_rooms(Path::new("out/rooms"));
         //  }
 
+        //this is how you load a file?
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         if let Some(n) = pressed_numkey() {
             let path = Path::new("inputs/").join(format!(
@@ -205,7 +207,7 @@ zxcvbnm,./ for debug displays"
                 romname.to_str().expect("rom name not a valid utf-8 string")
             ));
             emu.save(&mut save_buf);
-            //write it out to the file
+            //write it out to the file -- which files, so state, state folder doesnt currently exist?
             let mut file = std::fs::File::create(save_path).expect("Couldn't create save file!");
             file.write_all(&save_buf)
                 .expect("Couldn't write all save file bytes!");
@@ -224,9 +226,10 @@ zxcvbnm,./ for debug displays"
             mappy.handle_reset();
         }
 
+        //is this changing the frame rate for the ongoing play?
         // f/s * s = how many frames
         playback.step(get_frame_time(), |remaining_acc, input| {
-            emu.run(input);
+            emu.run(input); 
             // must do this before mappy processes the screen,
             // since mappy messes with the framebuffer/emulation state.
             // later, will need an early and late update?
@@ -241,9 +244,9 @@ zxcvbnm,./ for debug displays"
             }
             mappy.process_screen(&mut emu, input);
         });
-        affordances.update(&mappy, &emu);
-        affordances.modulate(&mappy, &emu, &game_img, &mut mod_img);
-        game_tex.update(&mod_img);
+        affordances.update(&mappy, &emu); //affordances updated, this adds to the game record? or jsut checks for inputs?
+        affordances.modulate(&mappy, &emu, &game_img, &mut mod_img); //what is modulate?
+        game_tex.update(&mod_img); //updating texture based on game play? or progression in recorded?
         draw_texture_ex(
             &game_tex,
             0.,
