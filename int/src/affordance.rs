@@ -533,7 +533,8 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     - the white point shifting is interesting,
     - support for transperencies 
      */
-    imageproc::drawing::draw_hollow_rect_mut(canvas, r, target);
+    //imageproc::drawing::draw_hollow_rect_mut(canvas, r, target);
+    imageproc::drawing::draw_filled_rect_mut(canvas, r, target);
 
     //lutgen, map colors to other colors; color correction stuff, more tuned for palette you like
 
