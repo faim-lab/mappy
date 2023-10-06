@@ -3,7 +3,7 @@ use macroquad::prelude::*;
 use mappy::{sprites::SpriteTrack, MappyState, TILE_SIZE};
 use retro_rs::Emulator;
 use std::collections::{HashMap, HashSet};
-use palette::{Hsv, Darken};
+use palette::{Hsv, Darken}; 
 bitflags! {
     struct AffordanceMask : u8 {
         const SOLID      = 0b0000_0000_0000_0001;
@@ -565,6 +565,30 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     //lots of pixel iteration
     //try highlighting the entire rectangle but area of concern 
     //even if just two layers, tiles and sprites having info could be very useful for training a model
+
+    /*
+    photon has a lot of supprot for color spcaes and effects, but might want to use palette to hand the types for safty/conversion
+    photon has a frosted glass effect; tint, lighten and darken - lots of artsy effects some of the artsy effects might need not pixel images
+    photon the saturation of different image formats effects the end result
+    can blend images or create a gradient between 2 images, also fade between 2 images
+
+    ACTUALLY, photon image, uses 1 type (photonimage) which saves the raw pixels and such, then lets you modify
+        the image using different color spaces/formats-- i think basically treat it as though it is a diffrent image type
+        wihtout hvign to worry about that 
+
+    Seems like:
+    photon is very FUNCTION based
+    photon: lots of filters and flexibility, slight art leaning/influence
+    - handles alot of type stuff for colors for you
+    - pre set filters + mods by given amounts
+    
+    Palette lots of Structs and METHODS
+    palette: big on color type safety, you have to handle that conversion though
+    - more freedom in like it gives you traits and types to implement and use for other stuff
+    - lots of stuff relating to grayscale
+    - the white point shifting is interesting,
+    - support for transperencies 
+     */
     imageproc::drawing::draw_hollow_rect_mut(canvas, r, target);
 
     //lutgen, map colors to other colors; color correction stuff, more tuned for palette you like
