@@ -494,7 +494,50 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     // TODO: compute HSV of r in canvas, modulate each color towards target by ratio
     // can't do a lerp exactly, or can I?
     // what if I literally did a lerp in RGB and then blended the new and old pixels by ratio?
-    imageproc::drawing::draw_filled_rect_mut(canvas, r, target);
+
+    //why would you want HSV?
+    //bracket_color library has a HSV lerp function for iteratoris
+    //pallette crate might have some useful image handling tools and types
+
+    //check this syntax VVV
+    //imageproc::map::map_pixels_mut(canvas, |p| {image::Pixel::blend(p[0], &target)});
+    //dont current have the mask of the sprite
+    //2 families for precise sprite; complicated by the frames changing
+    //changing tiles behind the sprite, if known familiar 
+    //as sprite moves some precision for mask (not sound assumption)
+    //instrumentatiion (modifies nes core, layers of the buffers for backgorund, foreground, sprite)
+    //lots of pixel iteration
+    //try highlighting the entire rectangle but area of concern 
+    //even if just two layers, tiles and sprites having info could be very useful for training a model
+
+    /*
+    photon has a lot of supprot for color spcaes and effects, but might want to use palette to hand the types for safty/conversion
+    photon has a frosted glass effect; tint, lighten and darken - lots of artsy effects some of the artsy effects might need not pixel images
+    photon the saturation of different image formats effects the end result
+    can blend images or create a gradient between 2 images, also fade between 2 images
+
+    ACTUALLY, photon image, uses 1 type (photonimage) which saves the raw pixels and such, then lets you modify
+        the image using different color spaces/formats-- i think basically treat it as though it is a diffrent image type
+        wihtout hvign to worry about that 
+
+    Seems like:
+    photon is very FUNCTION based
+    photon: lots of filters and flexibility, slight art leaning/influence
+    - handles alot of type stuff for colors for you
+    - pre set filters + mods by given amounts
+    
+    Palette lots of Structs and METHODS
+    palette: big on color type safety, you have to handle that conversion though
+    - more freedom in like it gives you traits and types to implement and use for other stuff
+    - lots of stuff relating to grayscale
+    - the white point shifting is interesting,
+    - support for transperencies 
+     */
+    imageproc::drawing::draw_hollow_rect_mut(canvas, r, target);
+
+    //lutgen, map colors to other colors; color correction stuff, more tuned for palette you like
+
+
 }
 
 fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
