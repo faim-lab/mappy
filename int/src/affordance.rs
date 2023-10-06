@@ -3,6 +3,7 @@ use macroquad::prelude::*;
 use mappy::{sprites::SpriteTrack, MappyState, TILE_SIZE};
 use retro_rs::Emulator;
 use std::collections::{HashMap, HashSet};
+use palette::{Hsv, Darken};
 bitflags! {
     struct AffordanceMask : u8 {
         const SOLID      = 0b0000_0000_0000_0001;
@@ -520,22 +521,55 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     }
 }
 
+  
+// fn blend_color<I:GenericImage<Pixel = image::Rgba<u8>>>(
+//     pixel: image::Rgba<u8>,
+//     target: image::Rgba<u8>,
+//     ratio: f32){
+
+//     }
+//canvas is the field being drawn on 
+//r is the area of the canvas
+//target is target image color 
+//ratio is the amount to emphasis 
 fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     r: imageproc::rect::Rect,
     target: image::Rgba<u8>,
     ratio: f32,
 ) {
+    //for pixels cna map with or without alpha channel 
+    //gives list of points 
+
+    //MAP allows to map transforms over pixels 
+    //do a lerp over the pixels 
+
+
+    //most filters work with gray scale 
     //so ratio is a blending between the orignal and the color to indiciate affrodance(?)
     // TODO: compute HSV of r in canvas, modulate each color towards target by ratio
     // can't do a lerp exactly, or can I?
     // what if I literally did a lerp in RGB and then blended the new and old pixels by ratio?
-    //^^^ did Cynthia write this line?
 
     //why would you want HSV?
     //bracket_color library has a HSV lerp function for iteratoris
     //pallette crate might have some useful image handling tools and types
-    imageproc::drawing::draw_filled_rect_mut(canvas, r, target);
+
+    //check this syntax VVV
+    //imageproc::map::map_pixels_mut(canvas, |p| {image::Pixel::blend(p[0], &target)});
+    //dont current have the mask of the sprite
+    //2 families for precise sprite; complicated by the frames changing
+    //changing tiles behind the sprite, if known familiar 
+    //as sprite moves some precision for mask (not sound assumption)
+    //instrumentatiion (modifies nes core, layers of the buffers for backgorund, foreground, sprite)
+    //lots of pixel iteration
+    //try highlighting the entire rectangle but area of concern 
+    //even if just two layers, tiles and sprites having info could be very useful for training a model
+    imageproc::drawing::draw_hollow_rect_mut(canvas, r, target);
+
+    //lutgen, map colors to other colors; color correction stuff, more tuned for palette you like
+
+
 }
 
 //what is going to be the defintion of saturation(?), does that need a specific file type(?)
@@ -546,6 +580,13 @@ fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     change_by: f32,
 ) {
     // TODO: compute saturation of r in canvas, multiply by change_by, draw that into area; or use a saturate() command if it exists
+    //map across pixels, lower alpha channel for backgorun? raise for non background
+
+    //HSV STANDS FOR HUE SATURATION VALUE, so if you ahve a HSV cna edit saturation directly 
+    //PALETTE HAS SATURATE FUNCTION
+    //pallette handles a lot of conversions (yay, between colors)
+
+    //palette::chromatic_adaptation might be interesting as relates to white points, which kinda relates to vision/accessibility
     imageproc::drawing::draw_filled_rect_mut(canvas, r, image::Rgba([255, 255, 255, 64]));
 }
 
