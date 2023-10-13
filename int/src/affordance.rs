@@ -223,15 +223,18 @@ impl AffordanceTracker {
         //the copy goes from the ast granted? or what point? same with cut, where exactly is it
         //erasing and taking from?
         let action = match (
-            is_mouse_button_down(MouseButton::Left),
-            is_mouse_button_down(MouseButton::Right),
-            is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift),
+            is_mouse_button_down(MouseButton::Left) && !(is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl)),
+            is_mouse_button_down(MouseButton::Right) || 
+             (is_mouse_button_down(MouseButton::Left) && is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl) ),
+            //is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift),
+
         ) {
-            (true, _, _) => Some(Action::Paste),
-            (false, true, shifted) => Some(Action::Cut(shifted)),
-            (_, _, _) => None,
+            (true, _) => Some(Action::Paste),
+            (false, true) => Some(Action::Cut(true)),
+            (_, _) => None,
         };
         //uses mouse postion + knowledge of sprite postion to set affordances (?)
+        let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
         let (mx, my) = mouse_position();
         let sprite = mappy.live_tracks.iter().find(|track| {
             mappy::sprites::overlapping_sprite(
@@ -240,8 +243,21 @@ impl AffordanceTracker {
                 2,
                 2,
                 &[*track.current_data()],
-            )
+            ) 
         });
+
+        /*let sprite = mappy.live_tracks.iter().find(|track| {
+            mappy::sprites::overlapping_sprite(
+                (mx / super::SCALE) as usize,
+                (my / super::SCALE) as usize,
+                2,
+                2,
+                &[*track.current_data()],
+            ) && !tiles_covered_by(mappy, track.current_data())
+                .into_iter()
+                .all(|(tx, ty)| mappy.current_screen.get(tx, ty) != Some(initial_tile))
+        }); */
+       
         //prioritizes sprite over tile, to accomodate the potential of overlap(?)
         let tile = if sprite.is_none() {
             let (tx, ty) = super::screen_f32_to_tile((mx, my), mappy); //mappy gives tile/position mapping (?)
@@ -406,7 +422,7 @@ impl AffordanceTracker {
                 }
             }
         }
-        //let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
+    let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
         //what are mappy tracks(?)
         for track in mappy.live_tracks.iter() {
             let cur = track.current_data();
@@ -440,6 +456,9 @@ impl AffordanceTracker {
                     );
                 }
             }
+            /*
+            what to do with propagation and over eager, tile chunks might not be correct resolution
+            might be too small to be meanginful  */
             let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
             if sd.x as u32 + sd.width() as u32 > 255 || sd.y as u32 + sd.height() as u32 > 240 {
                 continue;
