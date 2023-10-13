@@ -17,6 +17,36 @@ bitflags! {
 }
 //how were bit flags selected? is there any more meaning?
 
+//maybe load this from file in the future; can also make module for the colors
+//OR struct for colors, struct X, set of colors; 
+//      may also want combinations for affordances
+// bit patterns - > affordance mask to color (maybe different ways to organize)
+//what does this syntax actually do?
+ mod AffordanceColor{
+    pub const SPRITE : image::Rgba <u8> = image::Rgba([0, 255, 0, 150]);
+    pub const SOLID: image::Rgba<u8> = image::Rgba([196, 196, 196, 150]);
+    pub const DANGER: image::Rgba<u8>     = image::Rgba([255, 0, 0, 100]); //Red
+    pub const CHANGEABLE: image::Rgba<u8> = image::Rgba([150, 75, 0, 150]);
+    pub const USABLE: image::Rgba<u8>     = image::Rgba([255, 255, 0, 150]);
+    pub const PORTAL: image::Rgba <u8>    = image::Rgba([0, 0, 255, 150]);
+    pub const MOVABLE : image::Rgba  <u8> = image::Rgba([150, 75, 0, 150]);
+    pub const BREAKABLE : image::Rgba <u8> = image::Rgba([150, 75, 0, 150]);
+
+ }
+
+/* Original Colors:
+struct AffordanceColor: image::Rgba {
+        const SPRITE = image::Rgba([0, 255, 0, 255]);
+        const SOLID      = image::Rgba([196, 196, 196, 255]);
+        const DANGER     = image::Rgba([255, 0, 0, 255]); //Red
+        const CHANGEABLE = image::Rgba([150, 75, 0, 255]);
+        const USABLE     = image::Rgba([255, 255, 0, 255])
+        const PORTAL     = image::Rgba([0, 0, 255, 255]);
+        const MOVABLE    = image::Rgba([150, 75, 0, 255]);
+        const BREAKABLE  = image::Rgba([150, 75, 0, 255]);
+    }
+ */
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Affordance {
     Guessed(AffordanceMask),
@@ -438,7 +468,7 @@ impl AffordanceTracker {
                             &mut canvas,
                             Rect::at(sd.x as i32, sd.y as i32)
                                 .of_size(sd.width() as u32, sd.height() as u32),
-                            image::Rgba([0, 255, 0, 255]),
+                            AffordanceColor::SPRITE,
                             self.settings.avatar_ratio,
                         );
                     } else {
@@ -476,42 +506,42 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
         emphasize(
             canvas,
             r,
-            image::Rgba([255, 0, 0, 255]),
+            AffordanceColor::DANGER,
             settings.dangerous_ratio,
         );
     } else if mask.contains(AffordanceMask::USABLE) {
         emphasize(
             canvas,
             r,
-            image::Rgba([255, 255, 0, 255]),
+            AffordanceColor::USABLE,
             settings.usable_ratio,
         );
     } else if mask.contains(AffordanceMask::PORTAL) {
         emphasize(
             canvas,
             r,
-            image::Rgba([0, 0, 255, 255]),
+            AffordanceColor::PORTAL,
             settings.portal_ratio,
         );
     } else if mask.contains(AffordanceMask::CHANGEABLE) {
         emphasize(
             canvas,
             r,
-            image::Rgba([150, 75, 0, 255]),
+            AffordanceColor::CHANGEABLE,
             settings.changeable_ratio,
         );
     } else if mask.contains(AffordanceMask::BREAKABLE) {
         emphasize(
             canvas,
             r,
-            image::Rgba([150, 75, 0, 255]),
+            AffordanceColor::BREAKABLE,
             settings.breakable_ratio,
         );
     } else if mask.contains(AffordanceMask::SOLID) {
         emphasize(
             canvas,
             r,
-            image::Rgba([196, 196, 196, 255]),
+            AffordanceColor::SOLID,
             settings.solid_ratio,
         );
     } else if mask.contains(AffordanceMask::MOVABLE) {
