@@ -2,9 +2,17 @@ use bitflags::bitflags;
 use macroquad::prelude::*;
 use mappy::{sprites::SpriteTrack, MappyState, TILE_SIZE};
 use retro_rs::Emulator;
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, fs::File};
 use palette::{Hsv, Darken}; 
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
+use serde_json;
+use serde::{Deserialize, Serialize};
+
 bitflags! {
+    #[derive(serde::Serialize, serde::Deserialize)]
     struct AffordanceMask : u8 {
         const SOLID      = 0b0000_0000_0000_0001;
         const DANGER     = 0b0000_0000_0000_0010;
@@ -47,7 +55,7 @@ struct AffordanceColor: image::Rgba {
     }
  */
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum Affordance {
     Guessed(AffordanceMask),
     Given(AffordanceMask),
@@ -58,6 +66,7 @@ enum Action {
 }
 //clobbers presumably overrides? so cut(false) is copy which preserves what you copy?
 // cut(true) is like C-X which removes the original?
+#[derive(serde::Serialize, serde::Deserialize )]
 struct ModulateSettings {
     avatar_ratio: f32,
     dangerous_ratio: f32,
@@ -70,9 +79,10 @@ struct ModulateSettings {
     no_affordance_saturation_change: f32,
 }
 //are the ratios a saturation? an importence? what is it a ratio to?
-
+#[derive(serde::Serialize, serde::Deserialize )]
 pub struct AffordanceTracker {
     // later: output path, etc, like scroll dumper
+   // csv: std::fs::File,
     //this a TODO later or something that happens later in file?
     tiles: HashMap<u128, Affordance>, //can map a specific game tile to an affordance (?)
     sprites: HashMap<u32, Affordance>, //can map a specific sprite to an affordance (?)
@@ -83,6 +93,7 @@ pub struct AffordanceTracker {
 impl AffordanceTracker {
     pub fn new(_romname: &str) -> Self {
         Self {
+            //csv: std::fs::File::create("text.json").unwrap(),
             tiles: HashMap::with_capacity(10_000),
             sprites: HashMap::with_capacity(10_000),
             brush: AffordanceMask::empty(),
@@ -216,6 +227,10 @@ impl AffordanceTracker {
             self.brush.toggle(AffordanceMask::BREAKABLE);
         }
     }
+    pub fn save(&mut self, file: File){
+        serde_json::to_writer(file, &self);
+    }
+    
     pub fn update(&mut self, mappy: &MappyState, _emu: &Emulator) {
         self.update_brush();
         // left click to grant, right click to copy affordances 

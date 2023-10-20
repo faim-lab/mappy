@@ -244,6 +244,7 @@ zxcvbnm,./ for debug displays"
         });
         affordances.update(&mappy, &emu); //affordances updated, this adds to the game record? or jsut checks for inputs?
         affordances.modulate(&mappy, &emu, &game_img, &mut mod_img); //what is modulate?
+        affordances.save();
         game_tex.update(&mod_img); //updating texture based on game play? or progression in recorded?
         draw_texture_ex(
             game_tex,
