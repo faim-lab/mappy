@@ -43,8 +43,8 @@ async fn main() {
     std::fs::create_dir_all("out").unwrap_or(());
     let args: Vec<_> = env::args().collect();
 
-    let romfile = Path::new(args[1].as_str()); //gamefile 
-    // "mario3"
+    let romfile = Path::new(args[1].as_str()); //gamefile
+                                               // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
     std::fs::create_dir_all("inputs").unwrap_or(());
     let mut scroll_dumper: Option<scroll::ScrollDumper> = /*Some(scroll::ScrollDumper::new(
@@ -52,13 +52,15 @@ async fn main() {
         romname.to_str().unwrap(),
     ))*/ None; //is the scroll dumper for current or past game play?
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
-    // let mut emu = Emulator::create(
-    // Path::new("cores/fceumm_libretro"),
-    // Path::new(romfile),
-    // );
+    //LOAD FROM SAVED FILE
+    //let mut affordances = affordance::AffordanceTracker::from_file("int/src/afford.json");
+    /*let mut emu = Emulator::create(
+        Path::new("../libretro-fceumm/fceumm_libretro"),
+        Path::new(romfile),
+    );*/
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
-    let mut start_state = vec![0; emu.save_size()];//state is saved in a vector, as image?
+    let mut start_state = vec![0; emu.save_size()]; //state is saved in a vector, as image?
     let mut save_buf = vec![0; emu.save_size()];
     emu.save(&mut start_state); //sets size?
     emu.save(&mut save_buf);
@@ -229,7 +231,7 @@ zxcvbnm,./ for debug displays"
         //is this changing the frame rate for the ongoing play?
         // f/s * s = how many frames
         playback.step(get_frame_time(), |remaining_acc, input| {
-            emu.run(input); 
+            emu.run(input);
             // must do this before mappy processes the screen,
             // since mappy messes with the framebuffer/emulation state.
             // later, will need an early and late update?
@@ -246,7 +248,7 @@ zxcvbnm,./ for debug displays"
         });
         affordances.update(&mappy, &emu); //affordances updated, this adds to the game record? or jsut checks for inputs?
         affordances.modulate(&mappy, &emu, &game_img, &mut mod_img); //what is modulate?
-        affordances.save();
+        affordances.save(std::fs::File::create("afford.json").unwrap());
         game_tex.update(&mod_img); //updating texture based on game play? or progression in recorded?
         draw_texture_ex(
             &game_tex,

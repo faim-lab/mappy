@@ -2,7 +2,16 @@ use bitflags::bitflags;
 use macroquad::prelude::*;
 use mappy::{sprites::SpriteTrack, MappyState, TILE_SIZE};
 use retro_rs::Emulator;
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, fs::File};
+use palette::{Hsv, Darken}; 
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
+use serde_json;
+use serde::{Deserialize, Serialize};
+use std::fs;
+
 bitflags! {
     struct AffordanceMask : u8 {
         const SOLID      = 0b0000_0000_0000_0001;
@@ -92,6 +101,11 @@ impl AffordanceTracker {
             },
         }
     }
+
+    pub fn from_file(file: &str) -> AffordanceTracker{
+        return serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+    }
+    
     fn draw_brush_display(&self) {
         draw_text(
             &format!(
