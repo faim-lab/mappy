@@ -51,6 +51,7 @@ async fn main() {
     ))*/ None; //is the scroll dumper for current or past game play?
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     //LOAD FROM SAVED FILE
+    affordances.load_maps("int/inputs/afford2.json");
     //let mut affordances = affordance::AffordanceTracker::from_file("int/src/afford.json");
     /*let mut emu = Emulator::create(
         Path::new("../libretro-fceumm/fceumm_libretro"),
@@ -225,6 +226,19 @@ zxcvbnm,./ for debug displays"
             emu.load(&save_buf);
             mappy.handle_reset();
         }
+        if is_key_down(KeyCode::F9){
+
+            /* let mut name: String = String::from("int/inputs/"); 
+            name.push_str(args[1].as_str()); //name as relative path+ rom name
+            name.push_str(get_frame_time().to_string().as_str()); //adds time to name and file type
+            name.push_str(".json"); */
+
+            /*let mut name: String = args[1].as_str().to_string();
+            name.push_str(get_frame_time().to_string().as_str()); //adds time to name and file type
+            name.push_str(".json");*/
+
+            affordances.save(std::fs::File::create("int/inputs/afford2.json").unwrap());
+        }
 
         //is this changing the frame rate for the ongoing play?
         // f/s * s = how many frames
@@ -246,7 +260,6 @@ zxcvbnm,./ for debug displays"
         });
         affordances.update(&mappy, &emu); //affordances updated, this adds to the game record? or jsut checks for inputs?
         affordances.modulate(&mappy, &emu, &game_img, &mut mod_img); //what is modulate?
-        affordances.save(std::fs::File::create("afford.json").unwrap());
         game_tex.update(&mod_img); //updating texture based on game play? or progression in recorded?
         draw_texture_ex(
             game_tex,
