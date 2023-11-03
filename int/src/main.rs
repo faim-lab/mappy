@@ -51,7 +51,7 @@ async fn main() {
     ))*/ None; //is the scroll dumper for current or past game play?
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     //LOAD FROM SAVED FILE
-    affordances.load_maps("int/inputs/afford2.json");
+    //affordances.load_maps("int/inputs/afford2.json");
     //let mut affordances = affordance::AffordanceTracker::from_file("int/src/afford.json");
     /*let mut emu = Emulator::create(
         Path::new("../libretro-fceumm/fceumm_libretro"),
@@ -238,6 +238,10 @@ zxcvbnm,./ for debug displays"
             name.push_str(".json");*/
 
             affordances.save(std::fs::File::create("int/inputs/afford2.json").unwrap());
+        }
+        if is_key_down(KeyCode::F10){
+
+            affordances.load_maps("int/inputs/afford2.json");
         }
 
         //is this changing the frame rate for the ongoing play?
