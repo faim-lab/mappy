@@ -74,6 +74,19 @@ struct ModulateSettings {
     movable_saturation_change: f32,
     no_affordance_saturation_change: f32,
 }
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AffordanceMaps{
+    tiles: HashMap<u128, Affordance>,
+    sprites: HashMap<u32, Affordance>,
+}
+impl AffordanceMaps{
+    pub fn new(tile: HashMap<u128, Affordance>, sprite:  HashMap<u32, Affordance>)-> Self{
+        Self { tiles: tile, sprites: sprite }
+    }
+}
+//are the ratios a saturation? an importence? what is it a ratio to?
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct AffordanceTracker {
     // later: output path, etc, like scroll dumper
     tiles: HashMap<u128, Affordance>,
@@ -102,8 +115,10 @@ impl AffordanceTracker {
         }
     }
 
-    pub fn from_file(file: &str) -> AffordanceTracker{
-        return serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+    pub fn load_maps(&mut self, file: &str) -> (){
+        let temp: AffordanceMaps  = serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+        self.sprites = temp.sprites;
+        self.tiles = temp.tiles;
     }
     
     fn draw_brush_display(&self) {
@@ -220,6 +235,11 @@ impl AffordanceTracker {
             self.brush.toggle(AffordanceMask::BREAKABLE);
         }
     }
+    pub fn save(&self, file: File){
+        let temp : AffordanceMaps = AffordanceMaps { tiles: self.tiles.clone(), sprites: self.sprites.clone() };
+        let _ = serde_json::to_writer(file, &temp);
+    }
+    
     pub fn update(&mut self, mappy: &MappyState, _emu: &Emulator) {
         self.update_brush();
         // left click to grant, right click to copy affordances
