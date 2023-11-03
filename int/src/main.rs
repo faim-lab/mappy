@@ -50,6 +50,8 @@ async fn main() {
         romname.to_str().unwrap(),
     ))*/ None; //is the scroll dumper for current or past game play?
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
+    //LOAD FROM SAVED FILE
+    //let mut affordances = affordance::AffordanceTracker::from_file("int/src/afford.json");
     /*let mut emu = Emulator::create(
         Path::new("../libretro-fceumm/fceumm_libretro"),
         Path::new(romfile),
@@ -244,7 +246,7 @@ zxcvbnm,./ for debug displays"
         });
         affordances.update(&mappy, &emu); //affordances updated, this adds to the game record? or jsut checks for inputs?
         affordances.modulate(&mappy, &emu, &game_img, &mut mod_img); //what is modulate?
-        affordances.save();
+        affordances.save(std::fs::File::create("afford.json").unwrap());
         game_tex.update(&mod_img); //updating texture based on game play? or progression in recorded?
         draw_texture_ex(
             game_tex,

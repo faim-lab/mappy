@@ -10,6 +10,7 @@ use std::{
 };
 use serde_json;
 use serde::{Deserialize, Serialize};
+use std::fs;
 
 bitflags! {
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -109,6 +110,10 @@ impl AffordanceTracker {
                 no_affordance_saturation_change: 0.5,
             },
         }
+    }
+
+    pub fn from_file(file: &str) -> AffordanceTracker{
+        return serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
     }
     
     fn draw_brush_display(&self) {
