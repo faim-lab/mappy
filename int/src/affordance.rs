@@ -245,7 +245,8 @@ impl AffordanceTracker {
             self.brush.toggle(AffordanceMask::BREAKABLE);
         }
     }
-    pub fn save(&self, file: File){
+    pub fn save(&self, path: &Path){
+        let file : File = File::create(path).unwrap();
         let temp : AffordanceMaps = AffordanceMaps { tiles: self.tiles.clone(), sprites: self.sprites.clone() };
         let _ = serde_json::to_writer(file, &temp);
     }

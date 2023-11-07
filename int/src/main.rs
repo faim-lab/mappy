@@ -8,7 +8,7 @@ mod affordance;
 mod debug_decorate;
 mod playback;
 mod scroll;
-
+use std::fs;
 const SCALE: f32 = 1.0;
 
 fn window_conf() -> Conf {
@@ -49,6 +49,7 @@ async fn main() {
         Path::new("scroll_data/"),
         romname.to_str().unwrap(),
     ))*/ None; //is the scroll dumper for current or past game play?
+    std::fs::create_dir_all("int/src/affordances").unwrap_or(());
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     //LOAD FROM SAVED FILE
     //affordances.load_maps("int/inputs/afford2.json");
@@ -236,12 +237,16 @@ zxcvbnm,./ for debug displays"
             /*let mut name: String = args[1].as_str().to_string();
             name.push_str(get_frame_time().to_string().as_str()); //adds time to name and file type
             name.push_str(".json");*/
-
-            affordances.save(std::fs::File::create("int/inputs/afford2.json").unwrap());
+             let timestamp = chrono::prelude::Utc::now().to_rfc3339();
+             let rom: String = romfile.display().to_string();
+    let filename = format!("{rom}-{timestamp}.json");
+    let aff_path = Path::new("affordances").join(filename);
+    //let file : std::fs::File = std::fs::File::create(aff_path).unwrap();
+            affordances.save(aff_path.as_path());
         }
         if is_key_down(KeyCode::F10){
 
-            affordances.load_maps("int/inputs/afford2.json");
+            affordances.load_maps("../../afford2.json");
         }
 
         //is this changing the frame rate for the ongoing play?
