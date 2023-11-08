@@ -49,7 +49,7 @@ async fn main() {
         Path::new("scroll_data/"),
         romname.to_str().unwrap(),
     ))*/ None; //is the scroll dumper for current or past game play?
-    std::fs::create_dir_all("int/src/affordances").unwrap_or(());
+    std::fs::create_dir_all("affordances/roms").unwrap_or(());
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     //LOAD FROM SAVED FILE
     //affordances.load_maps("int/inputs/afford2.json");
@@ -227,7 +227,7 @@ zxcvbnm,./ for debug displays"
             emu.load(&save_buf);
             mappy.handle_reset();
         }
-        if is_key_down(KeyCode::F9){
+        if is_key_pressed(KeyCode::F9){
 
             /* let mut name: String = String::from("int/inputs/"); 
             name.push_str(args[1].as_str()); //name as relative path+ rom name
@@ -237,16 +237,19 @@ zxcvbnm,./ for debug displays"
             /*let mut name: String = args[1].as_str().to_string();
             name.push_str(get_frame_time().to_string().as_str()); //adds time to name and file type
             name.push_str(".json");*/
+            
              let timestamp = chrono::prelude::Utc::now().to_rfc3339();
              let rom: String = romfile.display().to_string();
     let filename = format!("{rom}-{timestamp}.json");
     let aff_path = Path::new("affordances").join(filename);
     //let file : std::fs::File = std::fs::File::create(aff_path).unwrap();
+ 
             affordances.save(aff_path.as_path());
         }
-        if is_key_down(KeyCode::F10){
+        if is_key_pressed(KeyCode::F10){
+            let save_path = Path::new("affordances/roms/mario.nes-2023-11-08T17:13:52.209322+00:00.json");
 
-            affordances.load_maps("../../afford2.json");
+            affordances.load_maps(save_path);
         }
 
         //is this changing the frame rate for the ongoing play?

@@ -86,7 +86,7 @@ struct AffordanceMaps{
     sprites: HashMap<u32, Affordance>,
 }
 impl AffordanceMaps{
-    pub fn new(tile: HashMap<u128, Affordance>, sprite:  HashMap<u32, Affordance>)-> Self{
+    fn new(tile: HashMap<u128, Affordance>, sprite:  HashMap<u32, Affordance>)-> Self{
         Self { tiles: tile, sprites: sprite }
     }
 }
@@ -123,12 +123,15 @@ impl AffordanceTracker {
         }
     }
 
-    pub fn load_maps(&mut self, file: &str) -> (){
-        let temp: AffordanceMaps  = serde_json::from_str(&fs::read_to_string(file).unwrap()).unwrap();
+    pub fn load_maps(&mut self, path: &Path) -> (){
+        let print = path.display();
+        println!("{print}");
+        
+        let temp: AffordanceMaps  = serde_json::from_str(&fs::read_to_string(path).expect("couldn't find affordance file")).unwrap();
         self.sprites = temp.sprites;
         self.tiles = temp.tiles;
     }
-    
+   
     fn draw_brush_display(&self) {
         //this is the lower screen that shows what brushes are active (?)
         draw_text(
@@ -246,7 +249,10 @@ impl AffordanceTracker {
         }
     }
     pub fn save(&self, path: &Path){
-        let file : File = File::create(path).unwrap();
+        let print = path.display();
+        println!("{print}");
+        let file : File = File::create(path).expect("Couldn't create affordance save file!");
+        
         let temp : AffordanceMaps = AffordanceMaps { tiles: self.tiles.clone(), sprites: self.sprites.clone() };
         let _ = serde_json::to_writer(file, &temp);
     }
