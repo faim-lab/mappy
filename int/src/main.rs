@@ -239,7 +239,7 @@ zxcvbnm,./ for debug displays"
             name.push_str(".json");*/
             
              let timestamp = chrono::prelude::Utc::now().to_rfc3339();
-             let rom: String = romfile.display().to_string();
+             let rom: String = romfile.strip_prefix("roms").unwrap_or(Path::new("unknownrom")).display().to_string();
     let filename = format!("{rom}-{timestamp}.json");
     let aff_path = Path::new("affordances").join(filename);
     //let file : std::fs::File = std::fs::File::create(aff_path).unwrap();
