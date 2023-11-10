@@ -38,6 +38,7 @@ fn replay(
     }
 }
 
+//ADD short names AND replay file to this, -- affordance affordfile
 #[derive(Parser)]
 struct Cli {
     rom: std::path::PathBuf,
@@ -238,14 +239,7 @@ zxcvbnm,./ for debug displays"
             mappy.handle_reset();
         }
         if is_key_pressed(KeyCode::F9) {
-            /* let mut name: String = String::from("int/inputs/");
-            name.push_str(args[1].as_str()); //name as relative path+ rom name
-            name.push_str(get_frame_time().to_string().as_str()); //adds time to name and file type
-            name.push_str(".json"); */
-
-            /*let mut name: String = args[1].as_str().to_string();
-            name.push_str(get_frame_time().to_string().as_str()); //adds time to name and file type
-            name.push_str(".json");*/
+            //ADD ALSO SAVE REPLAY FILE UP TO THIS POINT
 
             let timestamp = chrono::prelude::Utc::now().to_rfc3339();
             let rom: String = romfile
