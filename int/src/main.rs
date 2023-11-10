@@ -51,7 +51,7 @@ async fn main() {
         Path::new("scroll_data/"),
         romname.to_str().unwrap(),
     ))*/ None; //is the scroll dumper for current or past game play?
-    std::fs::create_dir_all("affordances/roms").unwrap_or(());
+    std::fs::create_dir_all("affordances").unwrap_or(());
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     //LOAD FROM SAVED FILE
     //affordances.load_maps("int/inputs/afford2.json");
