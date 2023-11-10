@@ -8,7 +8,8 @@ mod affordance;
 mod debug_decorate;
 mod playback;
 mod scroll;
-use std::fs;
+use clap::Parser;
+
 const SCALE: f32 = 1.0;
 
 fn window_conf() -> Conf {
@@ -36,12 +37,21 @@ fn replay(
     }
 }
 
+#[derive(Parser)]
+struct Cli{
+    rom: std::path::PathBuf,
+    affordance: Option<std::path::PathBuf>
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     use std::env;
+    //original args
     let args: Vec<_> = env::args().collect();
-
-    let romfile = Path::new(args[1].as_str()); //gamefile 
+    
+    let file_args = Cli::parse();
+    //let romfile = Path::new(args[1].as_str()); //gamefile 
+    let romfile = file_args.rom.as_path(); //gamefile 
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
     std::fs::create_dir_all("inputs").unwrap_or(());
@@ -51,13 +61,12 @@ async fn main() {
     ))*/ None; //is the scroll dumper for current or past game play?
     std::fs::create_dir_all("affordances").unwrap_or(());
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
-    //LOAD FROM SAVED FILE
-    //affordances.load_maps("int/inputs/afford2.json");
-    //let mut affordances = affordance::AffordanceTracker::from_file("int/src/afford.json");
-    /*let mut emu = Emulator::create(
-        Path::new("../libretro-fceumm/fceumm_libretro"),
-        Path::new(romfile),
-    );*/
+    let afford_file = file_args.affordance.clone(); //optional affordance file
+    
+    if afford_file.is_some(){
+        affordances.load_maps(afford_file.unwrap().as_path());
+    }
+    
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
     let mut start_state = vec![0; emu.save_size()];//state is saved in a vector, as image?
@@ -247,9 +256,8 @@ zxcvbnm,./ for debug displays"
             affordances.save(aff_path.as_path());
         }
         if is_key_pressed(KeyCode::F10){
-            let save_path = Path::new("affordances/mario.nes-2023-11-10T17:02:52.475411+00:00.json");
-
-            affordances.load_maps(save_path);
+            // let save_path = Path::new("affordances/mario.nes-2023-11-10T17:02:52.475411+00:00.json");
+            // affordances.load_maps(save_path);
         }
 
         //is this changing the frame rate for the ongoing play?
