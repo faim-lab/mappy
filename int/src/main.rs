@@ -247,7 +247,7 @@ zxcvbnm,./ for debug displays"
             affordances.save(aff_path.as_path());
         }
         if is_key_pressed(KeyCode::F10){
-            let save_path = Path::new("affordances/mario.nes-2023-11-08T17:13:52.209322+00:00.json");
+            let save_path = Path::new("affordances/mario.nes-2023-11-10T17:02:52.475411+00:00.json");
 
             affordances.load_maps(save_path);
         }
