@@ -9,7 +9,7 @@ mod debug_decorate;
 mod playback;
 mod scroll;
 
-const SCALE: f32 = 1.0;
+const SCALE: f32 = 6.0;
 
 fn window_conf() -> Conf {
     Conf {

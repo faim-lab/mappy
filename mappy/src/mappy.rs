@@ -255,7 +255,7 @@ impl MappyState {
         // Update current screen tile grid;
         // can't do it on moment 0 since we don't have sprites yet
         if self.now.0 > 0 {
-            self.read_current_screen();
+            self.read_current_screen(emu);
         }
         t.stop();
 
@@ -337,7 +337,7 @@ impl MappyState {
 
         let t = self.timers.timer(Timing::Track).start();
         // Relate current sprites to previous sprites
-        self.track_sprites();
+        self.track_sprites(emu);
         for track in self.live_tracks.iter_mut() {
             track.determine_avatar(self.now, &self.button_inputs);
         }
@@ -459,7 +459,7 @@ impl MappyState {
         });
     }
 
-    fn read_current_screen(&mut self) {
+    fn read_current_screen(&mut self, emulator: &Emulator) {
         // if a clear sprite is overlapping a tile, then just place that tile
         // overlapping sprite check. See if it's a tile that's already been seen
 
@@ -478,30 +478,23 @@ impl MappyState {
             tiles.get_initial_tile(),
         );
         let mut new_ts = 0;
-        for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
-            for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
-                let tile = TileGfx::read(&self.fb, x as usize, y as usize);
-                if !tiles.contains(&tile)
-                    && sprites::overlapping_sprite(
-                        x as usize,
-                        y as usize,
-                        TILE_SIZE,
-                        TILE_SIZE,
-                        &self.live_sprites,
-                    )
-                {
-                    // Just leave the empty one there
-                    continue;
+        unsafe {
+            // safety: bg_sp, bg, fg_sp may not leak out and we can't run the emulator while they're live
+            let [_bg_sp, bg, _fg_sp] = Self::get_layers(emulator);
+            for y in (region.y..(region.y + region.h as i32)).step_by(TILE_SIZE) {
+                for x in (region.x..(region.x + region.w as i32)).step_by(TILE_SIZE) {
+                    let tile =
+                        TileGfx::read_slice(bg, self.fb.w, self.fb.h, x as usize, y as usize);
+                    if !tiles.contains(&tile) {
+                        new_ts += 1;
+                        // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
+                    }
+                    self.current_screen.set(
+                        tiles.get_tile(tile),
+                        (self.scroll.0 + x) / (TILE_SIZE as i32),
+                        (self.scroll.1 + y) / (TILE_SIZE as i32),
+                    );
                 }
-                if !tiles.contains(&tile) {
-                    new_ts += 1;
-                    // println!("Unaccounted-for tile, {},{} hash {}", (x-region.x)/(TILE_SIZE as i32), (y-region.y)/(TILE_SIZE as i32), tile.perceptual_hash());
-                }
-                self.current_screen.set(
-                    tiles.get_tile(tile),
-                    (self.scroll.0 + x) / (TILE_SIZE as i32),
-                    (self.scroll.1 + y) / (TILE_SIZE as i32),
-                );
             }
         }
         if new_ts > 10 {
@@ -621,7 +614,7 @@ impl MappyState {
             + (if new_s.index == sd2.index { 0 } else { 4 })
     }
 
-    fn track_sprites(&mut self) {
+    fn track_sprites(&mut self, emu: &Emulator) {
         use matching::{bnb_match, Match, MatchTo, Target};
         let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
@@ -660,7 +653,25 @@ impl MappyState {
         // find minimal matching of sprites
         // local search is okay
         // vec<vec> is worrisome
-        let live: Vec<_> = self.live_sprites.iter().filter(|s| s.is_valid()).collect();
+        let live: Vec<_> = unsafe {
+            // safety: bg_sp, fg_sp, bg can't leak; emulator can't run
+            let [bg_sp, _, fg_sp] = Self::get_layers(emu);
+            self.live_sprites
+                .iter()
+                .filter(|s| {
+                    s.is_valid()
+                        && !all_empty(
+                            s.x,
+                            s.y,
+                            s.width(),
+                            s.height(),
+                            if s.bg() { bg_sp } else { fg_sp },
+                            self.fb.w,
+                            self.fb.h,
+                        )
+                })
+                .collect()
+        };
         // a candidate old track for each new track
         let candidates: Vec<_> = live
             .iter()
@@ -946,7 +957,7 @@ impl MappyState {
     }
     // safety: these slices don't belong to us so we should drop them
     // before the next time FCEU emulation happens
-    unsafe fn get_layers(&mut self, emu: &Emulator) -> [&[u8]; 3] {
+    unsafe fn get_layers(emu: &Emulator) -> [&[u8]; 3] {
         let get_layer_fn: Symbol<unsafe extern "C" fn(i32) -> *const u8> =
             emu.get_symbol(b"retro_layer").unwrap();
         let sz = 256 * 240;
@@ -1318,4 +1329,15 @@ pub fn merge_cost(
 }
 fn scroll_diff((x0, y0): (i32, i32), (x1, y1): (i32, i32)) -> (i32, i32) {
     (x1 - x0, y1 - y0)
+}
+fn all_empty(x: u8, y: u8, w: u8, h: u8, fb: &[u8], fbw: usize, fbh: usize) -> bool {
+    const PIX_332_EMPTY: u8 = 191;
+    for yi in y as usize..(y as usize + h as usize).clamp(0, fbh) {
+        for xi in x as usize..(x as usize + w as usize).clamp(0, fbw) {
+            if fb[yi * fbw + xi] != PIX_332_EMPTY {
+                return false;
+            }
+        }
+    }
+    true
 }
