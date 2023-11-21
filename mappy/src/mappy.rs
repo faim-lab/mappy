@@ -462,6 +462,10 @@ impl MappyState {
     fn read_current_screen(&mut self) {
         // if a clear sprite is overlapping a tile, then just place that tile
         // overlapping sprite check. See if it's a tile that's already been seen
+
+        // TODO: here, we can call get_layers and read the actual bg data, and also know for each actual sprite if it has actual contents or not.
+        // the magic token for "empty" is 191.
+
         let mut tiles = self.tiles.write().unwrap();
         let region = self.split_region();
         self.current_screen = Screen::new(
@@ -940,6 +944,22 @@ impl MappyState {
             get_changes_fn(self.changes.as_mut_ptr(), self.change_count);
         }
     }
+    // safety: these slices don't belong to us so we should drop them
+    // before the next time FCEU emulation happens
+    unsafe fn get_layers(&mut self, emu: &Emulator) -> [&[u8]; 3] {
+        let get_layer_fn: Symbol<unsafe extern "C" fn(i32) -> *const u8> =
+            emu.get_symbol(b"retro_layer").unwrap();
+        let sz = 256 * 240;
+        let sp_bg = get_layer_fn(0);
+        let bg = get_layer_fn(1);
+        let sp_fg = get_layer_fn(2);
+        [
+            std::slice::from_raw_parts(sp_bg, sz),
+            std::slice::from_raw_parts(bg, sz),
+            std::slice::from_raw_parts(sp_fg, sz),
+        ]
+    }
+
     pub fn metaroom_exits(&self, mr: &Metaroom) -> Vec<MetaroomID> {
         let mut out_to = vec![];
         for (rid, _pos) in mr.registrations.iter() {
