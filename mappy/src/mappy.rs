@@ -949,7 +949,7 @@ impl MappyState {
         let get_changes_fn: Symbol<unsafe extern "C" fn(*mut ScrollChange, u32) -> u32> =
             emu.get_symbol(b"retro_count_scroll_changes").unwrap();
         unsafe {
-            self.change_count = get_changes_fn(self.changes.as_mut_ptr(), 0);
+            self.change_count = get_changes_fn(std::ptr::null_mut(), 0);
             self.changes
                 .resize_with(self.change_count as usize, Default::default);
             get_changes_fn(self.changes.as_mut_ptr(), self.change_count);
