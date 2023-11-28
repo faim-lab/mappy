@@ -283,15 +283,15 @@ impl MappyState {
                 || sdiff.1.unsigned_abs() >= (sh * 3) / 4
             {
                 let diff = self.current_screen.difference(&self.last_control_screen);
-                if !had_control {
-                    // println!(
-                    //     "{:?}: Regained control after {:?}; diff {:?}, scrolldiff {:?}",
-                    //     self.now.0,
-                    //     self.now.0 - last_control_time.0,
-                    //     diff,
-                    //     scroll_diff(self.scroll, self.last_controlled_scroll)
-                    // );
-                }
+                // if !had_control {
+                // println!(
+                //     "{:?}: Regained control after {:?}; diff {:?}, scrolldiff {:?}",
+                //     self.now.0,
+                //     self.now.0 - last_control_time.0,
+                //     diff,
+                //     scroll_diff(self.scroll, self.last_controlled_scroll)
+                // );
+                // }
                 let moderate_difference = diff > Self::SCREEN_ROOM_CHANGE_DIFF_MODERATE;
                 let big_difference = diff > Self::SCREEN_ROOM_CHANGE_DIFF_BIG;
                 let (sdx, sdy) = scroll_diff(self.scroll, self.last_controlled_scroll);
@@ -653,25 +653,11 @@ impl MappyState {
         // find minimal matching of sprites
         // local search is okay
         // vec<vec> is worrisome
-        let live: Vec<_> = unsafe {
-            // safety: bg_sp, fg_sp, bg can't leak; emulator can't run
-            let [bg_sp, _, fg_sp] = Self::get_layers(emu);
-            self.live_sprites
-                .iter()
-                .filter(|s| {
-                    s.is_valid()
-                        && !all_empty(
-                            s.x,
-                            s.y,
-                            s.width(),
-                            s.height(),
-                            if s.bg() { bg_sp } else { fg_sp },
-                            self.fb.w,
-                            self.fb.h,
-                        )
-                })
-                .collect()
-        };
+        let live: Vec<_> = self
+            .live_sprites
+            .iter()
+            .filter(|s| s.is_valid() && !s.is_empty())
+            .collect();
         // a candidate old track for each new track
         let candidates: Vec<_> = live
             .iter()
@@ -957,7 +943,7 @@ impl MappyState {
     }
     // safety: these slices don't belong to us so we should drop them
     // before the next time FCEU emulation happens
-    unsafe fn get_layers(emu: &Emulator) -> [&[u8]; 3] {
+    pub(crate) unsafe fn get_layers(emu: &Emulator) -> [&[u8]; 3] {
         let get_layer_fn: Symbol<unsafe extern "C" fn(i32) -> *const u8> =
             emu.get_symbol(b"retro_layer").unwrap();
         let sz = 256 * 240;
@@ -1329,15 +1315,4 @@ pub fn merge_cost(
 }
 fn scroll_diff((x0, y0): (i32, i32), (x1, y1): (i32, i32)) -> (i32, i32) {
     (x1 - x0, y1 - y0)
-}
-fn all_empty(x: u8, y: u8, w: u8, h: u8, fb: &[u8], fbw: usize, fbh: usize) -> bool {
-    const PIX_332_EMPTY: u8 = 191;
-    for yi in y as usize..(y as usize + h as usize).clamp(0, fbh) {
-        for xi in x as usize..(x as usize + w as usize).clamp(0, fbw) {
-            if fb[yi * fbw + xi] != PIX_332_EMPTY {
-                return false;
-            }
-        }
-    }
-    true
 }
