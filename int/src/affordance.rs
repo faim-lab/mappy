@@ -2,8 +2,18 @@ use bitflags::bitflags;
 use macroquad::prelude::*;
 use mappy::{sprites::SpriteTrack, MappyState, TILE_SIZE};
 use retro_rs::Emulator;
-use std::collections::{HashMap, HashSet};
+use std::{collections::{HashMap, HashSet}, fs::File};
+use palette::{Hsv, Darken}; 
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+};
+use serde_json;
+use serde::{Deserialize, Serialize};
+use std::fs;
+
 bitflags! {
+    #[derive(serde::Serialize, serde::Deserialize)]
     struct AffordanceMask : u8 {
         const SOLID      = 0b0000_0000_0000_0001;
         const DANGER     = 0b0000_0000_0000_0010;
@@ -14,8 +24,39 @@ bitflags! {
         const BREAKABLE  = 0b0000_0000_0100_0000;
     }
 }
+//how were bit flags selected? is there any more meaning?
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+//maybe load this from file in the future; can also make module for the colors
+//OR struct for colors, struct X, set of colors; 
+//      may also want combinations for affordances
+// bit patterns - > affordance mask to color (maybe different ways to organize)
+//what does this syntax actually do?
+ mod AffordanceColor{
+    pub const SPRITE : image::Rgba <u8> = image::Rgba([0, 255, 0, 150]);
+    pub const SOLID: image::Rgba<u8> = image::Rgba([196, 196, 196, 150]);
+    pub const DANGER: image::Rgba<u8>     = image::Rgba([255, 0, 0, 100]); //Red
+    pub const CHANGEABLE: image::Rgba<u8> = image::Rgba([150, 75, 0, 150]);
+    pub const USABLE: image::Rgba<u8>     = image::Rgba([255, 255, 0, 150]);
+    pub const PORTAL: image::Rgba <u8>    = image::Rgba([0, 0, 255, 150]);
+    pub const MOVABLE : image::Rgba  <u8> = image::Rgba([150, 75, 0, 150]);
+    pub const BREAKABLE : image::Rgba <u8> = image::Rgba([150, 75, 0, 150]);
+
+ }
+
+/* Original Colors:
+struct AffordanceColor: image::Rgba {
+        const SPRITE = image::Rgba([0, 255, 0, 255]);
+        const SOLID      = image::Rgba([196, 196, 196, 255]);
+        const DANGER     = image::Rgba([255, 0, 0, 255]); //Red
+        const CHANGEABLE = image::Rgba([150, 75, 0, 255]);
+        const USABLE     = image::Rgba([255, 255, 0, 255])
+        const PORTAL     = image::Rgba([0, 0, 255, 255]);
+        const MOVABLE    = image::Rgba([150, 75, 0, 255]);
+        const BREAKABLE  = image::Rgba([150, 75, 0, 255]);
+    }
+ */
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum Affordance {
     Guessed(AffordanceMask),
     Given(AffordanceMask),
@@ -24,6 +65,9 @@ enum Action {
     Paste,     // propagates a guess which also clobbers other guesses
     Cut(bool), // false is copy, true is erase; erase clobbers guesses
 }
+//clobbers presumably overrides? so cut(false) is copy which preserves what you copy?
+// cut(true) is like C-X which removes the original?
+#[derive(serde::Serialize, serde::Deserialize )]
 struct ModulateSettings {
     avatar_ratio: f32,
     dangerous_ratio: f32,
@@ -35,10 +79,25 @@ struct ModulateSettings {
     movable_saturation_change: f32,
     no_affordance_saturation_change: f32,
 }
-pub struct AffordanceTracker {
-    // later: output path, etc, like scroll dumper
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AffordanceMaps{
     tiles: HashMap<u128, Affordance>,
     sprites: HashMap<u32, Affordance>,
+}
+impl AffordanceMaps{
+    fn new(tile: HashMap<u128, Affordance>, sprite:  HashMap<u32, Affordance>)-> Self{
+        Self { tiles: tile, sprites: sprite }
+    }
+}
+//are the ratios a saturation? an importence? what is it a ratio to?
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AffordanceTracker {
+    // later: output path, etc, like scroll dumper
+   // csv: std::fs::File,
+    //this a TODO later or something that happens later in file?
+    tiles: HashMap<u128, Affordance>, //can map a specific game tile to an affordance (?)
+    sprites: HashMap<u32, Affordance>, //can map a specific sprite to an affordance (?)
 
     brush: AffordanceMask,
     settings: ModulateSettings,
@@ -46,6 +105,7 @@ pub struct AffordanceTracker {
 impl AffordanceTracker {
     pub fn new(_romname: &str) -> Self {
         Self {
+            //csv: std::fs::File::create("text.json").unwrap(),
             tiles: HashMap::with_capacity(10_000),
             sprites: HashMap::with_capacity(10_000),
             brush: AffordanceMask::empty(),
@@ -62,7 +122,18 @@ impl AffordanceTracker {
             },
         }
     }
+
+    pub fn load_maps(&mut self, path: &Path) -> (){
+        let print = path.display();
+        println!("{print}");
+        
+        let temp: AffordanceMaps  = serde_json::from_str(&fs::read_to_string(path).expect("couldn't find affordance file")).unwrap();
+        self.sprites = temp.sprites;
+        self.tiles = temp.tiles;
+    }
+   
     fn draw_brush_display(&self) {
+        //this is the lower screen that shows what brushes are active (?)
         draw_text(
             &format!(
                 "{}{}{}\n{}{}{}\n{}",
@@ -107,6 +178,7 @@ impl AffordanceTracker {
             super::SCALE * 24.0,
             RED,
         );
+        //this does the inactive brushes below the game display (?)
         draw_text(
             &format!(
                 "{}{}{}\n{}{}{}\n{}",
@@ -153,8 +225,8 @@ impl AffordanceTracker {
         );
     }
     fn update_brush(&mut self) {
-        // update brush
-        if is_key_pressed(KeyCode::Kp7) || is_key_pressed(KeyCode::F1) {
+        // update brush, adds the affordances to be annotated (?)
+        if is_key_pressed(KeyCode::Kp7) || is_key_pressed (KeyCode::F1) {
             self.brush.toggle(AffordanceMask::SOLID);
         }
         if is_key_pressed(KeyCode::Kp8) || is_key_pressed(KeyCode::F2) {
@@ -176,19 +248,34 @@ impl AffordanceTracker {
             self.brush.toggle(AffordanceMask::BREAKABLE);
         }
     }
+    pub fn save(&self, path: &Path){
+        let print = path.display();
+        println!("{print}");
+        let file : File = File::create(path).expect("Couldn't create affordance save file!");
+        
+        let temp : AffordanceMaps = AffordanceMaps { tiles: self.tiles.clone(), sprites: self.sprites.clone() };
+        let _ = serde_json::to_writer(file, &temp);
+    }
+    
     pub fn update(&mut self, mappy: &MappyState, _emu: &Emulator) {
         self.update_brush();
-        // left click to grant, right click to copy affordances
+        // left click to grant, right click to copy affordances 
         // shift right click to cut and erase (propagating to guesses)
+        //the copy goes from the ast granted? or what point? same with cut, where exactly is it
+        //erasing and taking from?
         let action = match (
-            is_mouse_button_down(MouseButton::Left),
-            is_mouse_button_down(MouseButton::Right),
-            is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift),
+            is_mouse_button_down(MouseButton::Left) && !(is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl)),
+            is_mouse_button_down(MouseButton::Right) || 
+             (is_mouse_button_down(MouseButton::Left) && is_key_down(KeyCode::LeftControl) || is_key_down(KeyCode::RightControl) ),
+            //is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift),
+
         ) {
-            (true, _, _) => Some(Action::Paste),
-            (false, true, shifted) => Some(Action::Cut(shifted)),
-            (_, _, _) => None,
+            (true, _) => Some(Action::Paste),
+            (false, true) => Some(Action::Cut(true)),
+            (_, _) => None,
         };
+        //uses mouse postion + knowledge of sprite postion to set affordances (?)
+        let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
         let (mx, my) = mouse_position();
         let sprite = mappy.live_tracks.iter().find(|track| {
             mappy::sprites::overlapping_sprite(
@@ -197,10 +284,24 @@ impl AffordanceTracker {
                 2,
                 2,
                 &[*track.current_data()],
-            )
+            ) 
         });
+
+        /*let sprite = mappy.live_tracks.iter().find(|track| {
+            mappy::sprites::overlapping_sprite(
+                (mx / super::SCALE) as usize,
+                (my / super::SCALE) as usize,
+                2,
+                2,
+                &[*track.current_data()],
+            ) && !tiles_covered_by(mappy, track.current_data())
+                .into_iter()
+                .all(|(tx, ty)| mappy.current_screen.get(tx, ty) != Some(initial_tile))
+        }); */
+       
+        //prioritizes sprite over tile, to accomodate the potential of overlap(?)
         let tile = if sprite.is_none() {
-            let (tx, ty) = super::screen_f32_to_tile((mx, my), mappy);
+            let (tx, ty) = super::screen_f32_to_tile((mx, my), mappy); //mappy gives tile/position mapping (?)
             mappy
                 .current_room
                 .as_ref()
@@ -218,14 +319,22 @@ impl AffordanceTracker {
         } else {
             None
         };
+        //action determined above by mouse command (?)
         match action {
             None => {}
             Some(Action::Paste) => {
                 match (sprite, tile) {
                     (Some(track), _) => {
                         // add given if not present, else upgrade to given if present
-                        let main_key = track.current_data().key();
+                        let main_key = track.current_data().key(); //so there is a prior affordance?
                         self.sprites.insert(main_key, Affordance::Given(self.brush));
+                        //this is a labelled affordance so is made the main key (?)
+
+                        //goes through all guesses- so propogated affordances(?)
+                        //what does this actually do? is there a reason for the vacant/occupied 
+                            //or is that a data handling check?
+                        //wait s this that any sprite position then should guess to hvae the same
+                        // affordance because we can follow sprite type? and sprites are a more limited scoped use (?)
                         for key in sprite_guesses(mappy, track) {
                             if key != main_key {
                                 use std::collections::hash_map::Entry;
@@ -253,14 +362,18 @@ impl AffordanceTracker {
             Some(Action::Cut(and_delete)) => match (sprite, tile) {
                 (Some(track), _) => {
                     // if there is no guess to cut, do nothing
+                    //so track is positioning data whcih is from mappy(?)
                     let key = track.current_data().key();
+                    //so the affordance is taken form the current sprte/tile, copied to the brush
+                    //so that future affordances will be this; and then optionally removed from the sprite/tile(?)
+                    //does this affordance copying continue until toggled off(?)
                     self.brush = match self.sprites.get(&key) {
                         Some(Affordance::Guessed(b)) => *b,
                         Some(Affordance::Given(b)) => *b,
                         None => self.brush,
                     };
                     if and_delete {
-                        self.sprites.remove(&key);
+                        self.sprites.remove(&key); //also removes propogated affordances(?)
                         for g in sprite_guesses(mappy, track) {
                             if g != key {
                                 if let Some(Affordance::Guessed(_guess)) = self.sprites.get(&g) {
@@ -287,6 +400,7 @@ impl AffordanceTracker {
         }
     }
     #[allow(clippy::map_entry)]
+    //this is going to be what allows for the visual differences (?)
     pub fn modulate(
         &mut self,
         mappy: &MappyState,
@@ -329,6 +443,7 @@ impl AffordanceTracker {
                     .and_then(|tile| tiles.get_change_by_id(tile))
                     .and_then(|change| tiles.get_tile_by_id(change.to))
                 {
+                    //checking for an affordance (?)
                     match self.tiles.get(&gfx.perceptual_hash()) {
                         None => {
                             // todo, highlight un-known nature
@@ -348,7 +463,8 @@ impl AffordanceTracker {
                 }
             }
         }
-        //let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
+    let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
+        //what are mappy tracks(?)
         for track in mappy.live_tracks.iter() {
             let cur = track.current_data();
             // if every tile covered by this sprite is a known tile in the current _screen_, skip it
@@ -359,7 +475,10 @@ impl AffordanceTracker {
             // if sprite_is_clear {
             //     continue;
             // }
+            //if this sprite is not in the current track (?)
             if !self.sprites.contains_key(&cur.key()) {
+                //with the fold this is trying to see is there is some type of affordance that can be attached to the sprite
+                //based on affrodances in ANY track(?)
                 if let Some(guess) = sprite_guesses(mappy, track).fold(None, |guess, track_key| {
                     match (self.sprites.get(&track_key), guess) {
                         (None, guess) => guess,
@@ -368,6 +487,7 @@ impl AffordanceTracker {
                         (Some(Affordance::Guessed(_mask)), better_guess) => better_guess,
                     }
                 }) {
+                    //uses affordances from THIS track (?)
                     self.sprites.insert(
                         cur.key(),
                         Affordance::Guessed(match guess {
@@ -377,6 +497,9 @@ impl AffordanceTracker {
                     );
                 }
             }
+            /*
+            what to do with propagation and over eager, tile chunks might not be correct resolution
+            might be too small to be meanginful  */
             let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
             if sd.x as u32 + sd.width() as u32 > 255 || sd.y as u32 + sd.height() as u32 > 240 {
                 continue;
@@ -394,6 +517,7 @@ impl AffordanceTracker {
                     sd.y as u32,
                 )
                 .unwrap();
+            //now that affordances are accounted for, can apply annotations (?)
             match self.sprites.get(&cur.key()) {
                 None => {
                     // todo, highlight unknown nature
@@ -404,10 +528,11 @@ impl AffordanceTracker {
                             &mut canvas,
                             Rect::at(sd.x as i32, sd.y as i32)
                                 .of_size(sd.width() as u32, sd.height() as u32),
-                            image::Rgba([0, 255, 0, 255]),
+                            AffordanceColor::SPRITE,
                             self.settings.avatar_ratio,
                         );
                     } else {
+                        //sd is a last position known from the track(?)
                         apply_mask_to_area(
                             &mut canvas,
                             *mask,
@@ -425,6 +550,7 @@ impl AffordanceTracker {
     }
 }
 
+//mask is a broad function, takes rectangle area + pos, mask type and other settings(?)
 fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     mask: AffordanceMask,
@@ -440,42 +566,42 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
         emphasize(
             canvas,
             r,
-            image::Rgba([255, 0, 0, 255]),
+            AffordanceColor::DANGER,
             settings.dangerous_ratio,
         );
     } else if mask.contains(AffordanceMask::USABLE) {
         emphasize(
             canvas,
             r,
-            image::Rgba([255, 255, 0, 255]),
+            AffordanceColor::USABLE,
             settings.usable_ratio,
         );
     } else if mask.contains(AffordanceMask::PORTAL) {
         emphasize(
             canvas,
             r,
-            image::Rgba([0, 0, 255, 255]),
+            AffordanceColor::PORTAL,
             settings.portal_ratio,
         );
     } else if mask.contains(AffordanceMask::CHANGEABLE) {
         emphasize(
             canvas,
             r,
-            image::Rgba([150, 75, 0, 255]),
+            AffordanceColor::CHANGEABLE,
             settings.changeable_ratio,
         );
     } else if mask.contains(AffordanceMask::BREAKABLE) {
         emphasize(
             canvas,
             r,
-            image::Rgba([150, 75, 0, 255]),
+            AffordanceColor::BREAKABLE,
             settings.breakable_ratio,
         );
     } else if mask.contains(AffordanceMask::SOLID) {
         emphasize(
             canvas,
             r,
-            image::Rgba([196, 196, 196, 255]),
+            AffordanceColor::SOLID,
             settings.solid_ratio,
         );
     } else if mask.contains(AffordanceMask::MOVABLE) {
@@ -485,24 +611,97 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     }
 }
 
+  
+// fn blend_color<I:GenericImage<Pixel = image::Rgba<u8>>>(
+//     pixel: image::Rgba<u8>,
+//     target: image::Rgba<u8>,
+//     ratio: f32){
+
+//     }
+//canvas is the field being drawn on 
+//r is the area of the canvas
+//target is target image color 
+//ratio is the amount to emphasis 
 fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     r: imageproc::rect::Rect,
     target: image::Rgba<u8>,
     _ratio: f32,
 ) {
+    //for pixels cna map with or without alpha channel 
+    //gives list of points 
+
+    //MAP allows to map transforms over pixels 
+    //do a lerp over the pixels 
+
+
+    //most filters work with gray scale 
+    //so ratio is a blending between the orignal and the color to indiciate affrodance(?)
     // TODO: compute HSV of r in canvas, modulate each color towards target by ratio
     // can't do a lerp exactly, or can I?
     // what if I literally did a lerp in RGB and then blended the new and old pixels by ratio?
+
+    //why would you want HSV?
+    //bracket_color library has a HSV lerp function for iteratoris
+    //pallette crate might have some useful image handling tools and types
+
+    //check this syntax VVV
+    //imageproc::map::map_pixels_mut(canvas, |p| {image::Pixel::blend(p[0], &target)});
+    //dont current have the mask of the sprite
+    //2 families for precise sprite; complicated by the frames changing
+    //changing tiles behind the sprite, if known familiar 
+    //as sprite moves some precision for mask (not sound assumption)
+    //instrumentatiion (modifies nes core, layers of the buffers for backgorund, foreground, sprite)
+    //lots of pixel iteration
+    //try highlighting the entire rectangle but area of concern 
+    //even if just two layers, tiles and sprites having info could be very useful for training a model
+
+    /*
+    photon has a lot of supprot for color spcaes and effects, but might want to use palette to hand the types for safty/conversion
+    photon has a frosted glass effect; tint, lighten and darken - lots of artsy effects some of the artsy effects might need not pixel images
+    photon the saturation of different image formats effects the end result
+    can blend images or create a gradient between 2 images, also fade between 2 images
+
+    ACTUALLY, photon image, uses 1 type (photonimage) which saves the raw pixels and such, then lets you modify
+        the image using different color spaces/formats-- i think basically treat it as though it is a diffrent image type
+        wihtout hvign to worry about that 
+
+    Seems like:
+    photon is very FUNCTION based
+    photon: lots of filters and flexibility, slight art leaning/influence
+    - handles alot of type stuff for colors for you
+    - pre set filters + mods by given amounts
+    
+    Palette lots of Structs and METHODS
+    palette: big on color type safety, you have to handle that conversion though
+    - more freedom in like it gives you traits and types to implement and use for other stuff
+    - lots of stuff relating to grayscale
+    - the white point shifting is interesting,
+    - support for transperencies 
+     */
+    //imageproc::drawing::draw_hollow_rect_mut(canvas, r, target);
     imageproc::drawing::draw_filled_rect_mut(canvas, r, target);
+
+    //lutgen, map colors to other colors; color correction stuff, more tuned for palette you like
+
+
 }
 
+//what is going to be the defintion of saturation(?), does that need a specific file type(?)
+//what is the intended difference between emphasize and emphasize satruation(?)
 fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     r: imageproc::rect::Rect,
     _change_by: f32,
 ) {
     // TODO: compute saturation of r in canvas, multiply by change_by, draw that into area; or use a saturate() command if it exists
+    //map across pixels, lower alpha channel for backgorun? raise for non background
+
+    //HSV STANDS FOR HUE SATURATION VALUE, so if you ahve a HSV cna edit saturation directly 
+    //PALETTE HAS SATURATE FUNCTION
+    //pallette handles a lot of conversions (yay, between colors)
+
+    //palette::chromatic_adaptation might be interesting as relates to white points, which kinda relates to vision/accessibility
     imageproc::drawing::draw_filled_rect_mut(canvas, r, image::Rgba([255, 255, 255, 64]));
 }
 
