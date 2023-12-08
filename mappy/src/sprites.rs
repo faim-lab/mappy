@@ -11,6 +11,7 @@ pub struct SpriteData {
     pub pattern_id: u8,
     pub table: u8,
     pub attrs: u8,
+    pub mask: [u8; 16], // will be half-empty for 8px high sprites
 }
 #[allow(dead_code)]
 impl SpriteData {
@@ -43,6 +44,9 @@ impl SpriteData {
         let dy = other.y as f32 - self.y as f32;
         (dx * dx + dy * dy).sqrt()
     }
+    pub fn is_empty(&self) -> bool {
+        self.mask.iter().all(|row| *row == 0)
+    }
 }
 const SPRITE_SIZE: usize = 4;
 pub const SPRITE_COUNT: usize = 0x100 / SPRITE_SIZE;
@@ -56,20 +60,57 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
     } else {
         8
     };
+    let (fbw, fbh) = emu.framebuffer_size();
+    fn get_mask(x: u8, y: u8, w: u8, h: u8, buf: &[u8], fbw: usize, fbh: usize) -> [u8; 16] {
+        const PIX_332_EMPTY: u8 = 191;
+        let mut mask = [0_u8; 16];
+        for (oy, mask_row) in mask.iter_mut().enumerate().take(h as usize) {
+            let yi = y as u16 + oy as u16;
+            if yi >= fbh as u16 {
+                break;
+            }
+            for ox in 0..w {
+                let xi = x as u16 + ox as u16;
+                if xi >= fbw as u16 {
+                    break;
+                }
+                let px = if buf[yi as usize * fbw + xi as usize] != PIX_332_EMPTY {
+                    1_u8
+                } else {
+                    0
+                };
+                *mask_row |= px << ox;
+            }
+        }
+        mask
+    }
     let table_bit = (ppuctrl & 0b0000_1000) >> 3;
-    for (i, bs) in buf.chunks_exact(SPRITE_SIZE).enumerate() {
-        let [y, pattern_id, attrs, x] = match *bs {
-            [y, pattern_id, attrs, x] => [y, pattern_id, attrs, x],
-            _ => unreachable!(),
-        };
-        sprites[i] = SpriteData {
-            index: i as u8,
-            x,
-            y: y.min(254) + 1,
-            height: sprite_height,
-            pattern_id,
-            table: table_bit,
-            attrs,
+    unsafe {
+        let [bg_sp, _, fg_sp] = super::MappyState::get_layers(emu);
+        for (i, bs) in buf.chunks_exact(SPRITE_SIZE).enumerate() {
+            let [y, pattern_id, attrs, x] = match *bs {
+                [y, pattern_id, attrs, x] => [y, pattern_id, attrs, x],
+                _ => unreachable!(),
+            };
+            let is_bg = attrs & 0b0010_0000 != 0;
+            sprites[i] = SpriteData {
+                index: i as u8,
+                x,
+                y: y.min(254) + 1,
+                height: sprite_height,
+                pattern_id,
+                table: table_bit,
+                attrs,
+                mask: get_mask(
+                    x,
+                    y.min(254) + 1,
+                    8,
+                    sprite_height,
+                    if is_bg { bg_sp } else { fg_sp },
+                    fbw,
+                    fbh,
+                ),
+            }
         }
     }
 }

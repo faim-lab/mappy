@@ -229,22 +229,22 @@ impl AffordanceTracker {
         if is_key_pressed(KeyCode::Kp7) || is_key_pressed (KeyCode::F1) {
             self.brush.toggle(AffordanceMask::SOLID);
         }
-        if is_key_pressed(KeyCode::Kp8) || is_key_pressed (KeyCode::F2) {
+        if is_key_pressed(KeyCode::Kp8) || is_key_pressed(KeyCode::F2) {
             self.brush.toggle(AffordanceMask::DANGER);
         }
-        if is_key_pressed(KeyCode::Kp9) || is_key_pressed (KeyCode::F3) {
+        if is_key_pressed(KeyCode::Kp9) || is_key_pressed(KeyCode::F3) {
             self.brush.toggle(AffordanceMask::CHANGEABLE);
         }
-        if is_key_pressed(KeyCode::Kp4) || is_key_pressed (KeyCode::F4) {
+        if is_key_pressed(KeyCode::Kp4) || is_key_pressed(KeyCode::F4) {
             self.brush.toggle(AffordanceMask::USABLE);
         }
-        if is_key_pressed(KeyCode::Kp5) || is_key_pressed (KeyCode::F5) {
+        if is_key_pressed(KeyCode::Kp5) || is_key_pressed(KeyCode::F5) {
             self.brush.toggle(AffordanceMask::PORTAL);
         }
-        if is_key_pressed(KeyCode::Kp6) || is_key_pressed (KeyCode::F6) {
+        if is_key_pressed(KeyCode::Kp6) || is_key_pressed(KeyCode::F6) {
             self.brush.toggle(AffordanceMask::MOVABLE);
         }
-        if is_key_pressed(KeyCode::Kp1) || is_key_pressed (KeyCode::F7) {
+        if is_key_pressed(KeyCode::Kp1) || is_key_pressed(KeyCode::F7) {
             self.brush.toggle(AffordanceMask::BREAKABLE);
         }
     }
@@ -626,7 +626,7 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     r: imageproc::rect::Rect,
     target: image::Rgba<u8>,
-    ratio: f32,
+    _ratio: f32,
 ) {
     //for pixels cna map with or without alpha channel 
     //gives list of points 
@@ -692,7 +692,7 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
 fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     r: imageproc::rect::Rect,
-    change_by: f32,
+    _change_by: f32,
 ) {
     // TODO: compute saturation of r in canvas, multiply by change_by, draw that into area; or use a saturate() command if it exists
     //map across pixels, lower alpha channel for backgorun? raise for non background

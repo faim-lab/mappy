@@ -16,6 +16,16 @@ pub struct TileGfx(pub [u8; TILE_NUM_PX]);
 
 impl TileGfx {
     // TODO if profiling shows tile creation is hot, replace with a cache friendlier api with read_row(&mut self, x, y, row) so we can read a whole framebuffer row off at a time
+    pub fn read_slice(fb: &[u8], w: usize, _h: usize, x: usize, y: usize) -> Self {
+        let mut tile_data = [0_u8; TILE_NUM_PX];
+        assert!(w * (y + TILE_SIZE) <= fb.len());
+        let rows = &fb[w * y..w * (y + TILE_SIZE)];
+        for (yi, row) in rows.chunks_exact(w).enumerate() {
+            let cols = &row[x..x + TILE_SIZE];
+            tile_data[(yi * TILE_SIZE)..((yi + 1) * TILE_SIZE)].copy_from_slice(cols);
+        }
+        Self(tile_data)
+    }
     pub fn read(fb: &Framebuffer, x: usize, y: usize) -> Self {
         let mut tile_data = [0_u8; TILE_NUM_PX];
         assert!(fb.w * (y + TILE_SIZE) <= fb.fb.len());

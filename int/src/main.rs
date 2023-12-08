@@ -10,14 +10,15 @@ mod playback;
 mod scroll;
 use clap::Parser;
 
-const SCALE: f32 = 1.0;
+const SCALE: f32 = 4.0;
 
 fn window_conf() -> Conf {
     Conf {
         window_title: "Mappy".to_owned(),
         fullscreen: false,
         window_width: 256 * SCALE as i32,
-        window_height: 240 * SCALE as i32,
+        window_height: 240 * SCALE as i32 + 128,
+        window_resizable: false,
         ..Conf::default()
     }
 }
@@ -48,6 +49,7 @@ struct Cli{
 async fn main() {
     use std::env;
     //original args
+    std::fs::create_dir_all("out").unwrap_or(());
     let args: Vec<_> = env::args().collect();
     
     let file_args = Cli::parse();
@@ -276,7 +278,7 @@ zxcvbnm,./ for debug displays"
         affordances.modulate(&mappy, &emu, &game_img, &mut mod_img); //what is modulate?
         game_tex.update(&mod_img); //updating texture based on game play? or progression in recorded?
         draw_texture_ex(
-            game_tex,
+            &game_tex,
             0.,
             0.,
             WHITE,
@@ -316,7 +318,6 @@ fn tile_to_screen((x, y): (i32, i32), mappy: &MappyState) -> (f32, f32) {
 }
 
 fn dump_mappy_map(romname: &str, mappy: &MappyState) {
-    std::fs::create_dir_all("out").unwrap_or(());
     mappy.dump_map(Path::new("out/"));
     {
         use std::process::Command;
