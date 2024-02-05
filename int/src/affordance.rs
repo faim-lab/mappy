@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 use macroquad::prelude::*;
-use mappy::{sprites::SpriteTrack, MappyState, TILE_SIZE};
+use mappy::{sprites::{SpriteData, SpriteTrack}, MappyState, TILE_SIZE};
 use retro_rs::Emulator;
 use std::{collections::{HashMap, HashSet}, fs::File};
 use palette::{Hsv, Darken}; 
@@ -612,6 +612,23 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
 
 }
 
+fn emphasize_sprite<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
+    canvas: &mut imageproc::drawing::Blend<I>,
+    sprite: &SpriteData,
+    r: imageproc::rect::Rect,
+    target: image::Rgba<u8>,
+    _ratio: f32,
+) {
+/*so get_pixel for each pixel that is valid in the mask, transform the color and draw that pixel back on the canvas  */
+let mask = sprite.mask; 
+/*general idea, take the rectangle defined by the sprite, then iterate through those pixels and check against the mask
+then if it is in the mask as valid, perfrom the transform */
+
+}
+
+
+//what is going to be the defintion of saturation(?), does that need a specific file type(?)
+//what is the intended difference between emphasize and emphasize satruation(?)
 fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     r: imageproc::rect::Rect,

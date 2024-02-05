@@ -10,7 +10,7 @@ mod playback;
 mod scroll;
 use clap::Parser;
 
-const SCALE: f32 = 1.0;
+const SCALE: f32 = 2.0;
 
 fn window_conf() -> Conf {
     Conf {
