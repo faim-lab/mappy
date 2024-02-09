@@ -33,7 +33,7 @@ bitflags! {
  mod AffordanceColor{
     pub const SPRITE : image::Rgba <u8> = image::Rgba([0, 255, 0, 150]);
     pub const SOLID: image::Rgba<u8> = image::Rgba([196, 196, 196, 150]);
-    pub const DANGER: image::Rgba<u8>     = image::Rgba([255, 0, 0, 100]); //Red
+    pub const DANGER: image::Rgba<u8>     = image::Rgba([255, 0, 255, 255]); //Red
     pub const CHANGEABLE: image::Rgba<u8> = image::Rgba([150, 75, 0, 150]);
     pub const USABLE: image::Rgba<u8>     = image::Rgba([255, 255, 0, 150]);
     pub const PORTAL: image::Rgba <u8>    = image::Rgba([0, 0, 255, 150]);
@@ -698,12 +698,12 @@ fn emphasize_sprite<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
 /*so get_pixel for each pixel that is valid in the mask, transform the color and draw that pixel back on the canvas  */
 let mask = sprite.mask; 
 
-for i in 0..mask.len(){
-    for _j in 0..sprite.height(){
+for (y,row)  in mask.iter().enumerate(){
+    for x in 0..8 {
 
        //if the mask but is set then copy the pixel with the transform
-        if ((mask[i].rotate_left(7))  & 0b1) == 1 {
-            canvas.draw_pixel(sprite.x as u32,sprite.y as u32, target);
+        if ((row >> (7-x))  & 0b1) == 1 {
+            canvas.draw_pixel(sprite.x as u32 + x,sprite.y as u32 + y as u32 , target);
             //need to adjust for the scaling that happens
         }
         

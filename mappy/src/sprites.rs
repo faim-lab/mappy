@@ -79,7 +79,7 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
                 } else {
                     0
                 };
-                *mask_row |= px << ox;
+                *mask_row |= px << w- ox - 1;
             }
         }
         mask
