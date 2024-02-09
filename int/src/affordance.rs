@@ -646,37 +646,37 @@ sprite,
             settings.usable_ratio,
         );
     } else if mask.contains(AffordanceMask::USABLE) {
-        emphasize(
+        emphasize_sprite(
             canvas,
-            r,
+            sprite,
             AffordanceColor::USABLE,
             settings.usable_ratio,
         );
     } else if mask.contains(AffordanceMask::PORTAL) {
-        emphasize(
+        emphasize_sprite(
             canvas,
-            r,
+            sprite,
             AffordanceColor::PORTAL,
             settings.portal_ratio,
         );
     } else if mask.contains(AffordanceMask::CHANGEABLE) {
-        emphasize(
+        emphasize_sprite(
             canvas,
-            r,
+            sprite,
             AffordanceColor::CHANGEABLE,
             settings.changeable_ratio,
         );
     } else if mask.contains(AffordanceMask::BREAKABLE) {
-        emphasize(
+        emphasize_sprite(
             canvas,
-            r,
+            sprite,
             AffordanceColor::BREAKABLE,
             settings.breakable_ratio,
         );
     } else if mask.contains(AffordanceMask::SOLID) {
-        emphasize(
+        emphasize_sprite(
             canvas,
-            r,
+        sprite,
             AffordanceColor::SOLID,
             settings.solid_ratio,
         );
