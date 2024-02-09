@@ -1,4 +1,5 @@
 use bitflags::bitflags;
+use imageproc::drawing::Canvas;
 use macroquad::prelude::*;
 use mappy::{sprites::{SpriteData, SpriteTrack}, MappyState, TILE_SIZE};
 use retro_rs::Emulator;
@@ -479,13 +480,15 @@ impl AffordanceTracker {
                             self.settings.avatar_ratio,
                         );
                     } else {
-                        apply_mask_to_area(
+                        //sd is a last position known from the track(?)
+                        apply_sprite_mask_to_area(
                             &mut canvas,
                             *mask,
                             sd.x as u32,
                             sd.y as u32,
                             sd.width() as u32,
                             sd.height() as u32,
+                            sd,
                             &self.settings,
                         );
                     }
@@ -508,11 +511,85 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     use imageproc::rect::Rect;
     let r = Rect::at(x as i32, y as i32).of_size(w, h);
     if mask.contains(AffordanceMask::DANGER) {
+        // emphasize(
+        //     canvas,
+        //     r,
+        //     AffordanceColor::DANGER,
+        //     settings.dangerous_ratio,
+        // );
+        emphasize(
+            canvas, 
+            r,
+            AffordanceColor::USABLE,
+            settings.usable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::USABLE) {
         emphasize(
             canvas,
             r,
+            AffordanceColor::USABLE,
+            settings.usable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::PORTAL) {
+        emphasize(
+            canvas,
+            r,
+            AffordanceColor::PORTAL,
+            settings.portal_ratio,
+        );
+    } else if mask.contains(AffordanceMask::CHANGEABLE) {
+        emphasize(
+            canvas,
+            r,
+            AffordanceColor::CHANGEABLE,
+            settings.changeable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::BREAKABLE) {
+        emphasize(
+            canvas,
+            r,
+            AffordanceColor::BREAKABLE,
+            settings.breakable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::SOLID) {
+        emphasize(
+            canvas,
+            r,
+            AffordanceColor::SOLID,
+            settings.solid_ratio,
+        );
+    } else if mask.contains(AffordanceMask::MOVABLE) {
+        emphasize_saturation(canvas, r, settings.movable_saturation_change);
+    } else {
+        emphasize_saturation(canvas, r, settings.no_affordance_saturation_change);
+    }
+}
+
+
+fn apply_sprite_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
+    canvas: &mut imageproc::drawing::Blend<I>,
+    mask: AffordanceMask,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sprite: &SpriteData,
+    settings: &ModulateSettings,
+) {
+    use imageproc::rect::Rect;
+    let r = Rect::at(x as i32, y as i32).of_size(w, h);
+    if mask.contains(AffordanceMask::DANGER) {
+        // emphasize(
+        //     canvas,
+        //     r,
+        //     AffordanceColor::DANGER,
+        //     settings.dangerous_ratio,
+        // );
+        emphasize_sprite(
+            canvas,
+sprite, 
             AffordanceColor::DANGER,
-            settings.dangerous_ratio,
+            settings.usable_ratio,
         );
     } else if mask.contains(AffordanceMask::USABLE) {
         emphasize(
@@ -615,12 +692,24 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
 fn emphasize_sprite<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     sprite: &SpriteData,
-    r: imageproc::rect::Rect,
     target: image::Rgba<u8>,
     _ratio: f32,
 ) {
 /*so get_pixel for each pixel that is valid in the mask, transform the color and draw that pixel back on the canvas  */
 let mask = sprite.mask; 
+
+for i in 0..mask.len(){
+    for _j in 0..sprite.height(){
+
+       //if the mask but is set then copy the pixel with the transform
+        if ((mask[i].rotate_left(7))  & 0b1) == 1 {
+            canvas.draw_pixel(sprite.x as u32,sprite.y as u32, target);
+            //need to adjust for the scaling that happens
+        }
+        
+    }
+}
+
 /*general idea, take the rectangle defined by the sprite, then iterate through those pixels and check against the mask
 then if it is in the mask as valid, perfrom the transform */
 
