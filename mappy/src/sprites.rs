@@ -79,7 +79,7 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
                 } else {
                     0
                 };
-                *mask_row |= px << w- ox - 1;
+                *mask_row |= px << w - ox - 1;
             }
         }
         mask
@@ -233,7 +233,7 @@ impl SpriteTrack {
     // Here, positive and negative hits are incremented based on whether input changes occur at the same time
     // as changes in acceleration. Also, button inputs are dealt with in int.rs and mappy.rs, and there is a
     // visualizer in int.rs (look at avatar_indicator, and press m while running int.rs to see). What I have right
-    // now as a whole works somewhat, but has some issues that need soliving. For instance, it's picking up sprites
+    // now as a whole works somewhat, but has some issues that need solving. For instance, it's picking up sprites
     // like blocks that Mario breaks (since they accelerate so fast when they're broken, I think).
     pub fn determine_avatar(&mut self, current_time: Time, button_input: &RingBuffer<Buttons>) {
         // See the struct RingBuffer and the field button_inputs in mappy.rs. This is where

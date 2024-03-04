@@ -40,9 +40,9 @@ fn replay(
 
 //ADD short names AND replay file to this, -- affordance affordfile
 #[derive(Parser)]
-struct Cli{
+struct Cli {
     rom: std::path::PathBuf,
-    affordance: Option<std::path::PathBuf>
+    affordance: Option<std::path::PathBuf>,
 }
 
 #[macroquad::main(window_conf)]
@@ -51,11 +51,11 @@ async fn main() {
     //original args
     std::fs::create_dir_all("out").unwrap_or(());
     let args: Vec<_> = env::args().collect();
-    
+
     let file_args = Cli::parse();
-    //let romfile = Path::new(args[1].as_str()); //gamefile 
-    let romfile = file_args.rom.as_path(); //gamefile 
-    // "mario3"
+    //let romfile = Path::new(args[1].as_str()); //gamefile
+    let romfile = file_args.rom.as_path(); //gamefile
+                                           // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
     std::fs::create_dir_all("inputs").unwrap_or(());
     let mut scroll_dumper: Option<scroll::ScrollDumper> = /*Some(scroll::ScrollDumper::new(
@@ -65,14 +65,14 @@ async fn main() {
     std::fs::create_dir_all("affordances").unwrap_or(());
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     let afford_file = file_args.affordance.clone(); //optional affordance file
-    
-    if afford_file.is_some(){
+
+    if afford_file.is_some() {
         affordances.load_maps(afford_file.unwrap().as_path());
     }
-    
+
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
-    let mut start_state = vec![0; emu.save_size()];//state is saved in a vector, as image?
+    let mut start_state = vec![0; emu.save_size()]; //state is saved in a vector, as image?
     let mut save_buf = vec![0; emu.save_size()];
     emu.save(&mut start_state); //sets size?
     emu.save(&mut save_buf);
@@ -239,19 +239,22 @@ zxcvbnm,./ for debug displays"
             emu.load(&save_buf);
             mappy.handle_reset();
         }
-        if is_key_pressed(KeyCode::F9){
-
+        if is_key_pressed(KeyCode::F9) {
             //ADD ALSO SAVE REPLAY FILE UP TO THIS POINT
-            
-             let timestamp = chrono::prelude::Utc::now().to_rfc3339();
-             let rom: String = romfile.strip_prefix("roms").unwrap_or(Path::new("unknownrom")).display().to_string();
-    let filename = format!("{rom}-{timestamp}.json");
-    let aff_path = Path::new("affordances").join(filename);
-    //let file : std::fs::File = std::fs::File::create(aff_path).unwrap();
- 
+
+            let timestamp = chrono::prelude::Utc::now().to_rfc3339();
+            let rom: String = romfile
+                .strip_prefix("roms")
+                .unwrap_or(Path::new("unknownrom"))
+                .display()
+                .to_string();
+            let filename = format!("{rom}-{timestamp}.json");
+            let aff_path = Path::new("affordances").join(filename);
+            //let file : std::fs::File = std::fs::File::create(aff_path).unwrap();
+
             affordances.save(aff_path.as_path());
         }
-        if is_key_pressed(KeyCode::F10){
+        if is_key_pressed(KeyCode::F10) {
             // let save_path = Path::new("affordances/mario.nes-2023-11-10T17:02:52.475411+00:00.json");
             // affordances.load_maps(save_path);
         }
@@ -259,7 +262,7 @@ zxcvbnm,./ for debug displays"
         //is this changing the frame rate for the ongoing play?
         // f/s * s = how many frames
         playback.step(get_frame_time(), |remaining_acc, input| {
-            emu.run(input); 
+            emu.run(input);
             // must do this before mappy processes the screen,
             // since mappy messes with the framebuffer/emulation state.
             // later, will need an early and late update?
@@ -274,7 +277,8 @@ zxcvbnm,./ for debug displays"
             }
             mappy.process_screen(&mut emu, input);
         });
-        affordances.update(&mappy, &emu); //affordances updated, this adds to the game record? or jsut checks for inputs?
+        affordances.update(&mappy, &emu); //affordances updated, this adds to the game record? or just checks for inputs?
+
         affordances.modulate(&mappy, &emu, &game_img, &mut mod_img); //what is modulate?
         game_tex.update(&mod_img); //updating texture based on game play? or progression in recorded?
         draw_texture_ex(
