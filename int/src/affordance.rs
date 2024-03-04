@@ -1,6 +1,7 @@
 use bitflags::bitflags;
+use imageproc::drawing::Canvas;
 use macroquad::prelude::*;
-use mappy::{sprites::SpriteTrack, MappyState, TILE_SIZE};
+use mappy::{sprites::{SpriteData, SpriteTrack}, MappyState, TILE_SIZE};
 use retro_rs::Emulator;
 use std::{collections::{HashMap, HashSet}, fs::File};
 use palette::{Hsv, Darken}; 
@@ -34,7 +35,7 @@ bitflags! {
  mod AffordanceColor{
     pub const SPRITE : image::Rgba <u8> = image::Rgba([0, 255, 0, 150]);
     pub const SOLID: image::Rgba<u8> = image::Rgba([196, 196, 196, 150]);
-    pub const DANGER: image::Rgba<u8>     = image::Rgba([255, 0, 0, 100]); //Red
+    pub const DANGER: image::Rgba<u8>     = image::Rgba([255, 0, 255, 255]); //Red
     pub const CHANGEABLE: image::Rgba<u8> = image::Rgba([150, 75, 0, 150]);
     pub const USABLE: image::Rgba<u8>     = image::Rgba([255, 255, 0, 150]);
     pub const PORTAL: image::Rgba <u8>    = image::Rgba([0, 0, 255, 150]);
@@ -533,13 +534,14 @@ impl AffordanceTracker {
                         );
                     } else {
                         //sd is a last position known from the track(?)
-                        apply_mask_to_area(
+                        apply_sprite_mask_to_area(
                             &mut canvas,
                             *mask,
                             sd.x as u32,
                             sd.y as u32,
                             sd.width() as u32,
                             sd.height() as u32,
+                            sd,
                             &self.settings,
                         );
                     }
@@ -563,11 +565,17 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     use imageproc::rect::Rect;
     let r = Rect::at(x as i32, y as i32).of_size(w, h);
     if mask.contains(AffordanceMask::DANGER) {
+        // emphasize(
+        //     canvas,
+        //     r,
+        //     AffordanceColor::DANGER,
+        //     settings.dangerous_ratio,
+        // );
         emphasize(
-            canvas,
+            canvas, 
             r,
-            AffordanceColor::DANGER,
-            settings.dangerous_ratio,
+            AffordanceColor::USABLE,
+            settings.usable_ratio,
         );
     } else if mask.contains(AffordanceMask::USABLE) {
         emphasize(
@@ -601,6 +609,74 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
         emphasize(
             canvas,
             r,
+            AffordanceColor::SOLID,
+            settings.solid_ratio,
+        );
+    } else if mask.contains(AffordanceMask::MOVABLE) {
+        emphasize_saturation(canvas, r, settings.movable_saturation_change);
+    } else {
+        emphasize_saturation(canvas, r, settings.no_affordance_saturation_change);
+    }
+}
+
+
+fn apply_sprite_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
+    canvas: &mut imageproc::drawing::Blend<I>,
+    mask: AffordanceMask,
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    sprite: &SpriteData,
+    settings: &ModulateSettings,
+) {
+    use imageproc::rect::Rect;
+    let r = Rect::at(x as i32, y as i32).of_size(w, h);
+    if mask.contains(AffordanceMask::DANGER) {
+        // emphasize(
+        //     canvas,
+        //     r,
+        //     AffordanceColor::DANGER,
+        //     settings.dangerous_ratio,
+        // );
+        emphasize_sprite(
+            canvas,
+sprite, 
+            AffordanceColor::DANGER,
+            settings.usable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::USABLE) {
+        emphasize_sprite(
+            canvas,
+            sprite,
+            AffordanceColor::USABLE,
+            settings.usable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::PORTAL) {
+        emphasize_sprite(
+            canvas,
+            sprite,
+            AffordanceColor::PORTAL,
+            settings.portal_ratio,
+        );
+    } else if mask.contains(AffordanceMask::CHANGEABLE) {
+        emphasize_sprite(
+            canvas,
+            sprite,
+            AffordanceColor::CHANGEABLE,
+            settings.changeable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::BREAKABLE) {
+        emphasize_sprite(
+            canvas,
+            sprite,
+            AffordanceColor::BREAKABLE,
+            settings.breakable_ratio,
+        );
+    } else if mask.contains(AffordanceMask::SOLID) {
+        emphasize_sprite(
+            canvas,
+        sprite,
             AffordanceColor::SOLID,
             settings.solid_ratio,
         );
@@ -686,6 +762,33 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
 
 
 }
+
+fn emphasize_sprite<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
+    canvas: &mut imageproc::drawing::Blend<I>,
+    sprite: &SpriteData,
+    target: image::Rgba<u8>,
+    _ratio: f32,
+) {
+/*so get_pixel for each pixel that is valid in the mask, transform the color and draw that pixel back on the canvas  */
+let mask = sprite.mask; 
+
+for (y,row)  in mask.iter().enumerate(){
+    for x in 0..8 {
+
+       //if the mask but is set then copy the pixel with the transform
+        if ((row >> (7-x))  & 0b1) == 1 {
+            canvas.draw_pixel(sprite.x as u32 + x,sprite.y as u32 + y as u32 , target);
+            //need to adjust for the scaling that happens
+        }
+        
+    }
+}
+
+/*general idea, take the rectangle defined by the sprite, then iterate through those pixels and check against the mask
+then if it is in the mask as valid, perfrom the transform */
+
+}
+
 
 //what is going to be the defintion of saturation(?), does that need a specific file type(?)
 //what is the intended difference between emphasize and emphasize satruation(?)
