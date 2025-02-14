@@ -204,10 +204,10 @@ zxcvbnm,./ for debug displays"
                 if let Some(dump) = scroll_dumper.take() {
                     dump.finish(&playback.inputs);
                 }
-                scroll_dumper = Some(scroll::ScrollDumper::new(
+                scroll_dumper = None;/*Some(scroll::ScrollDumper::new(
                     Path::new("scroll_data/"),
                     romname.to_str().unwrap(),
-                ));
+                ));*/
                 emu.load(&start_state);
                 mappy.handle_reset();
                 playback.replay(&path);

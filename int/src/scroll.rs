@@ -4,7 +4,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
 };
-
+#[cfg(feature="ffmpeg")]
 pub struct ScrollDumper {
     csv: std::fs::File,
     fm2_path: PathBuf,
@@ -16,7 +16,10 @@ pub struct ScrollDumper {
     frame_counter: usize,
     frame_time: video_rs::Time,
 }
+#[cfg(not(feature="ffmpeg"))]
+pub struct ScrollDumper();
 
+#[cfg(feature="ffmpeg")]
 impl ScrollDumper {
     pub fn new(data_root: &Path, rom_name: &str) -> Self {
         video_rs::init().unwrap();
@@ -74,4 +77,10 @@ impl ScrollDumper {
         self.csv.flush().unwrap();
         mappy::write_fm2(inputs, &self.fm2_path);
     }
+}
+
+#[cfg(not(feature="ffmpeg"))]
+impl ScrollDumper {
+    pub fn update(&mut self, _mappy:&MappyState, _emu:&Emulator) { }
+    pub fn finish(mut self, _inputs:&[[Buttons;2]]) {}
 }
