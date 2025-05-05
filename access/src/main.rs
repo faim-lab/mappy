@@ -71,11 +71,11 @@ async fn main() {
         // Have to run emu for one frame before we can get the framebuffer size
         let mut start_state = vec![0; emu.save_size()];
         let mut save_buf = vec![0; emu.save_size()];
-        emu.save(&mut start_state);
-        emu.save(&mut save_buf);
+        assert!(emu.save(&mut start_state));
+        assert!(emu.save(&mut save_buf));
         emu.run([Buttons::new(), Buttons::new()]);
         // So reset it afterwards
-        emu.load(&start_state);
+        assert!(emu.load(&start_state));
         (start_state, save_buf)
     };
     let (w, h) = emu.borrow().framebuffer_size();
@@ -182,7 +182,7 @@ zxcvbnm,./ for debug displays"
                 mappy::write_fm2(&inputs, &path);
                 println!("Dumped {}", n);
             } else {
-                emu.borrow_mut().load(&start_state);
+                assert!(emu.borrow_mut().load(&start_state));
                 mappy.borrow_mut().handle_reset();
                 frame_counter = 0;
                 inputs.clear();
@@ -197,7 +197,7 @@ zxcvbnm,./ for debug displays"
                 "{}.state",
                 romname.to_str().expect("rom name not a valid utf-8 string")
             ));
-            emu.borrow().save(&mut save_buf);
+            assert!(emu.borrow().save(&mut save_buf));
             //write it out to the file
             let mut file = std::fs::File::create(save_path).expect("Couldn't create save file!");
             file.write_all(&save_buf)
@@ -211,7 +211,7 @@ zxcvbnm,./ for debug displays"
             ));
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
             file.read_exact(&mut save_buf).unwrap();
-            emu.borrow_mut().load(&save_buf);
+            assert!(emu.borrow_mut().load(&save_buf));
             mappy.borrow_mut().handle_reset();
         }
         // f/s * s = how many frames
@@ -249,21 +249,30 @@ zxcvbnm,./ for debug displays"
             // then filter
             if accum < 2.0 {
                 if let Some(filter_mod) = &filter {
+                    use pyo3::types::PyByteArrayMethods;
                     mappy_py::with_mappy(Rc::clone(&emu), Rc::clone(&mappy), |py, mappy_py| {
                         let filter = filter_mod
                             .getattr(py, "filter")
                             .expect("Python filter module does not define `filter` function");
                         let fb_len = fb.len();
-                        // two copies, eugh
+                        // two copies, maybe we could avoid this later with buffer protocol somehow.
                         let fb_py = pyo3::types::PyByteArray::new(py, &fb);
-                        filter.call1(py, (mappy_py, fb_py)).unwrap_or_else(|e| {
+                        let fb_py_view = pyo3::types::PyMemoryView::from(&fb_py).expect("Couldn't create memory view from PyByteArray");
+                        filter.call1(py, (mappy_py, fb_py_view)).unwrap_or_else(|e| {
                             // We can't display Python exceptions via std::fmt::Display,
                             // so print the error here manually.
                             e.print_and_set_sys_last_vars(py);
                             panic!();
                         });
-                        // and a third
+                        // This second copy will also disappear if we can eliminate the first
                         unsafe {
+                            // This is safe because the PyByteArray
+                            // will be dropped and not reused.  Also,
+                            // the bytes get copied out (but if the
+                            // copy can be avoided, it would still be
+                            // safe, since the buffer won't get
+                            // modified by Rust while the PyByteArray
+                            // is live)
                             fb.copy_from_slice(&fb_py.as_bytes()[..fb_len]);
                         }
                     });
@@ -285,7 +294,7 @@ zxcvbnm,./ for debug displays"
         game_img.bytes.copy_from_slice(&fb);
         game_tex.update(&game_img);
         draw_texture_ex(
-            game_tex,
+            &game_tex,
             0.,
             0.,
             WHITE,

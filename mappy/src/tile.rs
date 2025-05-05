@@ -15,7 +15,10 @@ pub const TILE_NUM_PX: usize = TILE_SIZE * TILE_SIZE;
 pub struct TileGfx(pub [u8; TILE_NUM_PX]);
 
 impl TileGfx {
+    /// # Panics
+    /// Panics if the given framebuffer is too small
     // TODO if profiling shows tile creation is hot, replace with a cache friendlier api with read_row(&mut self, x, y, row) so we can read a whole framebuffer row off at a time
+    #[must_use]
     pub fn read_slice(fb: &[u8], w: usize, _h: usize, x: usize, y: usize) -> Self {
         let mut tile_data = [0_u8; TILE_NUM_PX];
         assert!(w * (y + TILE_SIZE) <= fb.len());
@@ -26,6 +29,9 @@ impl TileGfx {
         }
         Self(tile_data)
     }
+    /// # Panics
+    /// Panics if the given framebuffer is too small
+    #[must_use]
     pub fn read(fb: &Framebuffer, x: usize, y: usize) -> Self {
         let mut tile_data = [0_u8; TILE_NUM_PX];
         assert!(fb.w * (y + TILE_SIZE) <= fb.fb.len());
@@ -36,6 +42,8 @@ impl TileGfx {
         }
         Self(tile_data)
     }
+    /// # Panics
+    /// Panics if the given buffer is too small
     pub fn write_rgb888(&self, buf: &mut [u8]) {
         assert!(buf.len() == self.0.len() * 3);
         for (col, dst) in self.0.iter().zip(buf.chunks_exact_mut(3)) {
@@ -45,6 +53,8 @@ impl TileGfx {
             dst[2] = b;
         }
     }
+    /// # Panics
+    /// Panics if the given buffer is too small
     pub fn write_rgb888_at(&self, x: usize, y: usize, buf: &mut [u8], buf_w: usize) {
         assert!((x + TILE_SIZE) <= buf_w);
         for (row_t, row_b) in self
@@ -64,12 +74,14 @@ impl TileGfx {
         }
     }
 
+    #[must_use]
     pub fn perceptual_hash(&self) -> u128 {
         self.0
             .iter()
-            .fold(0_u128, |x, &y| x.wrapping_add(y as u128))
+            .fold(0_u128, |x, &y| x.wrapping_add(u128::from(y)))
     }
     #[allow(clippy::new_without_default)]
+    #[must_use]
     pub fn new() -> Self {
         Self([0; TILE_NUM_PX])
     }
@@ -102,6 +114,7 @@ impl fmt::Debug for TileGfx {
 pub struct TileGfxId(u16);
 
 impl TileGfxId {
+    #[must_use]
     pub fn index(&self) -> u16 {
         self.0
     }
@@ -111,6 +124,7 @@ impl Tile for TileGfxId {}
 struct TileGfxArenaBehavior();
 impl ArenaBehavior for TileGfxArenaBehavior {
     type Id = TileGfxId;
+    #[allow(clippy::cast_possible_truncation)]
     fn new_id(_arena_id: u32, index: usize) -> Self::Id {
         TileGfxId(index as u16)
     }
@@ -182,6 +196,7 @@ impl ArenaBehavior for TileGfxArenaBehavior {
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
 pub struct TileChange(u32);
 impl TileChange {
+    #[must_use]
     pub fn index(&self) -> u32 {
         self.0
     }
@@ -189,6 +204,7 @@ impl TileChange {
 struct TileChangeArenaBehavior();
 impl ArenaBehavior for TileChangeArenaBehavior {
     type Id = TileChange;
+    #[allow(clippy::cast_possible_truncation)]
     fn new_id(_arena_id: u32, index: usize) -> Self::Id {
         TileChange(index as u32)
     }
@@ -230,6 +246,7 @@ pub struct TileDB {
 
 impl TileDB {
     #[allow(clippy::new_without_default)]
+    #[must_use]
     pub fn new() -> Self {
         let mut gfx_arena = Arena::new();
         let mut change_arena = Arena::new();
@@ -249,25 +266,29 @@ impl TileDB {
         // change_closure.insert(initial_change);
         TileDB {
             gfx_arena,
-            initial,
-            gfx,
             change_arena,
+            initial,
             initial_change,
+            gfx,
             changes,
             // change_closure,
         }
     }
+    #[must_use]
     pub fn get_initial_change(&self) -> TileChange {
         self.initial_change
     }
+    #[must_use]
     pub fn get_initial_tile(&self) -> TileGfxId {
         self.initial
     }
+    #[must_use]
     pub fn get_tile(&mut self, tg: TileGfx) -> TileGfxId {
         let arena = &mut self.gfx_arena;
         let id = *self.gfx.entry(tg).or_insert_with(|| arena.alloc(tg));
         id
     }
+    #[must_use]
     pub fn contains(&self, tg: &TileGfx) -> bool {
         self.gfx.contains_key(tg)
     }
@@ -282,15 +303,19 @@ impl TileDB {
             self.get_tile(tg);
         });
     }
+    #[must_use]
     pub fn get_tile_by_id(&self, tg: TileGfxId) -> Option<&TileGfx> {
         self.gfx_arena.get(tg)
     }
+    #[must_use]
     pub fn get_change_by_id(&self, tc: TileChange) -> Option<&TileChangeData> {
         self.change_arena.get(tc)
     }
+    #[must_use]
     pub fn get_tile_by_index(&self, tg: usize) -> Option<&TileGfx> {
         self.gfx_arena.get(TileGfxArenaBehavior::new_id(0, tg))
     }
+    #[must_use]
     pub fn get_change_by_index(&self, tc: usize) -> Option<&TileChangeData> {
         self.change_arena
             .get(TileChangeArenaBehavior::new_id(0, tc))
@@ -298,9 +323,13 @@ impl TileDB {
     pub fn gfx_iter(&self) -> impl Iterator<Item = &TileGfx> {
         self.gfx_arena.iter().map(|(_id, t)| t)
     }
+    #[must_use]
     pub fn gfx_count(&self) -> usize {
         self.gfx.len()
     }
+    /// # Panics
+    /// Panics if the given changes do not exist or have been deallocated
+    #[must_use]
     pub fn change_cost(&self, tc1: TileChange, tc2: TileChange) -> f32 {
         let tc1_c = self.change_arena.get(tc1).unwrap();
         let tc2_c = self.change_arena.get(tc2).unwrap();
@@ -314,6 +343,9 @@ impl TileDB {
             1.00
         }
     }
+    /// # Panics
+    /// Panics if the given changes do not exist or have been deallocated
+    #[must_use]
     pub fn change_from_to(&mut self, tc: TileChange, gfx: TileGfxId) -> TileChange {
         let old_to = self.change_arena.get(tc).unwrap().to;
         if gfx == old_to {
@@ -340,10 +372,10 @@ impl TileDB {
             let init = self.get_initial_change();
             let old_change = self.change_arena.get_mut(tc).unwrap();
             if tc != init {
-                (*old_change).count -= 1;
+                old_change.count -= 1;
             }
             let mut found = false;
-            for (change_to, count) in (*old_change).successors.iter_mut() {
+            for (change_to, count) in &mut old_change.successors {
                 if *change_to == gfx {
                     found = true;
                     *count += 1;
@@ -351,13 +383,14 @@ impl TileDB {
                 }
             }
             if !found {
-                (*old_change).successors.push((gfx, 1));
+                old_change.successors.push((gfx, 1));
             }
 
             self.change_arena.get_mut(tc2).unwrap().count += 1;
             tc2
         }
     }
+    #[must_use]
     pub fn tile_stats(&self) -> TileDBStats {
         TileDBStats {
             gfx: self.gfx.len(),

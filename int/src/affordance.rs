@@ -5,21 +5,19 @@ use mappy::{
     sprites::{SpriteData, SpriteTrack},
     MappyState, TILE_SIZE,
 };
-use palette::{Darken, Hsv};
+// use palette::{Darken, Hsv};
 use retro_rs::Emulator;
-use serde::{Deserialize, Serialize};
-use serde_json;
 use std::fs;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
-};
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
+use serde_derive::{Serialize,Deserialize};
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+    #[serde(transparent)]
     struct AffordanceMask : u8 {
         const SOLID      = 0b0000_0000_0000_0001;
         const DANGER     = 0b0000_0000_0000_0010;
@@ -36,8 +34,8 @@ bitflags! {
 //OR struct for colors, struct X, set of colors;
 //      may also want combinations for affordances
 // bit patterns - > affordance mask to color (maybe different ways to organize)
-//what does this syntax actually do?
-mod AffordanceColor {
+#[allow(dead_code)]
+mod affordance_color {
     pub const AVATAR: image::Rgba<u8> = image::Rgba([0, 255, 0, 150]);
     pub const SOLID: image::Rgba<u8> = image::Rgba([64, 64, 64, 200]);
     pub const DANGER: image::Rgba<u8> = image::Rgba([255, 0, 255, 200]); //Red
@@ -48,20 +46,7 @@ mod AffordanceColor {
     pub const BREAKABLE: image::Rgba<u8> = image::Rgba([150, 75, 0, 150]);
 }
 
-/* Original Colors:
-struct AffordanceColor: image::Rgba {
-        const AVATAR = image::Rgba([0, 255, 0, 255]);
-        const SOLID      = image::Rgba([196, 196, 196, 255]);
-        const DANGER     = image::Rgba([255, 0, 0, 255]); //Red
-        const CHANGEABLE = image::Rgba([150, 75, 0, 255]);
-        const USABLE     = image::Rgba([255, 255, 0, 255])
-        const PORTAL     = image::Rgba([0, 0, 255, 255]);
-        const MOVABLE    = image::Rgba([150, 75, 0, 255]);
-        const BREAKABLE  = image::Rgba([150, 75, 0, 255]);
-    }
- */
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum Affordance {
     Guessed(AffordanceMask),
     Given(AffordanceMask),
@@ -91,6 +76,7 @@ struct AffordanceMaps {
     sprites: HashMap<u32, Affordance>,
 }
 impl AffordanceMaps {
+    #[allow(dead_code)]
     fn new(tile: HashMap<u128, Affordance>, sprite: HashMap<u32, Affordance>) -> Self {
         Self {
             tiles: tile,
@@ -127,7 +113,7 @@ impl AffordanceTracker {
         }
     }
 
-    pub fn load_maps(&mut self, path: &Path) -> () {
+    pub fn load_maps(&mut self, path: &Path) {
         let print = path.display();
         println!("{print}");
 
@@ -291,7 +277,9 @@ impl AffordanceTracker {
             )
         });
 
-        /*let sprite = mappy.live_tracks.iter().find(|track| {
+        /*
+        let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
+        let sprite = mappy.live_tracks.iter().find(|track| {
             mappy::sprites::overlapping_sprite(
                 (mx / super::SCALE) as usize,
                 (my / super::SCALE) as usize,
@@ -410,8 +398,8 @@ impl AffordanceTracker {
         let tiles = mappy.tiles.read().unwrap();
         let region = mappy.split_region();
         let sr = mappy.current_screen.region;
-        use image::{GenericImage, GenericImageView};
-        use imageproc::{drawing as d, rect::Rect};
+        use image::GenericImage;
+        use imageproc::drawing as d;
         let in_img: image::ImageBuffer<image::Rgba<u8>, &[u8]> = image::ImageBuffer::from_raw(
             in_img.width as u32,
             in_img.height as u32,
@@ -460,8 +448,7 @@ impl AffordanceTracker {
                 }
             }
         }
-        let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
-        //what are mappy tracks(?)
+        // let initial_tile = mappy.tiles.read().unwrap().get_initial_tile();
         for track in mappy.live_tracks.iter() {
             let cur = track.current_data();
             // if every tile covered by this sprite is a known tile in the current _screen_, skip it
@@ -571,32 +558,32 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
         // emphasize(
         //     canvas,
         //     r,
-        //     AffordanceColor::DANGER,
+        //     affordance_color::DANGER,
         //     settings.dangerous_ratio,
         // );
-        emphasize(canvas, r, AffordanceColor::USABLE, settings.usable_ratio);
+        emphasize(canvas, r, affordance_color::USABLE, settings.usable_ratio);
     } else if mask.contains(AffordanceMask::USABLE) {
-        emphasize(canvas, r, AffordanceColor::USABLE, settings.usable_ratio);
+        emphasize(canvas, r, affordance_color::USABLE, settings.usable_ratio);
     } else if mask.contains(AffordanceMask::AVATAR) {
-        emphasize(canvas, r, AffordanceColor::AVATAR, settings.avatar_ratio);
+        emphasize(canvas, r, affordance_color::AVATAR, settings.avatar_ratio);
     } else if mask.contains(AffordanceMask::PORTAL) {
-        emphasize(canvas, r, AffordanceColor::PORTAL, settings.portal_ratio);
+        emphasize(canvas, r, affordance_color::PORTAL, settings.portal_ratio);
     } else if mask.contains(AffordanceMask::CHANGEABLE) {
         emphasize(
             canvas,
             r,
-            AffordanceColor::CHANGEABLE,
+            affordance_color::CHANGEABLE,
             settings.changeable_ratio,
         );
     } else if mask.contains(AffordanceMask::BREAKABLE) {
         emphasize(
             canvas,
             r,
-            AffordanceColor::BREAKABLE,
+            affordance_color::BREAKABLE,
             settings.breakable_ratio,
         );
     } else if mask.contains(AffordanceMask::SOLID) {
-        emphasize(canvas, r, AffordanceColor::SOLID, settings.solid_ratio);
+        emphasize(canvas, r, affordance_color::SOLID, settings.solid_ratio);
     } else if mask.contains(AffordanceMask::MOVABLE) {
         emphasize_saturation(canvas, r, settings.movable_saturation_change);
     } else {
@@ -604,6 +591,7 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn apply_sprite_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     mask: AffordanceMask,
@@ -620,52 +608,52 @@ fn apply_sprite_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
         // emphasize(
         //     canvas,
         //     r,
-        //     AffordanceColor::DANGER,
+        //     affordance_color::DANGER,
         //     settings.dangerous_ratio,
         // );
         emphasize_sprite(
             canvas,
             sprite,
-            AffordanceColor::DANGER,
+            affordance_color::DANGER,
             settings.usable_ratio,
         );
     } else if mask.contains(AffordanceMask::USABLE) {
         emphasize_sprite(
             canvas,
             sprite,
-            AffordanceColor::USABLE,
+            affordance_color::USABLE,
             settings.usable_ratio,
         );
     } else if mask.contains(AffordanceMask::AVATAR) {
         emphasize_sprite(
             canvas,
             sprite,
-            AffordanceColor::AVATAR,
+            affordance_color::AVATAR,
             settings.avatar_ratio,
         );
     } else if mask.contains(AffordanceMask::PORTAL) {
         emphasize_sprite(
             canvas,
             sprite,
-            AffordanceColor::PORTAL,
+            affordance_color::PORTAL,
             settings.portal_ratio,
         );
     } else if mask.contains(AffordanceMask::CHANGEABLE) {
         emphasize_sprite(
             canvas,
             sprite,
-            AffordanceColor::CHANGEABLE,
+            affordance_color::CHANGEABLE,
             settings.changeable_ratio,
         );
     } else if mask.contains(AffordanceMask::BREAKABLE) {
         emphasize_sprite(
             canvas,
             sprite,
-            AffordanceColor::BREAKABLE,
+            affordance_color::BREAKABLE,
             settings.breakable_ratio,
         );
     } else if mask.contains(AffordanceMask::SOLID) {
-        emphasize_sprite(canvas, sprite, AffordanceColor::SOLID, settings.solid_ratio);
+        emphasize_sprite(canvas, sprite, affordance_color::SOLID, settings.solid_ratio);
     } else if mask.contains(AffordanceMask::MOVABLE) {
         emphasize_saturation(canvas, r, settings.movable_saturation_change);
     } else {

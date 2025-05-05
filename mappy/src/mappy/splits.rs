@@ -1,7 +1,7 @@
-use super::scrolling::*;
+use super::scrolling::{ScrollChange, ScrollChangeReason, ScrollLatch};
+use crate::Rect;
 use crate::framebuffer::Framebuffer;
 use crate::tile::TILE_SIZE;
-use crate::Rect;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Split {
     pub scanline: u8,
@@ -24,7 +24,9 @@ fn register_split(splits: &mut Vec<Split>, scanline: u8) {
 
 /// Tries to find a rectangle of a solid-colored border starting from `start` and moving by `dir`.
 // TODO : move to framebuffer?
+#[allow(clippy::cast_sign_loss)]
 pub fn skim_rect(fb: &Framebuffer, start: i16, dir: i16) -> u8 {
+    assert!(start > 0);
     let color = fb.fb[start as usize * fb.w];
     for column in 0..fb.w {
         if fb.fb[start as usize * fb.w + column] != color {
@@ -39,7 +41,7 @@ pub fn skim_rect(fb: &Framebuffer, start: i16, dir: i16) -> u8 {
         if left != right {
             break;
         }
-        if fb.fb[row as usize * fb.w..(row as usize * fb.w + 1)]
+        if fb.fb[row as usize * fb.w..=(row as usize * fb.w)]
             .iter()
             .all(|here| *here == color)
         {
@@ -60,7 +62,7 @@ pub fn get_splits(changes: &[ScrollChange], mut latch: ScrollLatch) -> (Vec<Spli
         reason,
         scanline,
         value,
-    } in changes.iter()
+    } in changes
     {
         let scanline = if scanline < 240 { scanline } else { 0 };
         // let old_latch = latch;
@@ -78,7 +80,7 @@ pub fn get_splits(changes: &[ScrollChange], mut latch: ScrollLatch) -> (Vec<Spli
                     ScrollLatch::V => {
                         splits[last].scroll_y = value;
                     }
-                };
+                }
                 latch = latch.flip();
             }
             ScrollChangeReason::Write2006 => {
@@ -97,7 +99,7 @@ pub fn get_splits(changes: &[ScrollChange], mut latch: ScrollLatch) -> (Vec<Spli
                         // two highest bits of y_coarse are written
                         let y_coarse_hi = (value & 0b0000_0011) << 6;
                         // combine that with the three middle bits of old y scroll
-                        let y_coarse = y_coarse_hi | (splits[last].scroll_y & 0b00111000);
+                        let y_coarse = y_coarse_hi | (splits[last].scroll_y & 0b0011_1000);
                         splits[last].scroll_y = y_coarse | y_fine;
                     }
                     ScrollLatch::V => {
@@ -112,10 +114,10 @@ pub fn get_splits(changes: &[ScrollChange], mut latch: ScrollLatch) -> (Vec<Spli
                         splits[last].scroll_x = x_coarse | kept_x;
                         splits[last].scroll_y = kept_y | y_coarse_lo;
                     }
-                };
+                }
                 latch = latch.flip();
             }
-        };
+        }
     }
     if splits[splits.len() - 1].scanline < 240 {
         splits.push(Split {
@@ -174,6 +176,7 @@ const SCREEN_SAFE_LEFT: u32 = 8;
 const SCREEN_SAFE_RIGHT: u32 = 8;
 const SCREEN_SAFE_TOP: u32 = 8;
 const SCREEN_SAFE_BOTTOM: u32 = 8;
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 pub fn split_region_for(lo: u32, hi: u32, xo: u8, yo: u8, w: u32, h: u32) -> Rect {
     let lo = lo.max(SCREEN_SAFE_TOP);
     let hi = hi.min(h - SCREEN_SAFE_BOTTOM);
@@ -181,7 +184,7 @@ pub fn split_region_for(lo: u32, hi: u32, xo: u8, yo: u8, w: u32, h: u32) -> Rec
     let yo = ((TILE_SIZE - (yo as usize % TILE_SIZE)) % TILE_SIZE) as u32;
     let dy = hi - (lo + yo);
     let dy = (dy / (TILE_SIZE as u32)) * (TILE_SIZE as u32);
-    let dx = (w as u32 - SCREEN_SAFE_RIGHT) - (xo + SCREEN_SAFE_LEFT);
+    let dx = (w - SCREEN_SAFE_RIGHT) - (xo + SCREEN_SAFE_LEFT);
     let dx = (dx / (TILE_SIZE as u32)) * (TILE_SIZE as u32);
     Rect::new(
         SCREEN_SAFE_LEFT as i32 + xo as i32,

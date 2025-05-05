@@ -1,5 +1,5 @@
-use crate::tile::Tile;
 use crate::Rect;
+use crate::tile::Tile;
 
 #[derive(Clone)]
 pub struct Screen<T: Tile> {
@@ -9,7 +9,8 @@ pub struct Screen<T: Tile> {
 
 impl<T: Tile> std::ops::Index<(i32, i32)> for Screen<T> {
     type Output = T;
-    #[inline(always)]
+    #[inline]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     fn index(&self, (x, y): (i32, i32)) -> &Self::Output {
         &self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize]
     }
@@ -22,16 +23,19 @@ impl<T: Tile> Screen<T> {
             tiles: vec![tile; region.w as usize * region.h as usize].into_boxed_slice(),
         }
     }
-    #[inline(always)]
+    #[inline]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub fn get(&self, x: i32, y: i32) -> Option<T> {
         self.tiles
             .get(((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize)
             .copied()
     }
-    #[inline(always)]
+    #[inline]
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub fn set(&mut self, t: T, x: i32, y: i32) {
         self.tiles[((y - self.region.y) * self.region.w as i32 + x - self.region.x) as usize] = t;
     }
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
     pub fn combine(screens: Vec<Screen<T>>, init: T) -> Screen<T> {
         let mut r = screens[0].region;
         for Screen { region, .. } in screens.iter().skip(1) {
@@ -53,12 +57,13 @@ impl<T: Tile> Screen<T> {
     }
     pub fn copy_from(&mut self, s: &Self) {
         if self.region.w != s.region.w || self.region.h != s.region.h {
-            self.tiles = s.tiles.clone();
+            self.tiles.clone_from(&s.tiles);
         } else {
             self.tiles.copy_from_slice(&s.tiles);
         }
         self.region = s.region;
     }
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)]
     pub fn difference(&self, s: &Self) -> f32 {
         // take union of my rect and s's rect
         // add up differences for each tile in that union

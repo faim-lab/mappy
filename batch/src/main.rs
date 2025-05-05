@@ -10,7 +10,7 @@ fn main() {
         Path::new(args[1].as_str()),
     );
     let mut start_state = vec![0; emu.save_size()];
-    emu.save(&mut start_state);
+    assert!(emu.save(&mut start_state));
 
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -20,12 +20,12 @@ fn main() {
     let mut all_inputs = 0;
     for (file_i, file) in args[2..].iter().enumerate() {
         // So reset it afterwards
-        emu.load(&start_state);
+        assert!(emu.load(&start_state));
         mappy.handle_reset();
         let mut inputs = vec![];
         mappy::read_fm2(&mut inputs, Path::new(file.as_str()));
         all_inputs += inputs.len();
-        for (_i, input_pair) in inputs.iter().enumerate() {
+        for input_pair in &inputs {
             emu.run(*input_pair);
             mappy.process_screen(&mut emu, *input_pair);
         }

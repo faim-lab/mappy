@@ -37,12 +37,16 @@ impl Room {
         }
         ret
     }
+    #[must_use]
     pub fn width(&self) -> u32 {
         self.screens[0].region.w
     }
+    #[must_use]
     pub fn height(&self) -> u32 {
         self.screens[0].region.h
     }
+    #[must_use]
+    #[allow(clippy::cast_sign_loss)]
     pub fn region(&self) -> Rect {
         Rect {
             x: self.top_left.0,
@@ -51,39 +55,48 @@ impl Room {
             h: (self.bottom_right.1 - self.top_left.1) as u32,
         }
     }
+    /// # Panics
+    /// Panics if the computed screen region doesn't contain the region pointed by x,y.
+    #[allow(clippy::cast_possible_wrap)]
     pub fn reregister_at(&mut self, x: i32, y: i32) {
         let Rect { x: ox, y: oy, w, h } = self.region();
         self.top_left = (x, y);
         self.bottom_right = (x + w as i32, y + h as i32);
         let xoff = x - ox;
         let yoff = y - oy;
-        for s in self.screens.iter_mut() {
+        for s in &mut self.screens {
             s.reregister_at(s.region.x + xoff, s.region.y + yoff);
         }
         println!("rereg {:?}", self.region());
         let r = self.region();
         let sr = self.screens_region();
-        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
+        assert!(sr.contains_rect(&r), "{sr:?} does not contain {r:?}");
     }
+    /// # Panics
+    /// Panics if the computed screen region doesn't contain the region pointed by x,y.
+    #[must_use]
     pub fn finalize(mut self, initial: TileChange) -> Self {
         let r = self.region();
         let sr = self.screens_region();
-        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
+        assert!(sr.contains_rect(&r), "{sr:?} does not contain {r:?}");
         self.reregister_at(0, 0);
         self.screens = vec![Screen::combine(self.screens, initial)];
         let r = self.region();
         let sr = self.screens_region();
-        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
+        assert!(sr.contains_rect(&r), "{sr:?} does not contain {r:?}");
         self
     }
+    #[must_use]
     pub fn get(&self, x: i32, y: i32) -> Option<TileChange> {
         self.get_screen_for(x, y).map(|s| self.screens[s][(x, y)])
     }
-
+    #[must_use]
     pub fn get_screen_for(&self, x: i32, y: i32) -> Option<usize> {
         self.screens.iter().position(|s| s.region.contains(x, y))
     }
     // x,y are in tile coordinates
+    #[must_use]
+    #[allow(clippy::cast_possible_wrap)]
     fn get_screen_for_or_add(&mut self, x: i32, y: i32, db: &TileDB) -> usize {
         if let Some(n) = self.get_screen_for(x, y) {
             return n;
@@ -132,6 +145,7 @@ impl Room {
         self.screens.len() - 1
     }
     // r is presumed to be in tile coordinates
+    #[allow(clippy::cast_possible_wrap)]
     fn gather_screens(&mut self, r: Rect, db: &TileDB) -> (usize, usize, usize, usize) {
         (
             self.get_screen_for_or_add(r.x, r.y, db),
@@ -140,6 +154,9 @@ impl Room {
             self.get_screen_for_or_add(r.x + (r.w as i32) - 1, r.y + (r.h as i32) - 1, db),
         )
     }
+    /// # Panics
+    /// Panics if the computed screen region doesn't contain the region pointed by x,y.
+    #[allow(clippy::cast_possible_wrap)]
     pub fn register_screen(&mut self, s: &Screen<TileGfxId>, db: &mut TileDB) {
         let (ul, ur, bl, br) = self.gather_screens(s.region, db);
         // Four loops: the ul part, the ur part, the bl part, the br part.
@@ -186,18 +203,18 @@ impl Room {
         self.bottom_right.1 = self.bottom_right.1.max(ymax);
         let r = self.region();
         let sr = self.screens_region();
-        assert!(sr.contains_rect(&r), "{:?} does not contain {:?}", sr, r);
+        assert!(sr.contains_rect(&r), "{sr:?} does not contain {r:?}");
     }
     fn screens_region(&self) -> Rect {
         let mut r = self.screens[0].region;
-        for s in self.screens.iter() {
+        for s in &self.screens {
             r = r.union(&s.region);
         }
         r
     }
 }
 
-#[inline(always)]
+#[inline]
 fn extend_tile(rs: &mut RoomScreen, s: &Screen<TileGfxId>, x: i32, y: i32, db: &mut TileDB) {
     assert!(s.region.contains(x, y), "{},{} : {:?}", x, y, s.region);
     assert!(rs.region.contains(x, y), "{},{} : {:?}", x, y, rs.region);
@@ -212,6 +229,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::cast_possible_wrap)]
     fn test_get_screen_for() {
         let mut db = TileDB::new();
         let r0 = Rect::new(5, 5, 32, 32);
@@ -260,6 +278,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_possible_wrap)]
     fn test_register() {
         use crate::tile::{TileGfx, TILE_NUM_PX};
         let mut db = TileDB::new();

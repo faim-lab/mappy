@@ -1,4 +1,4 @@
-use crossbeam::channel::{bounded, Receiver, Sender};
+use crossbeam::channel::{Receiver, Sender, bounded};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -39,7 +39,7 @@ impl<T: TimerID> Timers<T> {
         let (t_tx, rx) = bounded(1);
         rayon::spawn(move || {
             let mut rec = BTreeMap::new();
-            for tm in t_rx.iter() {
+            for tm in &t_rx {
                 match tm {
                     TimerMessage::Record(t, dur) => rec.entry(t).or_insert(vec![]).push(dur),
                     TimerMessage::Terminate => break,
@@ -60,6 +60,11 @@ impl<T: TimerID> Timers<T> {
     pub fn timer(&self, t: T) -> ReadyTimer<T> {
         ReadyTimer(t, Arc::clone(&self.tx))
     }
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     fn handle_queries(rec: &BTreeMap<T, Vec<Duration>>, qs: Vec<TimerQuery<T>>) -> Vec<f64> {
         qs.into_iter()
             .map(|qi| match qi {
@@ -67,7 +72,7 @@ impl<T: TimerID> Timers<T> {
                     assert!(p <= 100);
                     let mut all = rec[&t].clone();
                     all.sort();
-                    let scaled_p = (p as f64 / 100.0) * (all.len() - 1) as f64;
+                    let scaled_p = (f64::from(p) / 100.0) * (all.len() as f64 - 1.0);
                     // find the threshold under which p% of the data lie
                     all[scaled_p as usize].as_secs_f64()
                 }
@@ -99,18 +104,26 @@ impl<T: TimerID> Timers<T> {
             })
             .collect()
     }
+    #[allow(clippy::missing_panics_doc)]
+    #[must_use]
     pub fn timers(&self) -> Vec<T> {
         self.tx.send(TimerMessage::List).unwrap();
         match self.rx.recv().unwrap() {
             TimerResponse::List(ts) => ts,
-            m => panic!("Received wrong response for list message! {:?}", m),
+            m @ TimerResponse::Queries(_) => {
+                panic!("Received wrong response for list message! {m:?}")
+            }
         }
     }
+    #[allow(clippy::missing_panics_doc)]
+    #[must_use]
     pub fn queries(&self, qs: Vec<TimerQuery<T>>) -> Vec<f64> {
         self.tx.send(TimerMessage::Query(qs)).unwrap();
         match self.rx.recv().unwrap() {
             TimerResponse::Queries(vs) => vs,
-            m => panic!("Received wrong response for queries message! {:?}", m),
+            m @ TimerResponse::List(_) => {
+                panic!("Received wrong response for queries message! {m:?}")
+            }
         }
     }
     pub fn query(&self, q: TimerQuery<T>) -> f64 {
@@ -131,6 +144,7 @@ impl<T: TimerID> Timers<T> {
     pub fn stddev(&self, t: T) -> f64 {
         self.query(TimerQuery::StdDev(t))
     }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn count(&self, t: T) -> usize {
         self.query(TimerQuery::Count(t)) as usize
     }
@@ -176,6 +190,8 @@ impl<T: TimerID> ReadyTimer<T> {
     }
 }
 impl<T: TimerID> RunningTimer<T> {
+    /// # Panics
+    /// Panics if the running timer can't be stopped successfully
     pub fn stop(self) {
         self.2
             .send(TimerMessage::Record(self.0, self.1.elapsed()))

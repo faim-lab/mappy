@@ -15,42 +15,76 @@ pub struct SpriteData {
 }
 #[allow(dead_code)]
 impl SpriteData {
+    #[must_use]
     pub fn width(&self) -> u8 {
         8
     }
+    #[must_use]
     pub fn height(&self) -> u8 {
         self.height
     }
+    #[must_use]
     pub fn vflip(&self) -> bool {
         self.attrs & 0b1000_0000 != 0
     }
+    #[must_use]
     pub fn hflip(&self) -> bool {
         self.attrs & 0b0100_0000 != 0
     }
+    #[must_use]
     pub fn bg(&self) -> bool {
         self.attrs & 0b0010_0000 != 0
     }
+    #[must_use]
     pub fn pal(&self) -> u8 {
         4 + (self.attrs & 0b0000_0011)
     }
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         0 < self.y && self.y < 240
     }
+    #[must_use]
     pub fn key(&self) -> u32 {
         u32::from(self.pattern_id) | (u32::from(self.table) << 8)
     }
+    #[must_use]
     pub fn distance(&self, other: &Self) -> f32 {
-        let dx = other.x as f32 - self.x as f32;
-        let dy = other.y as f32 - self.y as f32;
+        let dx = f32::from(other.x) - f32::from(self.x);
+        let dy = f32::from(other.y) - f32::from(self.y);
         (dx * dx + dy * dy).sqrt()
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.mask.iter().all(|row| *row == 0)
     }
 }
 const SPRITE_SIZE: usize = 4;
 pub const SPRITE_COUNT: usize = 0x100 / SPRITE_SIZE;
+
+/// # Panics
+/// Panics if the memory layout of the emulated system is not what's expected
+#[allow(clippy::similar_names, clippy::cast_possible_truncation)]
 pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
+    #[allow(clippy::similar_names, clippy::cast_possible_truncation)]
+    fn get_mask(x: u8, y: u8, w: u8, h: u8, buf: &[u8], fbw: usize, fbh: usize) -> [u8; 16] {
+        const PIX_332_EMPTY: u8 = 191;
+        let mut mask = [0_u8; 16];
+        for (oy, mask_row) in mask.iter_mut().enumerate().take(h as usize) {
+            let yi = u16::from(y) + oy as u16;
+            if yi >= fbh as u16 {
+                break;
+            }
+            for ox in 0..w {
+                let xi = u16::from(x) + u16::from(ox);
+                if xi >= fbw as u16 {
+                    break;
+                }
+                let px: u8 = u8::from(buf[yi as usize * fbw + xi as usize] == PIX_332_EMPTY);
+                *mask_row |= px << (w - ox - 1);
+            }
+        }
+        mask
+    }
     let buf = &emu.system_ram_ref()[0x0200..0x0200 + SPRITE_COUNT * SPRITE_SIZE];
     // let ppuctrl = 0;
     // TODO put me back when the fceumm build goes up to buildbot
@@ -61,36 +95,12 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
         8
     };
     let (fbw, fbh) = emu.framebuffer_size();
-    fn get_mask(x: u8, y: u8, w: u8, h: u8, buf: &[u8], fbw: usize, fbh: usize) -> [u8; 16] {
-        const PIX_332_EMPTY: u8 = 191;
-        let mut mask = [0_u8; 16];
-        for (oy, mask_row) in mask.iter_mut().enumerate().take(h as usize) {
-            let yi = y as u16 + oy as u16;
-            if yi >= fbh as u16 {
-                break;
-            }
-            for ox in 0..w {
-                let xi = x as u16 + ox as u16;
-                if xi >= fbw as u16 {
-                    break;
-                }
-                let px = if buf[yi as usize * fbw + xi as usize] != PIX_332_EMPTY {
-                    1_u8
-                } else {
-                    0
-                };
-                *mask_row |= px << w - ox - 1;
-            }
-        }
-        mask
-    }
     let table_bit = (ppuctrl & 0b0000_1000) >> 3;
     unsafe {
         let [bg_sp, _, fg_sp] = super::MappyState::get_layers(emu);
         for (i, bs) in buf.chunks_exact(SPRITE_SIZE).enumerate() {
-            let [y, pattern_id, attrs, x] = match *bs {
-                [y, pattern_id, attrs, x] => [y, pattern_id, attrs, x],
-                _ => unreachable!(),
+            let [y, pattern_id, attrs, x] = *bs else {
+                unreachable!()
             };
             let is_bg = attrs & 0b0010_0000 != 0;
             sprites[i] = SpriteData {
@@ -116,6 +126,7 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
 }
 
 // TODO return list of overlapping sprites
+#[must_use]
 pub fn overlapping_sprite(x: usize, y: usize, w: usize, h: usize, sprites: &[SpriteData]) -> bool {
     for s in sprites.iter().filter(|s| s.is_valid()) {
         // TODO avoid if by rolling into filter?
@@ -152,6 +163,7 @@ pub struct SpriteTrack {
 }
 
 impl SpriteTrack {
+    #[must_use]
     pub fn new(id: usize, t: Time, scroll: (i32, i32), sd: SpriteData) -> Self {
         let mut ret = Self {
             id: TrackID(id),
@@ -165,9 +177,11 @@ impl SpriteTrack {
         ret.update(t, scroll, sd);
         ret
     }
+    #[must_use]
     pub fn current_data(&self) -> &SpriteData {
         &self.positions[self.positions.len() - 1].2
     }
+    #[must_use]
     pub fn last_observation_time(&self) -> Time {
         self.positions[self.positions.len() - 1].0
     }
@@ -179,36 +193,51 @@ impl SpriteTrack {
         self.tables.insert(sd.table);
         self.attrs.insert(sd.attrs);
     }
+    #[must_use]
     pub fn starting_time(&self) -> Time {
         self.positions[0].0
     }
+    #[must_use]
     pub fn starting_point(&self) -> (i32, i32) {
         let At(_, (sx, sy), sd) = &self.positions[0];
-        (sx + sd.x as i32, sy + sd.y as i32)
+        (sx + i32::from(sd.x), sy + i32::from(sd.y))
     }
+    /// # Panics
+    /// Panics if there are no recorded positions on the track
+    #[must_use]
     pub fn current_point(&self) -> (i32, i32) {
         let At(_, (sx, sy), sd) = &self.positions.last().unwrap();
-        (sx + sd.x as i32, sy + sd.y as i32)
+        (sx + i32::from(sd.x), sy + i32::from(sd.y))
     }
+    #[must_use]
     pub fn data_at(&self, t: Time) -> Option<SpriteData> {
         self.position_at(t).map(|At(_, _, sd)| sd).copied()
     }
+    #[must_use]
     pub fn position_at(&self, t: Time) -> Option<&At> {
         self.positions.iter().rev().find(|At(t0, _, _)| t0 <= &t)
     }
+    #[must_use]
     pub fn point_at(&self, t: Time) -> Option<(i32, i32)> {
         self.position_at(t)
-            .map(|At(_, (sx, sy), sd)| (sx + sd.x as i32, sy + sd.y as i32))
+            .map(|At(_, (sx, sy), sd)| (sx + i32::from(sd.x), sy + i32::from(sd.y)))
     }
+    #[must_use]
     pub fn seen_pattern(&self, pat: u8) -> bool {
         self.patterns.contains(&pat)
     }
+    #[must_use]
     pub fn seen_table(&self, tab: u8) -> bool {
         self.tables.contains(&tab)
     }
+    #[must_use]
     pub fn seen_attrs(&self, attrs: u8) -> bool {
         self.attrs.contains(&attrs)
     }
+    /// # Panics
+    /// Panics if there are recorded times with missing positions (an invalid internal state)
+    #[allow(clippy::similar_names)]
+    #[must_use]
     pub fn velocities(&self, times: std::ops::Range<usize>) -> Vec<(i32, i32)> {
         times
             .map(|t| {
@@ -218,9 +247,15 @@ impl SpriteTrack {
             })
             .collect()
     }
+    /// # Panics
+    /// Panics if there are recorded times with missing positions (an invalid internal state)
+    #[must_use]
     pub fn world_positions(&self, times: std::ops::Range<usize>) -> Vec<(i32, i32)> {
         times.map(|t| self.point_at(Time(t)).unwrap()).collect()
     }
+    /// # Panics
+    /// Panics if there are recorded times with missing positions (an invalid internal state)
+    #[must_use]
     pub fn sprites(&self, times: std::ops::Range<usize>) -> Vec<(u8, u8, u8)> {
         times
             .map(|t| {
@@ -230,20 +265,24 @@ impl SpriteTrack {
             .collect()
     }
 
-    // Here, positive and negative hits are incremented based on whether input changes occur at the same time
-    // as changes in acceleration. Also, button inputs are dealt with in int.rs and mappy.rs, and there is a
-    // visualizer in int.rs (look at avatar_indicator, and press m while running int.rs to see). What I have right
-    // now as a whole works somewhat, but has some issues that need solving. For instance, it's picking up sprites
-    // like blocks that Mario breaks (since they accelerate so fast when they're broken, I think).
+    /// Here, positive and negative hits are incremented based on whether input changes occur at the same time
+    /// as changes in acceleration. Also, button inputs are dealt with in int.rs and mappy.rs, and there is a
+    /// visualizer in int.rs (look at `avatar_indicator`, and press m while running int.rs to see). What I have right
+    /// now as a whole works somewhat, but has some issues that need solving. For instance, it's picking up sprites
+    /// like blocks that Mario breaks (since they accelerate so fast when they're broken, I think).
+    ///
+    /// # Panics
+    /// Panics if there are recorded times with missing positions (an invalid internal state), or if there is an insufficient lookback buffer
+    #[allow(clippy::cast_precision_loss)]
     pub fn determine_avatar(&mut self, current_time: Time, button_input: &RingBuffer<Buttons>) {
         // See the struct RingBuffer and the field button_inputs in mappy.rs. This is where
         // player inputs are stored, and then they're passed as a parameter into here
         const LOOKBACK: usize = 60;
+        const THRESHOLD: f32 = 0.1;
         assert!(LOOKBACK <= button_input.get_sz());
         if current_time < Time(LOOKBACK + 1) {
             return;
         }
-        const THRESHOLD: f32 = 0.1;
         let early = *current_time - LOOKBACK;
         let middle = *current_time - LOOKBACK / 2;
         if early - 1 > *self.starting_time() {
@@ -258,31 +297,23 @@ impl SpriteTrack {
             let now_velocity_y = now_velocity.iter().map(|(_, vy)| *vy as f32).mean();
             let mid_x = if mid.get_left() {
                 -1
-            } else if mid.get_right() {
-                1
             } else {
-                0
+                i32::from(mid.get_right())
             };
             let mid_prev_x = if mid_prev.get_left() {
                 -1
-            } else if mid_prev.get_right() {
-                1
             } else {
-                0
+                i32::from(mid_prev.get_right())
             };
             let mid_y = if mid.get_up() {
                 -1
-            } else if mid.get_down() {
-                1
             } else {
-                0
+                i32::from(mid.get_down())
             };
             let mid_prev_y = if mid_prev.get_up() {
                 -1
-            } else if mid_prev.get_down() {
-                1
             } else {
-                0
+                i32::from(mid_prev.get_down())
             };
             match mid_prev_x.cmp(&mid_x) {
                 std::cmp::Ordering::Less => {
@@ -322,6 +353,7 @@ impl SpriteTrack {
     }
 
     // Return whether the positive and negative hits pass a threshold (which I have as 5)
+    #[must_use]
     pub fn get_is_avatar(&self) -> bool {
         // TODO: use NPMI between input changes and movement changes.
         (self.horizontal_control_evidence.0 > self.horizontal_control_evidence.1)
@@ -361,6 +393,7 @@ pub struct SpriteBlob {
 }
 
 impl SpriteBlob {
+    #[must_use]
     pub fn new(id: usize) -> Self {
         Self {
             id: BlobID(id),
@@ -370,6 +403,7 @@ impl SpriteBlob {
             dead_tracks: vec![],
         }
     }
+    #[must_use]
     pub fn contains_live_track(&self, ti: TrackID) -> bool {
         self.live_tracks.contains(&ti)
     }
@@ -384,9 +418,12 @@ impl SpriteBlob {
             self.dead_tracks.push(t);
         }
     }
+    #[must_use]
     pub fn is_dead(&self) -> bool {
         self.live_tracks.is_empty()
     }
+    #[allow(clippy::cast_possible_wrap, clippy::missing_panics_doc)]
+    #[must_use]
     pub fn blob_score_pair(t1: &SpriteTrack, t2: &SpriteTrack, lookback: usize, now: Time) -> f32 {
         // closeness score: 0 if touching over lookback and diff ID, 100 otherwise; use min among all self.live tracks with id != t.id
         // moving score: 10*proportion of frames over lookback moving by the same speed (assume no agreement for frames before t1 or t2 were alive)
@@ -406,7 +443,7 @@ impl SpriteBlob {
         let moving = 100.0
             * vels1
                 .into_iter()
-                .zip(vels2.into_iter())
+                .zip(vels2)
                 .map(|((dx1, dy1), (dx2, dy2))| if dx1 == dx2 && dy1 == dy2 { 0.0 } else { 1.0 })
                 .mean();
         // TODO use world_positions is fine, refactor
@@ -417,8 +454,8 @@ impl SpriteBlob {
                     Rect::new(
                         x,
                         y,
-                        t1.data_at(Time(t)).unwrap().width() as u32,
-                        t1.data_at(Time(t)).unwrap().height() as u32,
+                        u32::from(t1.data_at(Time(t)).unwrap().width()),
+                        u32::from(t1.data_at(Time(t)).unwrap().height()),
                     )
                 };
                 let r2 = {
@@ -426,8 +463,8 @@ impl SpriteBlob {
                     Rect::new(
                         x,
                         y,
-                        t2.data_at(Time(t)).unwrap().width() as u32,
-                        t2.data_at(Time(t)).unwrap().height() as u32,
+                        u32::from(t2.data_at(Time(t)).unwrap().width()),
+                        u32::from(t2.data_at(Time(t)).unwrap().height()),
                     )
                 };
                 if r1.expand(1).overlaps(&r2.expand(1)) {
@@ -440,6 +477,8 @@ impl SpriteBlob {
             .unwrap();
         closeness + moving
     }
+    #[must_use]
+    #[allow(clippy::missing_panics_doc)]
     pub fn blob_score(
         &self,
         t: &SpriteTrack,
@@ -467,6 +506,11 @@ impl SpriteBlob {
             self.live_tracks.push(t);
         }
     }
+    #[allow(
+        clippy::missing_panics_doc,
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap
+    )]
     pub fn update_position(&mut self, t: Time, tracks: &[SpriteTrack]) {
         let tl = self.live_tracks.len() as i32;
         self.positions.push(
@@ -490,7 +534,12 @@ impl SpriteBlob {
                 let dat = track.current_data();
                 (
                     t,
-                    r.union(&Rect::new(px, py, dat.width() as u32, dat.height() as u32)),
+                    r.union(&Rect::new(
+                        px,
+                        py,
+                        u32::from(dat.width()),
+                        u32::from(dat.height()),
+                    )),
                 )
             },
         ));

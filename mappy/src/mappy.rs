@@ -3,25 +3,24 @@ use crate::metaroom::{Merges, Metaroom, MetaroomID};
 use crate::ringbuffer::RingBuffer;
 use crate::room::Room;
 use crate::screen::Screen;
-use crate::sprites::{self, SpriteBlob, SpriteData, SpriteTrack, SPRITE_COUNT};
-use crate::tile::{TileDB, TileGfx, TileGfxId, TILE_SIZE};
+use crate::sprites::{self, SPRITE_COUNT, SpriteBlob, SpriteData, SpriteTrack};
+use crate::tile::{TILE_SIZE, TileDB, TileGfx, TileGfxId};
 use crate::time::Timers;
 use crate::{Rect, Time};
 use image::{ImageBuffer, Rgb};
-use libloading::Symbol;
-use retro_rs::{Buttons, Emulator};
+use retro_rs::{Buttons, Emulator, Symbol};
 use std::path::Path;
 mod scrolling;
-use scrolling::*;
+use scrolling::{ScrollChange, ScrollLatch};
 mod splits;
 use splits::Split;
 mod matching;
 
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use crossbeam::channel::{Receiver, Sender, unbounded};
 use rayon::{prelude::*, spawn_fifo};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc, RwLock,
+    atomic::{AtomicUsize, Ordering},
 };
 
 const DO_TEMP_MERGE_CHECKS: bool = false;
@@ -112,6 +111,7 @@ impl MappyState {
     // This is just an arbitrary value, not sure what a good one is!
     pub const ROOM_MERGE_THRESHOLD: f32 = 16.0;
 
+    #[must_use]
     pub fn new(w: usize, h: usize) -> Self {
         let db = TileDB::new();
         let t0 = db.get_initial_tile();
@@ -168,6 +168,7 @@ impl MappyState {
         }
     }
 
+    #[allow(clippy::missing_panics_doc)]
     pub fn handle_reset(&mut self) {
         if let Some(cr) = self.current_room.as_ref() {
             self.resets.push(cr.id);
@@ -223,6 +224,7 @@ impl MappyState {
         }
     }
 
+    #[allow(clippy::similar_names, clippy::missing_panics_doc)]
     pub fn process_screen(&mut self, emu: &mut Emulator, input: [Buttons; 2]) {
         // Read new data from emulator
         let t = self.timers.timer(Timing::FBRead).start();
@@ -246,8 +248,10 @@ impl MappyState {
             // update scroll based on grid align change
             // dbg!(old_align.1, self.grid_align.1, scrolling::find_offset(old_align.1, self.grid_align.1, 240));
             self.scroll = (
-                self.scroll.0 + scrolling::find_offset(old_align.0, self.grid_align.0, 256) as i32,
-                self.scroll.1 + scrolling::find_offset(old_align.1, self.grid_align.1, 240) as i32,
+                self.scroll.0
+                    + i32::from(scrolling::find_offset(old_align.0, self.grid_align.0, 256)),
+                self.scroll.1
+                    + i32::from(scrolling::find_offset(old_align.1, self.grid_align.1, 240)),
             );
         }
         t.stop();
@@ -302,16 +306,14 @@ impl MappyState {
                     self.finalize_current_room(true);
                 }
             }
-            if self.control_duration > Self::CONTROL_ROOM_ENTER_DURATION
-                && self.current_room.is_some()
-            {
-                self.mapping = true;
-                let t = self.timers.timer(Timing::Register).start();
-                self.current_room
-                    .as_mut()
-                    .unwrap()
-                    .register_screen(&self.current_screen, &mut self.tiles.write().unwrap());
-                t.stop();
+            if self.control_duration > Self::CONTROL_ROOM_ENTER_DURATION {
+                if let Some(current_room) = self.current_room.as_mut() {
+                    self.mapping = true;
+                    let t = self.timers.timer(Timing::Register).start();
+                    current_room
+                        .register_screen(&self.current_screen, &mut self.tiles.write().unwrap());
+                    t.stop();
+                }
             }
         } else if had_control {
             // dbg!("control loss", self.current_screen.region);
@@ -338,7 +340,7 @@ impl MappyState {
         let t = self.timers.timer(Timing::Track).start();
         // Relate current sprites to previous sprites
         self.track_sprites(emu);
-        for track in self.live_tracks.iter_mut() {
+        for track in &mut self.live_tracks {
             track.determine_avatar(self.now, &self.button_inputs);
         }
 
@@ -459,6 +461,11 @@ impl MappyState {
         });
     }
 
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss
+    )]
     fn read_current_screen(&mut self, emulator: &Emulator) {
         // if a clear sprite is overlapping a tile, then just place that tile
         // overlapping sprite check. See if it's a tile that's already been seen
@@ -522,7 +529,10 @@ impl MappyState {
         if self.state_buffer.is_empty() {
             self.state_buffer = vec![0; emu.save_size()];
         }
-        emu.save(&mut self.state_buffer);
+        if !emu.save(&mut self.state_buffer) {
+            println!("Failed to save state");
+            return;
+        }
         // Apply down-left and b input for K frames
         // TODO: in mario 3 on the level select screen simultaneous presses sometimes cause no movement.  Consider random or alternating down and left and b presses?
         let down_left = Buttons::new()
@@ -541,7 +551,10 @@ impl MappyState {
         let mut sprites_dlb = [SpriteData::default(); SPRITE_COUNT];
         sprites::get_sprites(emu, &mut sprites_dlb);
         // Load state S.
-        emu.load(&self.state_buffer);
+        if !emu.load(&self.state_buffer) {
+            println!("failed to load state");
+            return;
+        }
         // Apply up-right and a input for K frames
         let up_right = Buttons::new()
             .up(true)
@@ -570,7 +583,10 @@ impl MappyState {
             && (self.has_control
                 || (self.now.0 - self.maybe_control_change_time.0 > CONTROL_CHECK_K));
         // Load state S.
-        emu.load(&self.state_buffer);
+        if !emu.load(&self.state_buffer) {
+            println!("failed to load state");
+            return;
+        }
 
         // Cheaper version:
         // Look at the history of sprite movement among live tracks
@@ -599,6 +615,7 @@ impl MappyState {
     }
 
     // TODO: increase cost if this would alter blobbing?
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     fn sprite_change_cost(new_s: &SpriteData, old: &SpriteTrack) -> u32 {
         let sd2 = old.current_data();
         new_s.distance(sd2) as u32
@@ -614,8 +631,56 @@ impl MappyState {
             + (if new_s.index == sd2.index { 0 } else { 4 })
     }
 
-    fn track_sprites(&mut self, emu: &Emulator) {
-        use matching::{bnb_match, Match, MatchTo, Target};
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    fn track_sprites(&mut self, _emu: &Emulator) {
+        use matching::{Match, MatchTo, Target, bnb_match};
+        // break up the candidates vec into separate vecs with options that overlap on any index
+        fn connected_components(candidates: Vec<MatchTo>) -> Vec<Vec<MatchTo>> {
+            fn opts_overlap(opts1: &[Target], opts2: &[Target]) -> bool {
+                opts1.iter().any(|Target(maybe_old1, _)| {
+                    maybe_old1.is_some()
+                        && opts2
+                            .iter()
+                            .any(|Target(maybe_old2, _)| maybe_old2 == maybe_old1)
+                })
+            }
+            fn spider(candidates: &[MatchTo], gis: &mut [usize], ci1: usize) {
+                // recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
+                for (ci2, MatchTo(_new, opts)) in candidates.iter().enumerate() {
+                    if gis[ci2] != 0 {
+                        continue;
+                    }
+                    if opts_overlap(opts, &candidates[ci1].1) {
+                        gis[ci2] = gis[ci1];
+                        spider(candidates, gis, ci2);
+                    }
+                }
+            }
+            let mut components = Vec::with_capacity(64);
+            let mut gis = vec![0; candidates.len()];
+            for ci in 0..candidates.len() {
+                // if it's already in a group, do nothing
+                if gis[ci] != 0 {
+                    continue;
+                }
+                // otherwise, make a new group
+                gis[ci] = components.len() + 1;
+                components.push(vec![]);
+                // and recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
+                spider(&candidates, &mut gis, ci);
+            }
+            // now everything has been grouped.
+            for (ci, c) in candidates.into_iter().enumerate() {
+                assert!(gis[ci] > 0);
+                // translate group IDs to indices in components and add components to group.
+                components[gis[ci] - 1].push(c);
+            }
+            components
+        }
         let now = self.now;
         let dead_tracks = &mut self.dead_tracks;
         let live_blobs = &mut self.live_blobs;
@@ -677,10 +742,12 @@ impl MappyState {
                 // possible degenerate case: all sprites in same place
                 if options.len() > 16 {
                     // fall back to identity match if possible or else None
-                    options = vec![options
-                        .into_iter()
-                        .find(|Target(oi, _cost)| *oi == Some(s.index as usize))
-                        .unwrap_or(Target(None, Self::CREATE_COST))];
+                    options = vec![
+                        options
+                            .into_iter()
+                            .find(|Target(oi, _cost)| *oi == Some(s.index as usize))
+                            .unwrap_or(Target(None, Self::CREATE_COST)),
+                    ];
                 } else {
                     options.insert(0, Target(None, Self::CREATE_COST));
                 }
@@ -691,61 +758,18 @@ impl MappyState {
             // no new sprites at all
             return;
         }
-        // break up the candidates vec into separate vecs with options that overlap on any index
-        fn connected_components(candidates: Vec<MatchTo>) -> Vec<Vec<MatchTo>> {
-            fn opts_overlap(opts1: &[Target], opts2: &[Target]) -> bool {
-                opts1.iter().any(|Target(maybe_old1, _)| {
-                    maybe_old1.is_some()
-                        && opts2
-                            .iter()
-                            .any(|Target(maybe_old2, _)| maybe_old2 == maybe_old1)
-                })
-            }
-            fn spider(candidates: &[MatchTo], gis: &mut [usize], ci1: usize) {
-                // recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
-                for (ci2, MatchTo(_new, opts)) in candidates.iter().enumerate() {
-                    if gis[ci2] != 0 {
-                        continue;
-                    }
-                    if opts_overlap(opts, &candidates[ci1].1) {
-                        gis[ci2] = gis[ci1];
-                        spider(candidates, gis, ci2);
-                    }
-                }
-            }
-            let mut components = Vec::with_capacity(64);
-            let mut gis = vec![0; candidates.len()];
-            for ci in 0..candidates.len() {
-                // if it's already in a group, do nothing
-                if gis[ci] != 0 {
-                    continue;
-                }
-                // otherwise, make a new group
-                gis[ci] = components.len() + 1;
-                components.push(vec![]);
-                // and recursively add any candidate which is in group 0 and which overlaps with any candidate in the group [ci] on options at all to group gis[ci].
-                spider(&candidates, &mut gis, ci);
-            }
-            // now everything has been grouped.
-            for (ci, c) in candidates.into_iter().enumerate() {
-                assert!(gis[ci] > 0);
-                // translate group IDs to indices in components and add components to group.
-                components[gis[ci] - 1].push(c);
-            }
-            components
-        }
         let _cl = candidates.len();
         let groups = connected_components(candidates);
         // println!("Turned {:?} candidates into {:?} CCs of sizes {:?}", cl, groups.len(), groups.iter().map(|g| g.len()).collect::<Vec<_>>());
         // branch and bound should find the global optimum...
-        for candidates in groups.into_iter() {
+        for candidates in groups {
             // would it be better to phrase this as bipartite matching/flow instead?
             let matching = bnb_match(candidates, self.live_tracks.len());
             // println!("Matched with cost {:?}",cost);
             let mut _new_count = 0;
             let mut _matched_count = 0;
             // println!("Go through {:?}", self.now);
-            for Match(new, maybe_oldi) in matching.into_iter() {
+            for Match(new, maybe_oldi) in matching {
                 match maybe_oldi {
                     None => {
                         // println!("Create new {:?}", new);
@@ -774,6 +798,7 @@ impl MappyState {
         // println!("{:?} LTL {:?}", now, self.live_tracks.len());
     }
 
+    #[allow(clippy::too_many_lines)]
     fn blob_sprites(&mut self) {
         // group track IDs together if they...
         //    tend to be touching
@@ -816,9 +841,9 @@ impl MappyState {
             }
         });
         // find all unassigned live tracks; if any belonged to a blob, remove it from the blob
-        for &tx in unassigned_tracks.iter() {
+        for &tx in &unassigned_tracks {
             let id = self.live_tracks[tx].id;
-            for b in self.live_blobs.iter_mut() {
+            for b in &mut self.live_blobs {
                 if b.contains_live_track(id) {
                     // println!("{:?} remove {:?} from {:?}", now, id, b.id);
                     b.forget_track(id);
@@ -826,9 +851,7 @@ impl MappyState {
             }
             assert!(
                 !assigned_tracks.iter().any(|(txx, _bx)| *txx == tx),
-                "track {:?} both assigned and unassigned {:?}",
-                tx,
-                now
+                "track {tx:?} both assigned and unassigned {now:?}"
             );
         }
         // for all assigned_tracks, push this track onto the blob
@@ -837,13 +860,10 @@ impl MappyState {
             let txid = self.live_tracks[tx].id;
             assert!(
                 !unassigned_tracks.contains(&tx),
-                "track {:?} both assigned to {:?} and unassigned {:?}",
-                txid,
-                bxid,
-                now
+                "track {txid:?} both assigned to {bxid:?} and unassigned {now:?}"
             );
             // println!("{:?} assign {:?} to {:?}", now, txid, bxid);
-            for b in self.live_blobs.iter_mut() {
+            for b in &mut self.live_blobs {
                 if b.id != bxid && b.contains_live_track(txid) {
                     b.forget_track(txid);
                 }
@@ -896,34 +916,35 @@ impl MappyState {
         }
 
         // update centroids of all blobs
-        for b in self.live_blobs.iter_mut() {
+        for b in &mut self.live_blobs {
             b.update_position(self.now, &self.live_tracks);
         }
 
         for (b1i, b1) in self.live_blobs.iter().enumerate() {
             for b2 in self.live_blobs.iter().skip(b1i + 1) {
-                for t in b1.live_tracks.iter() {
+                for t in &b1.live_tracks {
                     assert!(
                         !b2.live_tracks.contains(t),
-                        "track {:?} appears in two blobs {:?} {:?} at {:?}",
-                        t,
+                        "track {t:?} appears in two blobs {:?} {:?} at {now:?}",
                         b1.id,
                         b2.id,
-                        now
                     );
                 }
             }
         }
     }
 
+    #[must_use]
     pub fn live_track_with_id(&self, id: &sprites::TrackID) -> Option<&sprites::SpriteTrack> {
         self.live_tracks.iter().find(|t| t.id == *id)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
+    #[must_use]
     pub fn split_region(&self) -> Rect {
         splits::split_region_for(
-            self.splits[0].0.scanline as u32,
-            self.splits[0].1.scanline as u32,
+            u32::from(self.splits[0].0.scanline),
+            u32::from(self.splits[0].1.scanline),
             self.grid_align.0,
             self.grid_align.1,
             self.fb.w as u32,
@@ -943,23 +964,27 @@ impl MappyState {
     }
     // safety: these slices don't belong to us so we should drop them
     // before the next time FCEU emulation happens
+    #[allow(clippy::similar_names)]
     pub(crate) unsafe fn get_layers(emu: &Emulator) -> [&[u8]; 3] {
-        let get_layer_fn: Symbol<unsafe extern "C" fn(i32) -> *const u8> =
-            emu.get_symbol(b"retro_layer").unwrap();
-        let sz = 256 * 240;
-        let sp_bg = get_layer_fn(0);
-        let bg = get_layer_fn(1);
-        let sp_fg = get_layer_fn(2);
-        [
-            std::slice::from_raw_parts(sp_bg, sz),
-            std::slice::from_raw_parts(bg, sz),
-            std::slice::from_raw_parts(sp_fg, sz),
-        ]
+        unsafe {
+            let get_layer_fn: Symbol<unsafe extern "C" fn(i32) -> *const u8> =
+                emu.get_symbol(b"retro_layer").unwrap();
+            let sz = 256 * 240;
+            let sp_bg = get_layer_fn(0);
+            let bg = get_layer_fn(1);
+            let sp_fg = get_layer_fn(2);
+            [
+                std::slice::from_raw_parts(sp_bg, sz),
+                std::slice::from_raw_parts(bg, sz),
+                std::slice::from_raw_parts(sp_fg, sz),
+            ]
+        }
     }
 
+    #[must_use]
     pub fn metaroom_exits(&self, mr: &Metaroom) -> Vec<MetaroomID> {
         let mut out_to = vec![];
-        for (rid, _pos) in mr.registrations.iter() {
+        for (rid, _pos) in &mr.registrations {
             if self.resets.contains(rid) {
                 continue;
             }
@@ -975,31 +1000,41 @@ impl MappyState {
         }
         out_to
     }
+    #[must_use]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     pub fn world_to_tile(&self, wx: i32, wy: i32) -> (i32, i32) {
         (wx / TILE_SIZE as i32, wy / TILE_SIZE as i32)
     }
+    #[must_use]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     pub fn tile_to_world(&self, tx: i32, ty: i32) -> (i32, i32) {
         (tx * TILE_SIZE as i32, ty * TILE_SIZE as i32)
     }
+    #[must_use]
     pub fn world_to_screen(&self, wx: i32, wy: i32) -> (i32, i32) {
         (wx - self.scroll.0, wy - self.scroll.1)
     }
+    #[must_use]
     pub fn screen_to_world(&self, sx: i32, sy: i32) -> (i32, i32) {
         (sx + self.scroll.0, sy + self.scroll.1)
     }
+    #[must_use]
     pub fn screen_to_tile(&self, sx: i32, sy: i32) -> (i32, i32) {
         let (wx, wy) = self.screen_to_world(sx, sy);
         self.world_to_tile(wx, wy)
     }
+    #[must_use]
     pub fn tile_to_screen(&self, tx: i32, ty: i32) -> (i32, i32) {
         let (wx, wy) = self.tile_to_world(tx, ty);
         self.world_to_screen(wx, wy)
     }
 
+    /// # Panics
+    /// Panics if the room mutex can't be obtained, or if an I/O error takes place
     pub fn dump_map(&self, dotfolder: &Path) {
         use std::collections::BTreeMap;
         use std::fs;
-        use tabbycat::attributes::*;
+        use tabbycat::attributes::{Shape, image, shape, xlabel};
         use tabbycat::{AttrList, Edge, GraphBuilder, GraphType, Identity, StmtList};
         let rooms = &self.rooms.read().unwrap();
         let gname = "map".to_string();
@@ -1045,7 +1080,7 @@ impl MappyState {
             {
                 attrs = attrs.add_pair(shape(Shape::Box));
             } else {
-                attrs = attrs.add_pair(shape(Shape::Plain))
+                attrs = attrs.add_pair(shape(Shape::Plain));
             }
             stmts = stmts.add_node(mr_ident.clone(), None, Some(attrs));
             for mr2_id in self.metaroom_exits(mr) {
@@ -1065,6 +1100,9 @@ impl MappyState {
             .unwrap();
         fs::write(dotfolder.join(Path::new("graph.dot")), graph.to_string()).unwrap();
     }
+    /// # Panics
+    /// May panic if the tile index mutex is poisoned, or if there's an I/O error
+    #[allow(clippy::cast_possible_truncation)]
     pub fn dump_tiles(&self, root: &Path) {
         let mut buf = vec![0_u8; TILE_SIZE * TILE_SIZE * 3];
         for (ti, tile) in self.tiles.read().unwrap().gfx_iter().enumerate() {
@@ -1072,9 +1110,16 @@ impl MappyState {
             let img: ImageBuffer<Rgb<u8>, _> =
                 ImageBuffer::from_raw(TILE_SIZE as u32, TILE_SIZE as u32, &buf[..])
                     .expect("Couldn't create image buffer");
-            img.save(root.join(format!("t{:}.png", ti))).unwrap();
+            img.save(root.join(format!("t{ti:}.png"))).unwrap();
         }
     }
+    /// # Panics
+    /// May panic if the tile index mutex is poisoned, or if there's an I/O error
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss
+    )]
     pub fn dump_tiles_single(where_to: &Path, tiles: &TileDB) {
         let all_gfx: Vec<_> = tiles.gfx_iter().collect();
         let colrows = (all_gfx.len() as f32).sqrt().ceil() as usize;
@@ -1112,6 +1157,13 @@ impl MappyState {
         img.save(where_to).unwrap();
     }
 
+    /// # Panics
+    /// May panic if the tile index mutex is poisoned, or if there's an I/O error
+    #[allow(
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_truncation
+    )]
     pub fn dump_room(&self, room: &Room, at: (u32, u32), tiles_wide: u32, buf: &mut [u8]) {
         let region = room.region();
         let tiles = self.tiles.read().unwrap();
@@ -1132,11 +1184,13 @@ impl MappyState {
         }
     }
 
+    /// # Panics
+    /// May panic if the tile index mutex is poisoned, or if there's an I/O error
+    #[allow(clippy::cast_possible_truncation)]
     pub fn dump_current_room(&self, path: &Path) {
-        if self.current_room.is_none() {
+        let Some(room) = self.current_room.as_ref() else {
             return;
-        }
-        let room = self.current_room.as_ref().unwrap();
+        };
         let region = room.region();
         let mut buf =
             vec![0_u8; TILE_SIZE * (region.w as usize) * TILE_SIZE * (region.h as usize) * 3];
@@ -1150,15 +1204,20 @@ impl MappyState {
         img.save(path).unwrap();
     }
 
+    /// # Panics
+    /// May panic if a mutex is poisoned or if there's an I/O error
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
     pub fn dump_metaroom(&self, mr: &Metaroom, path: &Path) {
         // need to dump every room into the same image.
         // so, first get net region of metaroom and build the image buffer.
         // then offset every reg so that the toppiest leftiest reg is at 0,0.
-        let rooms = self.rooms.read().unwrap();
+        let Ok(rooms) = self.rooms.read() else {
+            return;
+        };
         let region = mr.region(&rooms);
         let mut buf =
             vec![0_u8; TILE_SIZE * (region.w as usize) * TILE_SIZE * (region.h as usize) * 3];
-        for (room_i, pos) in mr.registrations.iter() {
+        for (room_i, pos) in &mr.registrations {
             assert!(pos.0 - region.x >= 0);
             assert!(pos.1 - region.y >= 0);
             let new_pos = ((pos.0 - region.x) as u32, (pos.1 - region.y) as u32);
@@ -1174,6 +1233,9 @@ impl MappyState {
     }
 }
 
+/// # Panics
+/// May panic if a mutex is poisoned
+#[allow(clippy::similar_names, clippy::cast_possible_wrap)]
 pub fn merge_cost(
     room: &Room,
     _metaroom_id: MetaroomID,
@@ -1235,7 +1297,7 @@ pub fn merge_cost(
                         continue;
                     }
                     let mut best_tile_cost = None;
-                    for &(room_id, (rxo, ryo)) in metaroom.iter() {
+                    for &(room_id, (rxo, ryo)) in metaroom {
                         let room_b = &rooms[room_id];
                         let s2x = rxo + rx + xo;
                         let s2y = ryo + ry + yo;

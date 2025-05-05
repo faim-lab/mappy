@@ -52,8 +52,8 @@ impl Deco for TileStandin {
                 if idx != 0 {
                     // TODO this but better
                     draw_rectangle(
-                        (x as f32 * SCALE) as f32,
-                        (y as f32 * SCALE) as f32,
+                        x as f32 * SCALE,
+                        y as f32 * SCALE,
                         TILE_SIZE as f32 * SCALE,
                         TILE_SIZE as f32 * SCALE,
                         Color::new(

@@ -28,6 +28,7 @@ impl Metaroom {
             merged_into: vec![],
         }
     }
+    #[must_use]
     pub fn region(&self, rooms: &[Room]) -> Rect {
         let (r0, p0) = self.registrations[0];
         let r0 = &rooms[r0];
@@ -36,7 +37,7 @@ impl Metaroom {
             y: p0.1,
             ..r0.region()
         };
-        for &(room, (x, y)) in self.registrations.iter() {
+        for &(room, (x, y)) in &self.registrations {
             let r2 = Rect {
                 x,
                 y,
@@ -58,15 +59,23 @@ impl Merges {
     pub(crate) fn new() -> Self {
         Self { metarooms: vec![] }
     }
+    #[must_use]
     pub fn len(&self) -> usize {
         self.metarooms.len()
     }
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.metarooms.is_empty()
     }
+    /// # Panics
+    /// Panics if there is no metaroom with the given ID
+    #[must_use]
     pub fn metaroom(&self, id: usize) -> &Metaroom {
         self.metarooms.iter().find(|&mr| mr.id.0 == id).unwrap()
     }
+    /// # Panics
+    /// Panics if there is no metaroom with the given ID
+    #[must_use]
     pub fn metaroom_mut(&mut self, id: MetaroomID) -> &mut Metaroom {
         self.metarooms.iter_mut().find(|mr| mr.id == id).unwrap()
     }
@@ -82,12 +91,12 @@ impl Merges {
         room: usize,
         merges: &[(MetaroomID, (i32, i32), f32)],
     ) -> MetaroomID {
-        println!("Final merge {}->{:?}", room, merges);
+        println!("Final merge {room}->{merges:?}");
         if merges.is_empty() {
             let mid = MetaroomID(self.metarooms.len());
             let meta = Metaroom::new_single(mid, room);
             // definitely still sorted!
-            println!("pushed meta a {:?}", mid);
+            println!("pushed meta a {mid:?}");
             self.metarooms.insert(0, meta);
             return mid;
         }
@@ -99,21 +108,21 @@ impl Merges {
             let room_mid = MetaroomID(self.metarooms.len());
             let mut meta = Metaroom::new_single(room_mid, room);
             meta.merged_into.push(mid);
-            println!("pushed meta b {:?}", mid);
+            println!("pushed meta b {mid:?}");
             self.metarooms.insert(0, meta);
         }
 
         let mut regs = Vec::with_capacity(merges.len() + 1);
         regs.push((room, (0, 0)));
         // is this right?
-        for (mri, (rx, ry), _) in merges.iter() {
+        for (mri, (rx, ry), _) in merges {
             let meta = self.metaroom_mut(*mri);
-            for (rid, (rrx, rry)) in meta.registrations.iter() {
+            for (rid, (rrx, rry)) in &meta.registrations {
                 regs.push((*rid, (rrx - rx, rry - ry)));
             }
             meta.merged_into.push(mid);
         }
-        println!("pushed meta c {:?} {:?}", mid, regs);
+        println!("pushed meta c {mid:?} {regs:?}");
 
         self.metarooms.push(Metaroom::new_merge(mid, regs));
         //resort everything

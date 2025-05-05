@@ -10,9 +10,9 @@ pub fn load_module(fpath: &std::path::Path, name: &str) -> Py<PyModule> {
         pyo3::py_run!(py, basepath, r#"import sys; sys.path.append(basepath);"#);
         PyModule::from_code(
             py,
-            &std::fs::read_to_string(&fpath).expect("Python module: file not found at given path"),
-            fpath.to_str().unwrap(),
-            name,
+            std::ffi::CString::new(std::fs::read_to_string(fpath).expect("Python module: file not found at given path")).as_ref().unwrap(),
+            &std::ffi::CString::new(fpath.to_str().unwrap()).unwrap(),
+            &std::ffi::CString::new(name).unwrap(),
         )
         .expect("Invalid Python filter module")
         .into()
@@ -88,7 +88,8 @@ impl Mappy {
         Ok(tgfx.perceptual_hash())
     }
     /// Fills `into` with the pixels of tile_gfx.
-    fn read_tile_gfx(&self, idx: usize, into: &pyo3::types::PyByteArray) -> PyResult<()> {
+    fn read_tile_gfx(&self, idx: usize, into: &Bound<'_,pyo3::types::PyByteArray>) -> PyResult<()> {
+        use pyo3::types::PyByteArrayMethods;
         let mappy = self.mappy.borrow();
         let db = mappy.tiles.read().unwrap();
         assert!(into.len() >= mappy::tile::TILE_NUM_PX * 3);

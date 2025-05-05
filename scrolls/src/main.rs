@@ -183,7 +183,7 @@ async fn main() {
                 "{}.state",
                 romname.to_str().expect("rom name not a valid utf-8 string")
             ));
-            emu.save(&mut save_buf);
+            assert!(emu.save(&mut save_buf));
             //write it out to the file
             let mut file = std::fs::File::create(save_path).expect("Couldn't create save file!");
             file.write_all(&save_buf)
@@ -196,7 +196,7 @@ async fn main() {
             ));
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
             assert_eq!(file.read_to_end(&mut save_buf).unwrap(), emu.save_size());
-            emu.load(&save_buf);
+            assert!(emu.load(&save_buf));
             mappy.handle_reset();
         }
 
@@ -255,7 +255,7 @@ async fn main() {
         game_img.bytes.copy_from_slice(&fb);
         game_tex.update(&game_img);
         draw_texture_ex(
-            game_tex,
+            &game_tex,
             0.,
             0.,
             WHITE,
@@ -303,8 +303,8 @@ async fn main() {
                     if idx != 0 {
                         // TODO this but better
                         draw_rectangle(
-                            (x as f32 * SCALE) as f32,
-                            (y as f32 * SCALE) as f32,
+                            x as f32 * SCALE,
+                            y as f32 * SCALE,
                             TILE_SIZE as f32 * SCALE,
                             TILE_SIZE as f32 * SCALE,
                             Color::new(

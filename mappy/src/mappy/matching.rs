@@ -26,7 +26,7 @@ pub fn greedy_match(mut candidates: Vec<MatchTo>, track_count: usize) -> Matchin
         .iter_mut()
         .for_each(|MatchTo(_, opts)| opts.sort_unstable_by_key(|tup| tup.1));
     candidates.sort_unstable_by_key(|MatchTo(_, opts)| opts.len());
-    for MatchTo(new, opts) in candidates.into_iter() {
+    for MatchTo(new, opts) in candidates {
         let Target(maybe_oldi, _cost) = opts
             .into_iter()
             .find(|Target(maybe_oldi, _cost)| match maybe_oldi {
@@ -61,6 +61,7 @@ pub fn bnb_match(mut candidates: Vec<MatchTo>, track_count: usize) -> Matching {
     let mut current = 0;
     let mut cost = 0;
     let mut picks = Vec::with_capacity(candidates.len());
+    #[allow(clippy::cast_possible_truncation)]
     let mut bound = 30 * candidates.len() as u32;
     let mut best = vec![];
 
@@ -80,10 +81,16 @@ pub fn bnb_match(mut candidates: Vec<MatchTo>, track_count: usize) -> Matching {
             if let Some(old) = options[old_pick].0 {
                 used_old[old] = false;
             }
-            old_pick+1
+            old_pick + 1
         };
         let options = &candidates[current].1;
-        if let Some(pick) = options.iter().skip(start_pick).position(|Target(maybe_oldi,ncost)| maybe_oldi.map(|oi| !used_old[oi]).unwrap_or(true) && cost+ncost < bound) {
+        if let Some(pick) = options
+            .iter()
+            .skip(start_pick)
+            .position(|Target(maybe_oldi, ncost)| {
+                maybe_oldi.map(|oi| !used_old[oi]).unwrap_or(true) && cost + ncost < bound
+            })
+        {
             let pick = start_pick + pick;
             // println!("{:?} / {:?} --  {:?} + {:?}", pick, options.len(), cost, options[pick].1);
             picks[current] = pick;
@@ -98,7 +105,7 @@ pub fn bnb_match(mut candidates: Vec<MatchTo>, track_count: usize) -> Matching {
                 // this is a complete assignment, update bound
                 // we know cost < bound at this point!
                 bound = cost;
-                best = picks.clone();
+                best.clone_from(&picks);
                 // then continue, since this was the best we had
                 // println!("found cost {:?}", bound);
             } else {
@@ -118,8 +125,10 @@ pub fn bnb_match(mut candidates: Vec<MatchTo>, track_count: usize) -> Matching {
     }
     // dbg!(&best,bound);
     Matching(
-        candidates.into_iter().enumerate().map(|(which, MatchTo(new,opts))| {
-            Match(new,opts[best[which]].0)
-        }).collect()
+        candidates
+            .into_iter()
+            .enumerate()
+            .map(|(which, MatchTo(new, opts))| Match(new, opts[best[which]].0))
+            .collect(),
     )
 }

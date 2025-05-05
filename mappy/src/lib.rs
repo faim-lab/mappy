@@ -58,22 +58,27 @@ pub struct Rect {
     pub h: u32,
 }
 impl Rect {
+    #[must_use]
     pub fn new(x: i32, y: i32, w: u32, h: u32) -> Self {
         Self { x, y, w, h }
     }
-    #[inline(always)]
+    #[inline]
+    #[must_use]
     pub fn contains(&self, x: i32, y: i32) -> bool {
         self.x <= x && x < self.x + self.w as i32 && self.y <= y && y < self.y + self.h as i32
     }
+    #[must_use]
     pub fn contains_rect(&self, r: &Rect) -> bool {
         self.union(r) == *self
     }
+    #[must_use]
     pub fn overlaps(&self, r: &Rect) -> bool {
         self.x < (r.x + r.w as i32)
             && r.x < (self.x + self.w as i32)
             && self.y < (r.y + r.h as i32)
             && r.y < (self.y + self.h as i32)
     }
+    #[must_use]
     pub fn expand(&self, amt: u32) -> Rect {
         Rect {
             x: self.x - amt as i32,
@@ -82,6 +87,7 @@ impl Rect {
             h: self.h + amt * 2,
         }
     }
+    #[must_use]
     pub fn union(&self, other: &Rect) -> Rect {
         let x0 = self.x.min(other.x);
         let y0 = self.y.min(other.y);
@@ -94,6 +100,7 @@ impl Rect {
             h: (y1 - y0) as u32,
         }
     }
+    #[must_use]
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
         let left = self.x.max(other.x);
         let right = (self.x + self.w as i32).min(other.x + other.w as i32);
@@ -110,11 +117,13 @@ impl Rect {
             None
         }
     }
+    #[must_use]
     pub fn area(&self) -> u32 {
         self.w * self.h
     }
 }
 
+#[must_use]
 fn to_bitstring(b: Buttons) -> String {
     format!(
         "{}{}{}{}{}{}{}{}",
@@ -168,7 +177,7 @@ pub fn read_fm2(inputs: &mut Vec<[Buttons; 2]>, path: &Path) {
     use std::io::{BufRead, BufReader};
     let file = File::open(path).expect("Couldn't open file");
     let reader = BufReader::new(file);
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         // scan ahead to second |
         let mut pipenum = 0;
         let mut bitstr = [false; 8];
