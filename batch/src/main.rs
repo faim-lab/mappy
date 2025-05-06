@@ -31,7 +31,7 @@ fn main() {
             mappy.process_screen(&mut emu, *input_pair);
         }
         let fb = emu.create_imagebuffer();
-        fb.unwrap().save(format!("out/out_{}.png", file_i)).unwrap();
+        fb.unwrap().save(format!("out/out_{file_i}.png")).unwrap();
     }
 
     // mappy.dump_current_room(Path::new("out/current_room.png"));
@@ -44,9 +44,8 @@ fn main() {
     );
     println!("Emulation only: 7.62524203s for 34,514 inputs, avg 0.000220 per frame");
     println!(
-        "Net: {:} for {:} inputs, avg {:} per frame",
+        "Net: {:} for {all_inputs:} inputs, avg {:} per frame",
         start.elapsed().as_secs_f64(),
-        all_inputs,
         start.elapsed().as_secs_f64() / (all_inputs as f64)
     );
     println!("{}", mappy.timers);

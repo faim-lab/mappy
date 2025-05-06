@@ -11,6 +11,7 @@ mod mappy_py;
 
 const SCALE: f32 = 3.0;
 
+#[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
     Conf {
         window_title: "Mappy Access".to_owned(),
@@ -21,6 +22,7 @@ fn window_conf() -> Conf {
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     let start = Instant::now();
     for (frames, inp) in inputs.iter().enumerate() {
@@ -56,6 +58,7 @@ struct Arguments {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    #![allow(clippy::similar_names,clippy::too_many_lines,clippy::cast_possible_truncation,clippy::cast_precision_loss,clippy::cast_sign_loss)]
     let args: Arguments = argh::from_env();
 
     let romfile = args.rom;
@@ -137,14 +140,14 @@ zxcvbnm,./ for debug displays"
         if is_key_pressed(KeyCode::O) {
             speed = if speed == 0 || shifted { 0 } else { speed - 1 };
 
-            println!("Speed {:?}", speed);
+            println!("Speed {speed:?}");
         } else if is_key_pressed(KeyCode::P) {
             speed = if shifted {
                 6
             } else {
                 (speed + 1).min(speeds.len() - 1)
             };
-            println!("Speed {:?}", speed);
+            println!("Speed {speed:?}");
         }
         let numkey = {
             if is_key_pressed(KeyCode::Key0) {
@@ -180,7 +183,7 @@ zxcvbnm,./ for debug displays"
             ));
             if shifted {
                 mappy::write_fm2(&inputs, &path);
-                println!("Dumped {}", n);
+                println!("Dumped {n}");
             } else {
                 assert!(emu.borrow_mut().load(&start_state));
                 mappy.borrow_mut().handle_reset();
@@ -331,7 +334,7 @@ zxcvbnm,./ for debug displays"
             }
             if is_mouse_button_down(MouseButton::Left) {
                 // selected_sprite = None;
-                for track in mappy.live_tracks.iter() {
+                for track in &mappy.live_tracks {
                     let (mx, my) = mouse_position();
                     if mappy::sprites::overlapping_sprite(
                         (mx / SCALE) as usize,
@@ -353,7 +356,7 @@ zxcvbnm,./ for debug displays"
                     base_sx as f32 * SCALE,
                     base_sy as f32 * SCALE,
                     8.0 * SCALE,
-                    track.current_data().height() as f32 * SCALE,
+                    f32::from(track.current_data().height()) * SCALE,
                     1.0 * SCALE,
                     BLUE,
                 );
@@ -375,11 +378,13 @@ zxcvbnm,./ for debug displays"
     println!("{}", mappy.borrow().timers);
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let x = (x / SCALE) as i32;
     let y = (y / SCALE) as i32;
     mappy.screen_to_tile(x, y)
 }
+#[allow(clippy::cast_precision_loss)]
 fn tile_to_screen((x, y): (i32, i32), mappy: &MappyState) -> (f32, f32) {
     let (x, y) = mappy.tile_to_screen(x, y);
     (x as f32 * SCALE, y as f32 * SCALE)

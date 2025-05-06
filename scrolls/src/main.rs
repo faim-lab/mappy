@@ -10,6 +10,7 @@ use std::path::Path;
 const SCALE: f32 = 3.;
 const OUTPUT_INTERVAL: u64 = 19;
 
+#[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
     Conf {
         window_title: "Mappy".to_owned(),
@@ -22,7 +23,7 @@ fn window_conf() -> Conf {
 
 fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
     // let start = Instant::now();
-    for inp in inputs.iter() {
+    for inp in inputs {
         emu.run(*inp);
         mappy.process_screen(emu, *inp);
     }
@@ -320,7 +321,7 @@ async fn main() {
             }
         }
         if draw_live_tracks {
-            for track in mappy.live_tracks.iter() {
+            for track in &mappy.live_tracks {
                 let col = Color::new(
                     (*(track.positions[0].0) * 31 % 256) as f32 / 255.,
                     (*(track.positions[0].0) * 127 % 256) as f32 / 255.,
@@ -328,9 +329,9 @@ async fn main() {
                     1.,
                 );
                 let startp = Vec2::new(
-                    ((track.positions[0].1).0 + track.positions[0].2.x as i32 - mappy.scroll.0)
+                    ((track.positions[0].1).0 + i32::from(track.positions[0].2.x) - mappy.scroll.0)
                         as f32,
-                    ((track.positions[0].1).1 + track.positions[0].2.y as i32 - mappy.scroll.1)
+                    ((track.positions[0].1).1 + i32::from( track.positions[0].2.y)  - mappy.scroll.1)
                         as f32,
                 );
                 draw_rectangle(
@@ -346,8 +347,8 @@ async fn main() {
                         let x0 = sx0 + i32::from(sd0.x) - mappy.scroll.0;
                         let y0 = sy0 + i32::from(sd0.y) - mappy.scroll.1;
                         let mappy::sprites::At(_, (sx1, sy1), sd1) = pair[1];
-                        let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
-                        let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;
+                        let x1 = sx1 + i32::from(sd1.x ) - mappy.scroll.0;
+                        let y1 = sy1 + i32::from(sd1.y ) - mappy.scroll.1;
                         draw_line(
                             x0 as f32 * SCALE,
                             y0 as f32 * SCALE,

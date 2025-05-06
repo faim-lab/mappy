@@ -28,8 +28,8 @@ where
         f(
             py,
             self::Mappy {
-                emulator,
                 mappy,
+                emulator,
                 width,
                 height,
             },
@@ -38,6 +38,7 @@ where
 }
 
 #[pyclass(unsendable)]
+#[allow(clippy::struct_field_names)]
 pub struct Mappy {
     mappy: Rc<RefCell<MappyState>>,
     #[allow(dead_code)]
@@ -50,6 +51,7 @@ pub struct Mappy {
 }
 
 #[pymethods]
+#[allow(clippy::unnecessary_wraps)]
 impl Mappy {
     #[getter]
     fn scroll(&self) -> PyResult<(i32, i32)> {
@@ -113,6 +115,7 @@ pub struct Sprite {
 }
 
 #[pymethods]
+#[allow(clippy::unnecessary_wraps)]
 impl Sprite {
     #[getter]
     fn index(&self) -> PyResult<u8> {
