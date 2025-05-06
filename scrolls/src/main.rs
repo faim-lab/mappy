@@ -31,7 +31,14 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    #![allow(clippy::similar_names,clippy::too_many_lines,clippy::cast_possible_truncation,clippy::cast_precision_loss,clippy::cast_sign_loss,clippy::cast_possible_wrap)]
+    #![allow(
+        clippy::similar_names,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_wrap
+    )]
     use chrono::Local;
     use std::env;
     let romfile = Path::new("roms/zelda.nes");
@@ -331,7 +338,7 @@ async fn main() {
                 let startp = Vec2::new(
                     ((track.positions[0].1).0 + i32::from(track.positions[0].2.x) - mappy.scroll.0)
                         as f32,
-                    ((track.positions[0].1).1 + i32::from( track.positions[0].2.y)  - mappy.scroll.1)
+                    ((track.positions[0].1).1 + i32::from(track.positions[0].2.y) - mappy.scroll.1)
                         as f32,
                 );
                 draw_rectangle(
@@ -347,8 +354,8 @@ async fn main() {
                         let x0 = sx0 + i32::from(sd0.x) - mappy.scroll.0;
                         let y0 = sy0 + i32::from(sd0.y) - mappy.scroll.1;
                         let mappy::sprites::At(_, (sx1, sy1), sd1) = pair[1];
-                        let x1 = sx1 + i32::from(sd1.x ) - mappy.scroll.0;
-                        let y1 = sy1 + i32::from(sd1.y ) - mappy.scroll.1;
+                        let x1 = sx1 + i32::from(sd1.x) - mappy.scroll.0;
+                        let y1 = sy1 + i32::from(sd1.y) - mappy.scroll.1;
                         draw_line(
                             x0 as f32 * SCALE,
                             y0 as f32 * SCALE,

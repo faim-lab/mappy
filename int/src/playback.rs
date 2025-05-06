@@ -1,4 +1,4 @@
-use super::{Buttons,KeyCode,is_key_down,is_key_pressed};
+use super::{is_key_down, is_key_pressed, Buttons, KeyCode};
 use std::path::Path;
 use std::time::Instant;
 const SPEEDS: [usize; 10] = [0, 1, 5, 15, 30, 60, 120, 240, 300, 360];

@@ -58,7 +58,13 @@ struct Arguments {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    #![allow(clippy::similar_names,clippy::too_many_lines,clippy::cast_possible_truncation,clippy::cast_precision_loss,clippy::cast_sign_loss)]
+    #![allow(
+        clippy::similar_names,
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss
+    )]
     let args: Arguments = argh::from_env();
 
     let romfile = args.rom;
@@ -260,13 +266,16 @@ zxcvbnm,./ for debug displays"
                         let fb_len = fb.len();
                         // two copies, maybe we could avoid this later with buffer protocol somehow.
                         let fb_py = pyo3::types::PyByteArray::new(py, &fb);
-                        let fb_py_view = pyo3::types::PyMemoryView::from(&fb_py).expect("Couldn't create memory view from PyByteArray");
-                        filter.call1(py, (mappy_py, fb_py_view)).unwrap_or_else(|e| {
-                            // We can't display Python exceptions via std::fmt::Display,
-                            // so print the error here manually.
-                            e.print_and_set_sys_last_vars(py);
-                            panic!();
-                        });
+                        let fb_py_view = pyo3::types::PyMemoryView::from(&fb_py)
+                            .expect("Couldn't create memory view from PyByteArray");
+                        filter
+                            .call1(py, (mappy_py, fb_py_view))
+                            .unwrap_or_else(|e| {
+                                // We can't display Python exceptions via std::fmt::Display,
+                                // so print the error here manually.
+                                e.print_and_set_sys_last_vars(py);
+                                panic!();
+                            });
                         // This second copy will also disappear if we can eliminate the first
                         unsafe {
                             // This is safe because the PyByteArray

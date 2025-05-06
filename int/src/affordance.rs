@@ -14,7 +14,7 @@ use std::{
     path::Path,
 };
 
-use serde_derive::{Serialize,Deserialize};
+use serde_derive::{Deserialize, Serialize};
 bitflags! {
     #[allow(clippy::unsafe_derive_deserialize)]
     #[derive(Serialize, Deserialize)]
@@ -251,7 +251,11 @@ impl AffordanceTracker {
         let _ = serde_json::to_writer(file, &temp);
     }
 
-    #[allow(clippy::too_many_lines,clippy::cast_possible_truncation,clippy::cast_sign_loss)]
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     pub fn update(&mut self, mappy: &MappyState, _emu: &Emulator) {
         self.update_brush();
         // left click to grant, right click to copy affordances
@@ -305,7 +309,9 @@ impl AffordanceTracker {
                     let change_data = tiles.get_change_by_id(change);
                     if let Some(cd) = change_data {
                         let to = cd.to;
-                        tiles.get_tile_by_id(to).map(mappy::tile::TileGfx::perceptual_hash)
+                        tiles
+                            .get_tile_by_id(to)
+                            .map(mappy::tile::TileGfx::perceptual_hash)
                     } else {
                         None
                     }
@@ -373,7 +379,7 @@ impl AffordanceTracker {
                 }
                 (None, Some(tile_hash)) => {
                     self.brush = match self.tiles.get(&tile_hash) {
-                        Some(Affordance::Guessed(b)|Affordance::Given(b)) => *b,
+                        Some(Affordance::Guessed(b) | Affordance::Given(b)) => *b,
                         None => self.brush,
                     };
                     if and_delete {
@@ -386,7 +392,13 @@ impl AffordanceTracker {
             },
         }
     }
-    #[allow(clippy::map_entry,clippy::too_many_lines,clippy::cast_possible_wrap,clippy::cast_possible_truncation,clippy::cast_sign_loss)]
+    #[allow(
+        clippy::map_entry,
+        clippy::too_many_lines,
+        clippy::cast_possible_wrap,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
     pub fn modulate(
         &mut self,
         mappy: &MappyState,
@@ -477,7 +489,9 @@ impl AffordanceTracker {
                 }
             }
             let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
-            if u32::from(sd.x) + u32::from(sd.width()) > 255 || u32::from(sd.y) + u32::from(sd.height()) > 240 {
+            if u32::from(sd.x) + u32::from(sd.width()) > 255
+                || u32::from(sd.y) + u32::from(sd.height()) > 240
+            {
                 continue;
             }
             for (y, row) in sd.mask.iter().enumerate() {
@@ -541,7 +555,7 @@ impl AffordanceTracker {
     }
 }
 
-#[allow(clippy::many_single_char_names,clippy::cast_possible_wrap)]
+#[allow(clippy::many_single_char_names, clippy::cast_possible_wrap)]
 fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     mask: AffordanceMask,
@@ -590,7 +604,13 @@ fn apply_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     }
 }
 
-#[allow(clippy::too_many_arguments,clippy::similar_names,clippy::many_single_char_names,clippy::cast_possible_wrap,clippy::cast_possible_truncation)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::similar_names,
+    clippy::many_single_char_names,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation
+)]
 fn apply_sprite_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     mask: AffordanceMask,
@@ -652,7 +672,12 @@ fn apply_sprite_mask_to_area<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
             settings.breakable_ratio,
         );
     } else if mask.contains(AffordanceMask::SOLID) {
-        emphasize_sprite(canvas, sprite, affordance_color::SOLID, settings.solid_ratio);
+        emphasize_sprite(
+            canvas,
+            sprite,
+            affordance_color::SOLID,
+            settings.solid_ratio,
+        );
     } else if mask.contains(AffordanceMask::MOVABLE) {
         emphasize_saturation(canvas, r, settings.movable_saturation_change);
     } else {
@@ -732,7 +757,7 @@ fn emphasize<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     //lutgen, map colors to other colors; color correction stuff, more tuned for palette you like
 }
 
-#[allow(clippy::cast_possible_truncation,clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn emphasize_sprite<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     sprite: &SpriteData,
@@ -746,7 +771,11 @@ fn emphasize_sprite<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
         for x in 0..8 {
             //if the mask but is set then copy the pixel with the transform
             if ((row >> (7 - x)) & 0b1) == 1 {
-                canvas.draw_pixel(u32::from(sprite.x) + x, u32::from(sprite.y) + y as u32, target);
+                canvas.draw_pixel(
+                    u32::from(sprite.x) + x,
+                    u32::from(sprite.y) + y as u32,
+                    target,
+                );
                 //need to adjust for the scaling that happens
             }
         }
@@ -758,7 +787,7 @@ fn emphasize_sprite<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
 
 //what is going to be the defintion of saturation(?), does that need a specific file type(?)
 //what is the intended difference between emphasize and emphasize satruation(?)
-#[allow(clippy::cast_possible_truncation,clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
     canvas: &mut imageproc::drawing::Blend<I>,
     r: imageproc::rect::Rect,
@@ -786,14 +815,21 @@ fn emphasize_saturation<I: image::GenericImage<Pixel = image::Rgba<u8>>>(
 #[allow(clippy::cast_sign_loss)]
 fn sprite_guesses(mappy: &MappyState, track: &SpriteTrack) -> impl Iterator<Item = u32> {
     // all sprites on every track of every blob including track
-    let mut set:HashSet<_> = track.positions.iter().map(|d| d.2.key()).collect();
+    let mut set: HashSet<_> = track.positions.iter().map(|d| d.2.key()).collect();
     for b in mappy
         .live_blobs
         .iter()
         .filter(|b| b.contains_live_track(track.id))
     {
         for t in &b.live_tracks {
-            set.extend(mappy.live_track_with_id(t).unwrap().positions.iter().map(|d| d.2.key()));
+            set.extend(
+                mappy
+                    .live_track_with_id(t)
+                    .unwrap()
+                    .positions
+                    .iter()
+                    .map(|d| d.2.key()),
+            );
         }
     }
     set.into_iter()
@@ -802,8 +838,14 @@ fn sprite_guesses(mappy: &MappyState, track: &SpriteTrack) -> impl Iterator<Item
 fn tiles_covered_by(mappy: &MappyState, cur: &mappy::sprites::SpriteData) -> [(i32, i32); 4] {
     [
         mappy.screen_to_tile(i32::from(cur.x), i32::from(cur.y)),
-        mappy.screen_to_tile(i32::from(cur.x) + i32::from(cur.width()) - 1, i32::from(cur.y)),
-        mappy.screen_to_tile(i32::from(cur.x), i32::from(cur.y) + i32::from(cur.height()) - 1),
+        mappy.screen_to_tile(
+            i32::from(cur.x) + i32::from(cur.width()) - 1,
+            i32::from(cur.y),
+        ),
+        mappy.screen_to_tile(
+            i32::from(cur.x),
+            i32::from(cur.y) + i32::from(cur.height()) - 1,
+        ),
         mappy.screen_to_tile(
             i32::from(cur.x) + i32::from(cur.width()) - 1,
             i32::from(cur.y) + i32::from(cur.height()) - 1,

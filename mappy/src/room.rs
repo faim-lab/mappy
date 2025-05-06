@@ -1,6 +1,6 @@
+use crate::Rect;
 use crate::screen::Screen;
 use crate::tile::{TileChange, TileDB, TileGfxId};
-use crate::Rect;
 // use std::collections::HashSet;
 
 type RoomScreen = Screen<TileChange>;
@@ -132,9 +132,10 @@ impl Room {
         assert!(self.get_screen_for(sx, sy).is_none());
         assert!(self.get_screen_for(sx + r0.w as i32 - 1, sy).is_none());
         assert!(self.get_screen_for(sx, sy + r0.h as i32 - 1).is_none());
-        assert!(self
-            .get_screen_for(sx + r0.w as i32 - 1, sy + r0.h as i32 - 1)
-            .is_none());
+        assert!(
+            self.get_screen_for(sx + r0.w as i32 - 1, sy + r0.h as i32 - 1)
+                .is_none()
+        );
         self.screens.push(Screen::new(
             Rect::new(sx, sy, r0.w, r0.h),
             db.get_initial_change(),
@@ -280,7 +281,7 @@ mod tests {
     #[test]
     #[allow(clippy::cast_possible_wrap)]
     fn test_register() {
-        use crate::tile::{TileGfx, TILE_NUM_PX};
+        use crate::tile::{TILE_NUM_PX, TileGfx};
         let mut db = TileDB::new();
         let r0 = Rect::new(5, 5, 32, 32);
         let t0 = db.get_initial_tile();

@@ -1,4 +1,4 @@
-use super::{room::Room, Rect};
+use super::{Rect, room::Room};
 
 // // the usize here is another metaroom
 // #[derive(Debug)]

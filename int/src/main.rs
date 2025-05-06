@@ -48,7 +48,11 @@ struct Cli {
 
 #[macroquad::main(window_conf)]
 async fn main() {
-    #![allow(clippy::too_many_lines,clippy::cast_possible_truncation,clippy::cast_precision_loss)]
+    #![allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss
+    )]
     use std::env;
     std::fs::create_dir_all("out").unwrap_or(());
     let args: Vec<_> = env::args().collect();
@@ -207,10 +211,10 @@ zxcvbnm,./ for debug displays"
                 if let Some(dump) = scroll_dumper.take() {
                     dump.finish(&playback.inputs);
                 }
-                scroll_dumper = None;/*Some(scroll::ScrollDumper::new(
-                    Path::new("scroll_data/"),
-                    romname.to_str().unwrap(),
-                ));*/
+                scroll_dumper = None; /*Some(scroll::ScrollDumper::new(
+                                          Path::new("scroll_data/"),
+                                          romname.to_str().unwrap(),
+                                      ));*/
                 assert!(emu.load(&start_state));
                 mappy.handle_reset();
                 playback.replay(&path);
