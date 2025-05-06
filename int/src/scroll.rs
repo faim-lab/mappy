@@ -1,9 +1,12 @@
-use mappy::*;
-use retro_rs::*;
+#![allow(dead_code)]
+
+use mappy::MappyState;
+use retro_rs::{Buttons,Emulator};
 use std::{
     io::Write,
     path::{Path, PathBuf},
 };
+
 #[cfg(feature="ffmpeg")]
 pub struct ScrollDumper {
     csv: std::fs::File,
@@ -22,7 +25,7 @@ pub struct ScrollDumper();
 #[cfg(feature="ffmpeg")]
 impl ScrollDumper {
     pub fn new(data_root: &Path, rom_name: &str) -> Self {
-        video_rs::init().unwrap();
+        video_rs::init();
 
         let date_str = format!("{}", chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"));
         let data_folder = data_root

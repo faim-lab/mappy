@@ -1,4 +1,6 @@
-use super::*;
+use super::{Buttons,KeyCode,is_key_down,is_key_pressed};
+use std::path::Path;
+use std::time::Instant;
 const SPEEDS: [usize; 10] = [0, 1, 5, 15, 30, 60, 120, 240, 300, 360];
 pub struct Playback {
     pub start: std::time::Instant,
@@ -48,6 +50,7 @@ impl Playback {
         mappy::read_fm2(&mut self.replay_inputs, path);
         self.replay_index = 0;
     }
+    #[allow(clippy::cast_precision_loss)]
     pub fn step(&mut self, dt: f32, mut f: impl FnMut(f32, [Buttons; 2])) {
         // Add dt (s) * multiplier (frame/s) to get number of frames.
         // e.g. 60 * 1/60 = 1

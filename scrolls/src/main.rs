@@ -30,6 +30,7 @@ fn replay(emu: &mut Emulator, mappy: &mut MappyState, inputs: &[[Buttons; 2]]) {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    #![allow(clippy::similar_names,clippy::too_many_lines,clippy::cast_possible_truncation,clippy::cast_precision_loss,clippy::cast_sign_loss,clippy::cast_possible_wrap)]
     use chrono::Local;
     use std::env;
     let romfile = Path::new("roms/zelda.nes");
@@ -308,9 +309,9 @@ async fn main() {
                             TILE_SIZE as f32 * SCALE,
                             TILE_SIZE as f32 * SCALE,
                             Color::new(
-                                (idx * 127 % 256) as f32 / 255.,
-                                (idx * 33 % 256) as f32 / 255.,
-                                (idx * 61 % 256) as f32 / 255.,
+                                f32::from(idx * 127 % 256) / 255.,
+                                f32::from(idx * 33 % 256) / 255.,
+                                f32::from(idx * 61 % 256) / 255.,
                                 1.,
                             ),
                         );
@@ -342,8 +343,8 @@ async fn main() {
                 if track.positions.len() > 1 {
                     for pair in track.positions.windows(2) {
                         let mappy::sprites::At(_, (sx0, sy0), sd0) = pair[0];
-                        let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
-                        let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
+                        let x0 = sx0 + i32::from(sd0.x) - mappy.scroll.0;
+                        let y0 = sy0 + i32::from(sd0.y) - mappy.scroll.1;
                         let mappy::sprites::At(_, (sx1, sy1), sd1) = pair[1];
                         let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
                         let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;

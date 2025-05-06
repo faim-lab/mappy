@@ -1,3 +1,4 @@
+#[allow(clippy::wildcard_imports)]
 use super::*;
 
 pub struct Decorator {
@@ -12,6 +13,7 @@ pub trait Deco {
 
 pub struct Grid {}
 impl Deco for Grid {
+    #[allow(clippy::cast_sign_loss,clippy::cast_precision_loss)]
     fn draw(&mut self, mappy: &MappyState) {
         let region = mappy.split_region();
         for x in ((region.x as u32)..(region.x as u32 + region.w)).step_by(TILE_SIZE) {
@@ -38,6 +40,7 @@ impl Deco for Grid {
 }
 pub struct TileStandin {}
 impl Deco for TileStandin {
+    #[allow(clippy::cast_sign_loss,clippy::cast_precision_loss,clippy::cast_possible_truncation,clippy::cast_possible_wrap)]
     fn draw(&mut self, mappy: &MappyState) {
         let region = mappy.split_region();
         let sr = mappy.current_screen.region;
@@ -57,9 +60,9 @@ impl Deco for TileStandin {
                         TILE_SIZE as f32 * SCALE,
                         TILE_SIZE as f32 * SCALE,
                         Color::new(
-                            (idx * 127 % 256) as f32 / 255.,
-                            (idx * 33 % 256) as f32 / 255.,
-                            (idx * 61 % 256) as f32 / 255.,
+                            f32::from(idx * 127 % 256) / 255.,
+                            f32::from(idx * 33 % 256)  / 255.,
+                            f32::from(idx * 61 % 256) / 255.,
                             1.,
                         ),
                     );
@@ -72,8 +75,9 @@ pub struct LiveTracks {
     pub dims: (usize, usize),
 }
 impl Deco for LiveTracks {
+    #[allow(clippy::similar_names,clippy::cast_precision_loss)]
     fn draw(&mut self, mappy: &MappyState) {
-        for track in mappy.live_tracks.iter() {
+        for track in &mappy.live_tracks {
             let col = Color::new(
                 (*(track.positions[0].0) * 31 % 256) as f32 / 255.,
                 (*(track.positions[0].0) * 127 % 256) as f32 / 255.,
@@ -81,8 +85,8 @@ impl Deco for LiveTracks {
                 1.,
             );
             let startp = Vec2::new(
-                ((track.positions[0].1).0 + track.positions[0].2.x as i32 - mappy.scroll.0) as f32,
-                ((track.positions[0].1).1 + track.positions[0].2.y as i32 - mappy.scroll.1) as f32,
+                ((track.positions[0].1).0 + i32::from(track.positions[0].2.x) - mappy.scroll.0) as f32,
+                ((track.positions[0].1).1 + i32::from(track.positions[0].2.y) - mappy.scroll.1) as f32,
             );
             draw_rectangle(
                 SCALE * (startp.x.max(0.)).min(self.dims.0 as f32) - SCALE * 2.,
@@ -94,11 +98,11 @@ impl Deco for LiveTracks {
             if track.positions.len() > 1 {
                 for pair in track.positions.windows(2) {
                     let mappy::sprites::At(_, (sx0, sy0), sd0) = pair[0];
-                    let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
-                    let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
+                    let x0 = sx0 + i32::from(sd0.x ) - mappy.scroll.0;
+                    let y0 = sy0 + i32::from(sd0.y ) - mappy.scroll.1;
                     let mappy::sprites::At(_, (sx1, sy1), sd1) = pair[1];
-                    let x1 = sx1 + (sd1.x as i32) - mappy.scroll.0;
-                    let y1 = sy1 + (sd1.y as i32) - mappy.scroll.1;
+                    let x1 = sx1 + i32::from(sd1.x ) - mappy.scroll.0;
+                    let y1 = sy1 + i32::from(sd1.y ) - mappy.scroll.1;
                     draw_line(
                         x0 as f32 * SCALE,
                         y0 as f32 * SCALE,
@@ -110,10 +114,10 @@ impl Deco for LiveTracks {
                 }
                 let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
                 draw_rectangle_lines(
-                    sd.x as f32 * SCALE,
-                    sd.y as f32 * SCALE,
-                    sd.width() as f32 * SCALE,
-                    sd.height() as f32 * SCALE,
+                    f32::from(sd.x) * SCALE,
+                    f32::from(sd.y) * SCALE,
+                    f32::from(sd.width())  * SCALE,
+                    f32::from(sd.height()) * SCALE,
                     2.0,
                     col,
                 );
@@ -124,8 +128,9 @@ impl Deco for LiveTracks {
 
 pub struct LiveBlobs {}
 impl Deco for LiveBlobs {
+    #[allow(clippy::cast_precision_loss)]
     fn draw(&mut self, mappy: &MappyState) {
-        for blob in mappy.live_blobs.iter() {
+        for blob in &mappy.live_blobs {
             let col = Color::new(
                 (*(blob.positions[0].0) * 31 % 256) as f32 / 255.,
                 (*(blob.positions[0].0) * 127 % 256) as f32 / 255.,
@@ -147,12 +152,13 @@ impl Deco for LiveBlobs {
 }
 pub struct Avatar {}
 impl Deco for Avatar {
+    #[allow(clippy::similar_names,clippy::cast_precision_loss)]
     fn draw(&mut self, mappy: &MappyState) {
-        for track in mappy.live_tracks.iter() {
+        for track in &mappy.live_tracks {
             if track.get_is_avatar() {
                 let mappy::sprites::At(_, (sx0, sy0), sd0) = track.positions.last().unwrap();
-                let x0 = sx0 + (sd0.x as i32) - mappy.scroll.0;
-                let y0 = sy0 + (sd0.y as i32) - mappy.scroll.1;
+                let x0 = sx0 + i32::from(sd0.x ) - mappy.scroll.0;
+                let y0 = sy0 + i32::from(sd0.y ) - mappy.scroll.1;
                 draw_circle(x0 as f32 * SCALE, y0 as f32 * SCALE, 4.0, DARKBLUE);
             }
         }
@@ -203,10 +209,11 @@ pub struct SelectedSprite {
     pub dims: (usize, usize),
 }
 impl Deco for SelectedSprite {
+    #[allow(clippy::similar_names,clippy::cast_possible_truncation,clippy::cast_sign_loss,clippy::cast_precision_loss)]
     fn draw(&mut self, mappy: &MappyState) {
         if is_mouse_button_down(MouseButton::Left) {
             // selected_sprite = None;
-            for track in mappy.live_tracks.iter() {
+            for track in &mappy.live_tracks {
                 let (mx, my) = mouse_position();
                 if mappy::sprites::overlapping_sprite(
                     (mx / SCALE) as usize,
@@ -229,7 +236,7 @@ impl Deco for SelectedSprite {
                 base_sx as f32 * SCALE,
                 base_sy as f32 * SCALE,
                 8.0 * SCALE,
-                track.current_data().height() as f32 * SCALE,
+                f32::from(track.current_data().height()) * SCALE,
                 1.0 * SCALE,
                 BLUE,
             );

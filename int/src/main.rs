@@ -12,6 +12,7 @@ use clap::Parser;
 
 const SCALE: f32 = 2.0;
 
+#[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
     Conf {
         window_title: "Mappy".to_owned(),
@@ -29,7 +30,7 @@ fn replay(
     inputs: &[[Buttons; 2]],
     scroll: &mut Option<&mut scroll::ScrollDumper>,
 ) {
-    for (_frames, inp) in inputs.iter().enumerate() {
+    for inp in inputs {
         emu.run(*inp);
         mappy.process_screen(emu, *inp);
         if let Some(scroll) = scroll {
@@ -47,6 +48,7 @@ struct Cli {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    #![allow(clippy::too_many_lines,clippy::cast_possible_truncation,clippy::cast_precision_loss)]
     use std::env;
     std::fs::create_dir_all("out").unwrap_or(());
     let args: Vec<_> = env::args().collect();
@@ -60,28 +62,29 @@ async fn main() {
     let mut scroll_dumper: Option<scroll::ScrollDumper> = /*Some(scroll::ScrollDumper::new(
         Path::new("scroll_data/"),
         romname.to_str().unwrap(),
-    ))*/ None; //is the scroll dumper for current or past game play?
+    ))*/ None;
     std::fs::create_dir_all("affordances").unwrap_or(());
     let mut affordances = affordance::AffordanceTracker::new(romname.to_str().unwrap());
     let afford_file = file_args.affordance.clone(); //optional affordance file
 
-    if afford_file.is_some() {
-        affordances.load_maps(afford_file.unwrap().as_path());
+    if let Some(afford_file) = afford_file {
+        affordances.load_maps(afford_file.as_path());
     }
 
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
-    let mut start_state = vec![0; emu.save_size()]; //state is saved in a vector, as image?
+    let mut start_state = vec![0; emu.save_size()];
     let mut save_buf = vec![0; emu.save_size()];
-    emu.save(&mut start_state); //sets size?
-    emu.save(&mut save_buf);
+    assert!(emu.save(&mut start_state));
+    assert!(emu.save(&mut save_buf));
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
     // So reset it afterwards
-    emu.load(&start_state); //why?
+    assert!(emu.load(&start_state));
 
     //these are the visual annotations, but these are the debug annotations?
     let mut decos = {
+        #[allow(clippy::wildcard_imports)]
         use debug_decorate::*;
         vec![
             Decorator {
@@ -198,7 +201,7 @@ zxcvbnm,./ for debug displays"
             ));
             if shifted {
                 mappy::write_fm2(&playback.inputs, &path);
-                println!("Dumped {}", n);
+                println!("Dumped {n}");
             } else {
                 // TODO clear mappy too?
                 if let Some(dump) = scroll_dumper.take() {
@@ -208,7 +211,7 @@ zxcvbnm,./ for debug displays"
                     Path::new("scroll_data/"),
                     romname.to_str().unwrap(),
                 ));*/
-                emu.load(&start_state);
+                assert!(emu.load(&start_state));
                 mappy.handle_reset();
                 playback.replay(&path);
             }
@@ -219,7 +222,7 @@ zxcvbnm,./ for debug displays"
                 "{}.state",
                 romname.to_str().expect("rom name not a valid utf-8 string")
             ));
-            emu.save(&mut save_buf);
+            assert!(emu.save(&mut save_buf));
             //write it out to the file -- which files, so state, state folder doesnt currently exist?
             let mut file = std::fs::File::create(save_path).expect("Couldn't create save file!");
             file.write_all(&save_buf)
@@ -235,7 +238,7 @@ zxcvbnm,./ for debug displays"
             ));
             let mut file = std::fs::File::open(save_path).expect("Couldn't open save file!");
             file.read_exact(&mut save_buf).unwrap();
-            emu.load(&save_buf);
+            assert!(emu.load(&save_buf));
             mappy.handle_reset();
         }
         if is_key_pressed(KeyCode::F9) {
@@ -291,7 +294,7 @@ zxcvbnm,./ for debug displays"
             },
         );
 
-        for deco in decos.iter_mut() {
+        for deco in &mut decos {
             if is_key_pressed(deco.toggle) {
                 deco.enabled = !deco.enabled;
             }
@@ -310,11 +313,13 @@ zxcvbnm,./ for debug displays"
     //mappy.dump_tiles(Path::new("out/"));
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn screen_f32_to_tile((x, y): (f32, f32), mappy: &MappyState) -> (i32, i32) {
     let x = (x / SCALE) as i32;
     let y = (y / SCALE) as i32;
     mappy.screen_to_tile(x, y)
 }
+#[allow(clippy::cast_precision_loss)]
 fn tile_to_screen((x, y): (i32, i32), mappy: &MappyState) -> (f32, f32) {
     let (x, y) = mappy.tile_to_screen(x, y);
     (x as f32 * SCALE, y as f32 * SCALE)
@@ -332,7 +337,7 @@ fn dump_mappy_map(romname: &str, mappy: &MappyState) {
             .output()
             .expect("graphviz failed")
             .stdout;
-        std::fs::write(format!("out/{}.png", romname), &image).unwrap();
+        std::fs::write(format!("out/{romname}.png"), &image).unwrap();
     }
 }
 fn pressed_numkey() -> Option<usize> {

@@ -234,32 +234,32 @@ mod tests {
         let mut db = TileDB::new();
         let r0 = Rect::new(5, 5, 32, 32);
         let mut r = Room::new(0, &Screen::new(r0, db.get_initial_tile()), &mut db);
-        r.get_screen_for_or_add(5, 5, &db);
+        let _ = r.get_screen_for_or_add(5, 5, &db);
         assert_eq!(r.screens[r.get_screen_for(5, 5).unwrap()].region, r0);
         assert_eq!(r.screens.len(), 1);
-        r.get_screen_for_or_add(36, 36, &db);
+        let _ = r.get_screen_for_or_add(36, 36, &db);
         assert_eq!(r.screens[r.get_screen_for(24, 24).unwrap()].region, r0);
         assert_eq!(r.screens.len(), 1);
-        r.get_screen_for_or_add(37, 37, &db);
+        let _ = r.get_screen_for_or_add(37, 37, &db);
         assert_eq!(
             r.screens[r.get_screen_for(37, 37).unwrap()].region,
             Rect::new(r0.x + r0.w as i32, r0.y + r0.h as i32, r0.w, r0.h)
         );
         assert_eq!(r.screens.len(), 2);
         dbg!(r.screens.iter().map(|s| s.region).collect::<Vec<_>>());
-        r.get_screen_for_or_add(0, 0, &db);
+        let _ = r.get_screen_for_or_add(0, 0, &db);
         assert_eq!(
             r.screens[r.get_screen_for(0, 0).unwrap()].region,
             Rect::new(r0.x - r0.w as i32, r0.y - r0.h as i32, r0.w, r0.h)
         );
         assert_eq!(r.screens.len(), 3);
-        r.get_screen_for_or_add(-10, -10, &db);
+        let _ = r.get_screen_for_or_add(-10, -10, &db);
         assert_eq!(
             r.screens[r.get_screen_for(-10, -10).unwrap()].region,
             Rect::new(r0.x - r0.w as i32, r0.y - r0.h as i32, r0.w, r0.h)
         );
         assert_eq!(r.screens.len(), 3);
-        r.get_screen_for_or_add(-30, -30, &db);
+        let _ = r.get_screen_for_or_add(-30, -30, &db);
         assert_eq!(
             r.screens[r.get_screen_for(-30, -30).unwrap()].region,
             Rect::new(r0.x - r0.w as i32 * 2, r0.y - r0.h as i32 * 2, r0.w, r0.h)
@@ -272,8 +272,8 @@ mod tests {
         let mut db = TileDB::new();
         let r0 = Rect::new(2, 29, 29, 27);
         let mut r = Room::new(0, &Screen::new(r0, db.get_initial_tile()), &mut db);
-        r.get_screen_for_or_add(-56, 29, &db);
-        r.get_screen_for_or_add(-27, 29, &db);
+        let _ = r.get_screen_for_or_add(-56, 29, &db);
+        let _ = r.get_screen_for_or_add(-27, 29, &db);
         assert_eq!(r.screens.len(), 3);
     }
 

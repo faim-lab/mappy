@@ -293,14 +293,14 @@ impl TileDB {
         self.gfx.contains_key(tg)
     }
     pub fn insert(&mut self, tile: TileGfx) {
-        self.get_tile(tile);
+        let _ = self.get_tile(tile); // This get_tile is just for side effects
     }
     pub fn extend<I>(&mut self, tgs: I)
     where
         I: IntoIterator<Item = TileGfx>,
     {
         tgs.into_iter().for_each(|tg| {
-            self.get_tile(tg);
+            let _ = self.get_tile(tg); // This get_tile is just for side effects
         });
     }
     #[must_use]

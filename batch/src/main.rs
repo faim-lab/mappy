@@ -2,6 +2,7 @@ use mappy::MappyState;
 use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 use std::path::Path;
 use std::time::Instant;
+#[allow(clippy::cast_precision_loss)]
 fn main() {
     use std::env;
     let args: Vec<_> = env::args().collect();

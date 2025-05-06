@@ -64,6 +64,7 @@ impl Rect {
     }
     #[inline]
     #[must_use]
+    #[allow(clippy::cast_possible_wrap)]
     pub fn contains(&self, x: i32, y: i32) -> bool {
         self.x <= x && x < self.x + self.w as i32 && self.y <= y && y < self.y + self.h as i32
     }
@@ -72,6 +73,7 @@ impl Rect {
         self.union(r) == *self
     }
     #[must_use]
+    #[allow(clippy::cast_possible_wrap)]
     pub fn overlaps(&self, r: &Rect) -> bool {
         self.x < (r.x + r.w as i32)
             && r.x < (self.x + self.w as i32)
@@ -79,6 +81,7 @@ impl Rect {
             && r.y < (self.y + self.h as i32)
     }
     #[must_use]
+    #[allow(clippy::cast_possible_wrap)]
     pub fn expand(&self, amt: u32) -> Rect {
         Rect {
             x: self.x - amt as i32,
@@ -88,6 +91,7 @@ impl Rect {
         }
     }
     #[must_use]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
     pub fn union(&self, other: &Rect) -> Rect {
         let x0 = self.x.min(other.x);
         let y0 = self.y.min(other.y);
@@ -101,6 +105,7 @@ impl Rect {
         }
     }
     #[must_use]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
         let left = self.x.max(other.x);
         let right = (self.x + self.w as i32).min(other.x + other.w as i32);
@@ -138,6 +143,8 @@ fn to_bitstring(b: Buttons) -> String {
     )
 }
 
+/// # Panics
+/// Panics if the file write fails
 pub fn write_fm2(inputs: &[[Buttons; 2]], path: &Path) {
     use std::io::Write;
     use uuid::Uuid;
@@ -153,14 +160,15 @@ pub fn write_fm2(inputs: &[[Buttons; 2]], path: &Path) {
     writeln!(file, "length {}", inputs.len()).unwrap();
     writeln!(file, "romFilename Super Mario Bros.").unwrap();
     let guid = Uuid::new_v4();
-    writeln!(file, "guid {}", guid).unwrap();
+    writeln!(file, "guid {guid}").unwrap();
     // TODO fixme
     writeln!(file, "romChecksum 0").unwrap();
-    for &[b1, b2] in inputs.iter() {
+    for &[b1, b2] in inputs {
         writeln!(file, "||{}|{}|", to_bitstring(b1), to_bitstring(b2)).unwrap();
     }
 }
 
+#[must_use]
 pub fn from_bitstring(bs: [bool; 8]) -> Buttons {
     Buttons::new()
         .right(bs[0])
@@ -173,6 +181,8 @@ pub fn from_bitstring(bs: [bool; 8]) -> Buttons {
         .a(bs[7])
 }
 
+/// # Panics
+/// Panics if the file read fails
 pub fn read_fm2(inputs: &mut Vec<[Buttons; 2]>, path: &Path) {
     use std::io::{BufRead, BufReader};
     let file = File::open(path).expect("Couldn't open file");
