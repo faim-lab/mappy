@@ -552,7 +552,7 @@ impl MappyState {
         sprites::get_sprites(emu, &mut sprites_dlb);
         // Load state S.
         if !emu.load(&self.state_buffer) {
-            println!("failed to load state");
+            println!("failed to load state, ss {} vs state size {}", emu.save_size(), self.state_buffer.len());
             return;
         }
         // Apply up-right and a input for K frames
@@ -723,6 +723,7 @@ impl MappyState {
             .iter()
             .filter(|s| s.is_valid() && !s.is_empty())
             .collect();
+        // dbg!("live", &live);
         // a candidate old track for each new track
         let candidates: Vec<_> = live
             .iter()
@@ -740,6 +741,7 @@ impl MappyState {
                     })
                     .collect();
                 // possible degenerate case: all sprites in same place
+                // dbg!("options:",&options);
                 if options.len() > 16 {
                     // fall back to identity match if possible or else None
                     options = vec![
@@ -758,9 +760,10 @@ impl MappyState {
             // no new sprites at all
             return;
         }
-        let _cl = candidates.len();
+        // let _cl = candidates.len();
+        // dbg!("candidates",&candidates);
         let groups = connected_components(candidates);
-        // println!("Turned {:?} candidates into {:?} CCs of sizes {:?}", cl, groups.len(), groups.iter().map(|g| g.len()).collect::<Vec<_>>());
+        // println!("Turned {_cl:?} candidates into {:?} CCs of sizes {:?}", groups.len(), groups.iter().map(|g| g.len()).collect::<Vec<_>>());
         // branch and bound should find the global optimum...
         for candidates in groups {
             // would it be better to phrase this as bipartite matching/flow instead?

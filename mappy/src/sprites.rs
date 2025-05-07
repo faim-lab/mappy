@@ -12,6 +12,8 @@ pub struct SpriteData {
     pub table: u8,
     pub attrs: u8,
     pub mask: [u8; 16], // will be half-empty for 8px high sprites
+    // pub pattern: [u16; 16], // will be half-empty for 8px high sprites
+    // pub colors: [[u8; 8]; 16], // will be half-empty for 8px high sprites
 }
 #[allow(dead_code)]
 impl SpriteData {
@@ -55,6 +57,7 @@ impl SpriteData {
     }
     #[must_use]
     pub fn is_empty(&self) -> bool {
+        // TODO: is "all solid color" also "empty"?
         self.mask.iter().all(|row| *row == 0)
     }
 }
@@ -65,10 +68,11 @@ pub const SPRITE_COUNT: usize = 0x100 / SPRITE_SIZE;
 /// Panics if the memory layout of the emulated system is not what's expected
 #[allow(clippy::similar_names, clippy::cast_possible_truncation)]
 pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
+    const PIX_332_EMPTY: u8 = 191;
     #[allow(clippy::similar_names, clippy::cast_possible_truncation)]
-    fn get_mask(x: u8, y: u8, w: u8, h: u8, buf: &[u8], fbw: usize, fbh: usize) -> [u8; 16] {
-        const PIX_332_EMPTY: u8 = 191;
+    fn get_mask(x: u8, y: u8, h: u8, buf: &[u8], fbw: usize, fbh: usize) -> [u8; 16] {
         let mut mask = [0_u8; 16];
+        let w = 8_u8;
         for (oy, mask_row) in mask.iter_mut().enumerate().take(h as usize) {
             let yi = u16::from(y) + oy as u16;
             if yi >= fbh as u16 {
@@ -85,9 +89,61 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
         }
         mask
     }
+    // #[allow(clippy::similar_names, clippy::cast_possible_truncation)]
+    // fn get_pattern(x: u8, y: u8, h: u8, buf: &[u8], fbw: usize, fbh: usize) -> [u16; 16] {
+    //     let mut found_colors:[i16;4] = [i16::from(PIX_332_EMPTY);4];
+    //     let mut next_color = 1_u16;
+    //     let mut pattern = [0_u16; 16]; // 16 lines, 2 bits per pixel, 8 pixels per line
+    //     let w = 8_u8;
+    //     for (oy, pattern_row) in pattern.iter_mut().enumerate().take(h as usize) {
+    //         let yi = u16::from(y) + oy as u16;
+    //         if yi >= fbh as u16 {
+    //             break;
+    //         }
+    //         for ox in 0..w {
+    //             let xi = u16::from(x) + u16::from(ox);
+    //             if xi >= fbw as u16 {
+    //                 break;
+    //             }
+    //             let color = i16::from(buf[yi as usize * fbw + xi as usize]);
+    //             let color_idx = if let Some(idx) = found_colors.iter().position(|c| *c == color) {
+    //                 idx as u16
+    //             } else if next_color < 4 {
+    //                 found_colors[next_color as usize] = color;
+    //                 next_color+=1;
+    //                 next_color-1
+    //             } else {
+    //                 panic!("too many colors in sprite");
+    //             };
+    //             debug_assert!(color_idx < 4);
+    //             let pixel_from_right = w-ox-1;
+    //             *pattern_row |= color_idx << (pixel_from_right*2);
+    //         }
+    //     }
+    //     pattern
+    // }
+    // #[allow(clippy::similar_names, clippy::cast_possible_truncation)]
+    // fn get_colors(x: u8, y: u8, h: u8, buf: &[u8], fbw: usize, fbh: usize) -> [[u8; 8]; 16] {
+    //     let mut colors = [[0_u8; 8]; 16];
+    //     let w = 8_u8;
+    //     for (oy, color_row) in colors.iter_mut().enumerate().take(h as usize) {
+    //         let yi = u16::from(y) + oy as u16;
+    //         if yi >= fbh as u16 {
+    //             break;
+    //         }
+    //         for ox in 0..w {
+    //             let xi = u16::from(x) + u16::from(ox);
+    //             if xi >= fbw as u16 {
+    //                 break;
+    //             }
+    //             let color = buf[yi as usize * fbw + xi as usize];
+    //             color_row[ox as usize] = color;
+    //         }
+    //     }
+    //     colors
+    // }
     let buf = &emu.system_ram_ref()[0x0200..0x0200 + SPRITE_COUNT * SPRITE_SIZE];
     // let ppuctrl = 0;
-    // TODO put me back when the fceumm build goes up to buildbot
     let ppuctrl = emu.memory_ref(0x2000).expect("Couldn't get PPU CTRL bit")[0];
     let sprite_height: u8 = if ((ppuctrl & 0b0010_0000) >> 5) == 1 {
         16
@@ -96,30 +152,58 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
     };
     let (fbw, fbh) = emu.framebuffer_size();
     let table_bit = (ppuctrl & 0b0000_1000) >> 3;
-    unsafe {
-        let [bg_sp, _, fg_sp] = super::MappyState::get_layers(emu);
-        for (i, bs) in buf.chunks_exact(SPRITE_SIZE).enumerate() {
-            let [y, pattern_id, attrs, x] = *bs else {
-                unreachable!()
-            };
-            let is_bg = attrs & 0b0010_0000 != 0;
-            sprites[i] = SpriteData {
-                index: i as u8,
+    
+    let [bg_sp, _, fg_sp] = unsafe { super::MappyState::get_layers(emu)};
+    for (i, bs) in buf.chunks_exact(SPRITE_SIZE).enumerate() {
+        let [y, pattern_id, attrs, x] = *bs else {
+            unreachable!()
+        };
+        let is_bg = attrs & 0b0010_0000 != 0;
+        sprites[i] = SpriteData {
+            index: i as u8,
+            x,
+            y: y.min(254) + 1,
+            height: sprite_height,
+            pattern_id,
+            // TODO: this is *not* the table_bit as of the time the sprite was rendered.
+            table: table_bit,
+            attrs,
+            mask: get_mask(
                 x,
-                y: y.min(254) + 1,
-                height: sprite_height,
-                pattern_id,
-                table: table_bit,
-                attrs,
-                mask: get_mask(
-                    x,
-                    y.min(254) + 1,
-                    8,
-                    sprite_height,
-                    if is_bg { bg_sp } else { fg_sp },
-                    fbw,
-                    fbh,
-                ),
+                y.min(254) + 1,
+                sprite_height,
+                if is_bg { bg_sp } else { fg_sp },
+                fbw,
+                fbh,
+            ),
+            //                 pattern: get_pattern(
+            //                     x,
+            //                     y.min(254) + 1,
+            //                     sprite_height,
+            //                     if is_bg { bg_sp } else { fg_sp },
+            //                     fbw,
+            //                     fbh,
+            // ),
+            // colors: get_colors(
+            //     x,
+            //     y.min(254)+1,
+            //     sprite_height,
+            //     if is_bg { bg_sp } else { fg_sp },
+            //     fbw,
+            //     fbh,
+            // )
+        }
+    }
+    // deduplicate sprites that are identical except for index
+    for s_i in 0..(sprites.len()-1) {
+        let mut sprite_i = sprites[s_i]; // a copy
+        if sprite_i == SpriteData::default() {
+            continue;
+        }
+        for sprite_j in sprites.iter_mut().skip(s_i+1) {
+            sprite_i.index = sprite_j.index;
+            if sprite_i == *sprite_j {
+                *sprite_j = SpriteData::default();
             }
         }
     }

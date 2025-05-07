@@ -26,7 +26,7 @@ fn register_split(splits: &mut Vec<Split>, scanline: u8) {
 // TODO : move to framebuffer?
 #[allow(clippy::cast_sign_loss)]
 pub fn skim_rect(fb: &Framebuffer, start: i16, dir: i16) -> u8 {
-    assert!(start > 0);
+    assert!(start >= 0);
     let color = fb.fb[start as usize * fb.w];
     for column in 0..fb.w {
         if fb.fb[start as usize * fb.w + column] != color {

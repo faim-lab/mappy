@@ -66,9 +66,9 @@ pub fn bnb_match(mut candidates: Vec<MatchTo>, track_count: usize) -> Matching {
     let mut best = vec![];
 
     // println!("start");
-    let mut _tries = 0;
+    let mut _tries = 0_u32;
     loop {
-        // println!("try {:?} current {:?} bound {:?}", tries, current, bound);
+        // println!("try {:?} current {:?} bound {:?}", _tries, current, bound);
         assert!(current <= picks.len());
         let start_pick = if current == picks.len() {
             picks.push(0);

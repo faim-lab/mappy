@@ -2,6 +2,7 @@
 
 use mappy::MappyState;
 use retro_rs::{Buttons, Emulator};
+#[cfg(feature = "ffmpeg")]
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -85,5 +86,5 @@ impl ScrollDumper {
 #[cfg(not(feature = "ffmpeg"))]
 impl ScrollDumper {
     pub fn update(&mut self, _mappy: &MappyState, _emu: &Emulator) {}
-    pub fn finish(mut self, _inputs: &[[Buttons; 2]]) {}
+    pub fn finish(self, _inputs: &[[Buttons; 2]]) {}
 }

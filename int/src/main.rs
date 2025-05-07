@@ -84,7 +84,9 @@ async fn main() {
     emu.run([Buttons::new(), Buttons::new()]);
     let (w, h) = emu.framebuffer_size();
     // So reset it afterwards
-    assert!(emu.load(&start_state));
+    if !emu.load(&start_state) {
+        emu.reset();
+    }
 
     //these are the visual annotations, but these are the debug annotations?
     let mut decos = {
@@ -195,7 +197,6 @@ zxcvbnm,./ for debug displays"
         //      mappy.dump_rooms(Path::new("out/rooms"));
         //  }
 
-        //this is how you load a file?
         let shifted = is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift);
         if let Some(n) = pressed_numkey() {
             let path = Path::new("inputs/").join(format!(
