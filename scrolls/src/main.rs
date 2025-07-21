@@ -2,13 +2,38 @@ use macroquad::prelude::*;
 use mappy::MappyState;
 use mappy::TILE_SIZE;
 use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
+use serde::Serialize;
 
 use std::io::{Read, Write};
 use std::path::Path;
+use std::vec;
+use std::fs;
 // use std::time::Instant;
 
 const SCALE: f32 = 3.;
 const OUTPUT_INTERVAL: u64 = 19;
+
+// nested structure of JSON file
+#[derive(Serialize)]
+struct Json {
+    list: Vec<JsonEntry>,
+}
+impl Json {
+    pub fn new() -> Self {
+        Self { list: vec![] }
+    }
+}
+#[derive(Serialize)]
+struct JsonEntry {
+    img_name: u64,
+    scroll_position: (i32, i32),
+    objects: Vec<DetectedObject>,
+}
+#[derive(Serialize)]
+struct DetectedObject {
+    id: usize,
+    position: (i32, i32),
+}
 
 #[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
@@ -51,8 +76,15 @@ async fn main() {
     std::fs::create_dir_all(image_folder.clone()).unwrap();
     let csv_path = Path::new("images/")
         .join(Path::new(&romname))
-        .join(Path::new(&(date_str + ".csv")));
+        .join(Path::new(&(date_str.clone() + ".csv")));
     let mut csv = std::fs::File::create(csv_path).expect("Couldn't create CSV file");
+
+    let json_path = Path::new("images/")
+        .join(Path::new(&romname))
+        .join(Path::new(&(date_str + ".json")));
+
+    let mut json = Json::new();
+
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
     emu.run([Buttons::new(), Buttons::new()]);
@@ -251,11 +283,31 @@ async fn main() {
                     mappy.scroll.1 - sy
                 );
                 csv.write_fmt(format_args!(
-                    "{},{}\n",
+                    "{}, {},{}\n",
+                    frame_counter,
                     mappy.scroll.0 - sx,
                     mappy.scroll.1 - sy
                 ))
                 .expect("Couldn't write scroll data to csv");
+
+                let mut detected_objects: Vec<DetectedObject> = vec![];
+                for blob in &mappy.live_blobs {
+                    let temp = blob.positions.last().unwrap();
+                    let curr_position = (temp.1, temp.2);
+                    detected_objects.push(DetectedObject {
+                        id: blob.id.into_inner(),
+                        position: curr_position,
+                    });
+                }
+
+                let json_entry = JsonEntry {
+                    img_name: frame_counter,
+                    scroll_position: (mappy.scroll.0 - sx, mappy.scroll.1 - sy),
+                    objects: detected_objects,
+                };
+
+                json.list.push(json_entry);
+
                 sx = mappy.scroll.0;
                 sy = mappy.scroll.1;
             }
@@ -377,5 +429,8 @@ async fn main() {
         // }
     }
     mappy.finish();
+
+    let json_export = serde_json::to_string_pretty(&json).unwrap();
+    fs::write(json_path, json_export).unwrap();
     //mappy.dump_tiles(Path::new("out/"));
 }

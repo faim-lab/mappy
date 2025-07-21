@@ -465,6 +465,11 @@ impl<Iter, Item> IterStats for Iter where Iter: Iterator<Item = Item> {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlobID(usize);
+impl BlobID { // getter method for BlobID
+    pub fn into_inner(self) -> usize {
+        self.0
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpriteBlob {
     pub id: BlobID,
