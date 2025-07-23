@@ -29,10 +29,11 @@ struct JsonEntry {
     scroll_position: (i32, i32),
     objects: Vec<DetectedObject>,
 }
-#[derive(Serialize)]
+#[derive(Serialize)] // add bounding box data
 struct DetectedObject {
     id: usize,
     position: (i32, i32),
+    bounding_box: (i32, i32, u32, u32),
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -66,7 +67,7 @@ async fn main() {
     )]
     use chrono::Local;
     use std::env;
-    let romfile = Path::new("roms/zelda.nes");
+    let romfile = Path::new("roms/mario.nes");
     // "mario3"
     let romname = romfile.file_stem().expect("No file name!");
     let date_str = format!("{}", Local::now().format("%Y-%m-%d-%H-%M-%S"));
@@ -292,11 +293,16 @@ async fn main() {
 
                 let mut detected_objects: Vec<DetectedObject> = vec![];
                 for blob in &mappy.live_blobs {
-                    let temp = blob.positions.last().unwrap();
-                    let curr_position = (temp.1, temp.2);
+                    let blob_pos = blob.positions.last().unwrap();
+                    let curr_position = (blob_pos.1, blob_pos.2);
+
+                    let blob_bbox = blob.bounding_boxes.last().unwrap();
+                    let curr_bbox = blob_bbox.1;
+
                     detected_objects.push(DetectedObject {
                         id: blob.id.into_inner(),
                         position: curr_position,
+                        bounding_box: (curr_bbox.x, curr_bbox.y, curr_bbox.w, curr_bbox.h)
                     });
                 }
 
