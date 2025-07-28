@@ -1,16 +1,42 @@
 use macroquad::prelude::*;
 use mappy::{MappyState, TILE_SIZE};
-use retro_rs::{Buttons, Emulator};
+use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
+use std::fs;
 mod affordance;
 mod debug_decorate;
 mod playback;
 mod scroll;
 use clap::Parser;
+use serde::Serialize;
 
 const SCALE: f32 = 2.0;
+const OUTPUT_INTERVAL: u64 = 19;
+
+// nested structure of JSON file
+#[derive(Serialize)]
+struct Json {
+    list: Vec<JsonEntry>,
+}
+impl Json {
+    pub fn new() -> Self {
+        Self { list: vec![] }
+    }
+}
+#[derive(Serialize)]
+struct JsonEntry {
+    img_name: u64,
+    scroll_position: (i32, i32),
+    objects: Vec<DetectedObject>,
+}
+#[derive(Serialize)] // add bounding box data
+struct DetectedObject {
+    id: usize,
+    position: (i32, i32),
+    bounding_box: (i32, i32, u32, u32),
+}
 
 #[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
@@ -74,6 +100,17 @@ async fn main() {
     if let Some(afford_file) = afford_file {
         affordances.load_maps(afford_file.as_path());
     }
+
+    use chrono::Local;
+    let date_str = format!("{}", Local::now().format("%Y-%m-%d-%H-%M-%S"));
+    let image_folder = Path::new("images/")
+        .join(Path::new(&romname))
+        .join(Path::new(&date_str));
+    std::fs::create_dir_all(image_folder.clone()).unwrap();
+    let json_path = Path::new("images/")
+        .join(Path::new(&romname))
+        .join(Path::new(&(date_str + ".json")));
+    let mut json = Json::new();
 
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
@@ -147,6 +184,10 @@ async fn main() {
     let mut mod_img = Image::gen_image_color(w as u16, h as u16, WHITE);
     let mut fb = vec![0_u8; w * h * 4];
     let game_tex = macroquad::texture::Texture2D::from_image(&game_img);
+
+    let mut frame_counter: u64 = 0;
+    let mut sx = 0;
+    let mut sy = 0;
 
     let mut playback = playback::Playback::new(); //does this just mean game play???
 
@@ -249,7 +290,7 @@ zxcvbnm,./ for debug displays"
         if is_key_pressed(KeyCode::F9) {
             //ADD ALSO SAVE REPLAY FILE UP TO THIS POINT
 
-            let timestamp = chrono::prelude::Utc::now().to_rfc3339();
+            let timestamp = chrono::prelude::Utc::now().to_rfc3339(); // diff timestamp scheme for filename without colons
             let rom: String = romfile
                 .strip_prefix("roms")
                 .unwrap_or(Path::new("unknownrom"))
@@ -283,6 +324,41 @@ zxcvbnm,./ for debug displays"
                 game_img.bytes.copy_from_slice(&fb);
             }
             mappy.process_screen(&mut emu, input);
+
+            frame_counter += 1;
+            if frame_counter % OUTPUT_INTERVAL == 0 {
+                let fb_out = emu.create_imagebuffer();
+                fb_out
+                    .unwrap()
+                    .save(format!("{}/{}.png", image_folder.display(), frame_counter))
+                    .unwrap();
+
+                let mut detected_objects: Vec<DetectedObject> = vec![];
+                for blob in &mappy.live_blobs {
+                    let blob_pos = blob.positions.last().unwrap();
+                    let curr_position = (blob_pos.1, blob_pos.2);
+
+                    let blob_bbox = blob.bounding_boxes.last().unwrap();
+                    let curr_bbox = blob_bbox.1;
+
+                    detected_objects.push(DetectedObject {
+                        id: blob.id.into_inner(),
+                        position: curr_position,
+                        bounding_box: (curr_bbox.x, curr_bbox.y, curr_bbox.w, curr_bbox.h)
+                    });
+                }
+
+                let json_entry = JsonEntry {
+                    img_name: frame_counter,
+                    scroll_position: (mappy.scroll.0 - sx, mappy.scroll.1 - sy),
+                    objects: detected_objects,
+                };
+
+                json.list.push(json_entry);
+
+                sx = mappy.scroll.0;
+                sy = mappy.scroll.1;
+            }
         });
         affordances.update(&mappy, &emu); //affordances updated, this adds to the game record? or just checks for inputs?
 
@@ -315,6 +391,9 @@ zxcvbnm,./ for debug displays"
     if let Some(dump) = scroll_dumper.take() {
         dump.finish(&playback.inputs);
     }
+    
+    let json_export = serde_json::to_string_pretty(&json).unwrap();
+    fs::write(json_path, json_export).unwrap();
     //mappy.dump_tiles(Path::new("out/"));
 }
 
