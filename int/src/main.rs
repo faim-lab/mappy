@@ -290,7 +290,10 @@ zxcvbnm,./ for debug displays"
         if is_key_pressed(KeyCode::F9) {
             //ADD ALSO SAVE REPLAY FILE UP TO THIS POINT
 
-            let timestamp = chrono::prelude::Utc::now().to_rfc3339(); // diff timestamp scheme for filename without colons
+            // let timestamp = chrono::prelude::Utc::now().to_rfc3339();
+
+            let timestamp = format!("{}", chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"));
+
             let rom: String = romfile
                 .strip_prefix("roms")
                 .unwrap_or(Path::new("unknownrom"))
