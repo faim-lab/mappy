@@ -1,10 +1,10 @@
 use macroquad::prelude::*;
 use mappy::{MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
+use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
-use std::fs;
 mod affordance;
 mod debug_decorate;
 mod playback;
@@ -109,8 +109,20 @@ async fn main() {
     std::fs::create_dir_all(image_folder.clone()).unwrap();
     let json_path = Path::new("images/")
         .join(Path::new(&romname))
-        .join(Path::new(&(date_str + ".json")));
+        .join(Path::new(&(date_str.clone() + ".json")));
     let mut json = Json::new();
+
+    // specify directory structure for DAVIS-style dataset exportation
+    let dataset_images_folder = Path::new("images/datasets/")
+        .join(Path::new(&romname))
+        .join(Path::new(&date_str))
+        .join(Path::new("images/"));
+    let dataset_annotations_folder = Path::new("images/datasets/")
+        .join(Path::new(&romname))
+        .join(Path::new(&date_str))
+        .join(Path::new("annotations/"));
+    std::fs::create_dir_all(&dataset_images_folder).unwrap();
+    std::fs::create_dir_all(&dataset_annotations_folder).unwrap();
 
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
@@ -336,6 +348,13 @@ zxcvbnm,./ for debug displays"
                     .save(format!("{}/{}.png", image_folder.display(), frame_counter))
                     .unwrap();
 
+                let fb_out_2 = emu.create_imagebuffer();
+                // save to dataset folder?
+                fb_out_2
+                    .unwrap()
+                    .save(dataset_images_folder.join(format!("{}.png", frame_counter)))
+                    .unwrap();
+
                 let mut detected_objects: Vec<DetectedObject> = vec![];
                 for blob in &mappy.live_blobs {
                     let blob_pos = blob.positions.last().unwrap();
@@ -347,9 +366,73 @@ zxcvbnm,./ for debug displays"
                     detected_objects.push(DetectedObject {
                         id: blob.id.into_inner(),
                         position: curr_position,
-                        bounding_box: (curr_bbox.x, curr_bbox.y, curr_bbox.w, curr_bbox.h)
+                        bounding_box: (curr_bbox.x, curr_bbox.y, curr_bbox.w, curr_bbox.h),
                     });
+
+                    let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
+
+                    for track_id in &blob.live_tracks {
+                        if let Some(track) = mappy.live_track_with_id(track_id) {
+                            let sd = &track.current_data();
+                            for (y, row) in sd.mask.iter().enumerate() {
+                                for x in 0..8  {
+                                    if ((row >> (7 - x)) & 0b1) == 1 {
+                                        let px = u32::from(sd.x) + x;
+                                        let py = u32::from(sd.y) + y as u32;
+                                        if px < w as u32 && py < h as u32 {
+                                            mask_img.set_pixel(px, py, WHITE);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Save blob mask
+                    mask_img.export_png(
+                        dataset_annotations_folder
+                            .join(format!("{}_{}.png", frame_counter, blob.id.into_inner()))
+                            .to_str()
+                            .unwrap(),
+                    );
                 }
+
+                // specify a directory (PATH) for image and annotation
+                // save game_img as the "in_img"
+                // create out_img to save for the mask
+                // Generate annotation masks for each sprite
+                for track in &mappy.live_tracks {
+                    let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
+                    if u32::from(sd.x) + u32::from(sd.width()) > 255
+                        || u32::from(sd.y) + u32::from(sd.height()) > 240
+                    {
+                        continue;
+                    }
+
+                    // Create black image
+                    let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
+
+                    // Set sprite pixels to white
+                    for (y, row) in sd.mask.iter().enumerate() {
+                        for x in 0..8 {
+                            if ((row >> (7 - x)) & 0b1) == 1 {
+                                let px = u32::from(sd.x) + x;
+                                let py = u32::from(sd.y) + y as u32;
+                                if px < w as u32 && py < h as u32 {
+                                    mask_img.set_pixel(px, py, WHITE);
+                                }
+                            }
+                        }
+                    }
+
+                    // Save annotation mask
+                    mask_img.export_png(
+                        dataset_annotations_folder
+                            .join(format!("{}.png", frame_counter))
+                            .to_str()
+                            .unwrap(),
+                    );
+               }
 
                 let json_entry = JsonEntry {
                     img_name: frame_counter,
@@ -394,7 +477,7 @@ zxcvbnm,./ for debug displays"
     if let Some(dump) = scroll_dumper.take() {
         dump.finish(&playback.inputs);
     }
-    
+
     let json_export = serde_json::to_string_pretty(&json).unwrap();
     fs::write(json_path, json_export).unwrap();
     //mappy.dump_tiles(Path::new("out/"));
