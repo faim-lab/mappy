@@ -103,8 +103,9 @@ impl MappyState {
     const DISTANCE_MAX: u32 = 12;
     const DESTROY_COAST: usize = 5;
 
-    const BLOB_THRESHOLD: f32 = 5.0;
-    const BLOB_LOOKBACK: usize = 30;
+    // tweak?
+    const BLOB_THRESHOLD: f32 = 3.0;
+    const BLOB_LOOKBACK: usize = 15;
 
     const BUTTON_HISTORY: usize = 60;
 

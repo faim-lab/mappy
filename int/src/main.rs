@@ -371,23 +371,26 @@ zxcvbnm,./ for debug displays"
 
                     let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
 
+                    // draws one frame ahead/behind
                     for track_id in &blob.live_tracks {
-                        if let Some(track) = mappy.live_track_with_id(track_id) {
-                            let sd = &track.current_data();
+                        if let Some(sd) = mappy.live_track_with_id(track_id).and_then(|track| track.data_at(track.last_observation_time() - 2)) {
                             for (y, row) in sd.mask.iter().enumerate() {
                                 for x in 0..8  {
+                                    if sd.hflip() {
+
+                                    }
                                     if ((row >> (7 - x)) & 0b1) == 1 {
                                         let px = u32::from(sd.x) + x;
                                         let py = u32::from(sd.y) + y as u32;
                                         if px < w as u32 && py < h as u32 {
-                                            mask_img.set_pixel(px, py, WHITE);
+                                            mask_img.set_pixel(px, h as u32 - py, WHITE);
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    
+
                     // Save blob mask
                     mask_img.export_png(
                         dataset_annotations_folder
@@ -397,42 +400,16 @@ zxcvbnm,./ for debug displays"
                     );
                 }
 
-                // specify a directory (PATH) for image and annotation
-                // save game_img as the "in_img"
-                // create out_img to save for the mask
-                // Generate annotation masks for each sprite
-                for track in &mappy.live_tracks {
-                    let mappy::sprites::At(_, _, sd) = track.positions.last().unwrap();
-                    if u32::from(sd.x) + u32::from(sd.width()) > 255
-                        || u32::from(sd.y) + u32::from(sd.height()) > 240
-                    {
-                        continue;
-                    }
+                /*
+                    for tiles:
+                    screen is 2d array of tiles, can access via (x, y)
+                    debug with filled white boxes
+                    use info of scroll offset to know which 8x8 tile is left or right in 16x16 block
 
-                    // Create black image
-                    let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
-
-                    // Set sprite pixels to white
-                    for (y, row) in sd.mask.iter().enumerate() {
-                        for x in 0..8 {
-                            if ((row >> (7 - x)) & 0b1) == 1 {
-                                let px = u32::from(sd.x) + x;
-                                let py = u32::from(sd.y) + y as u32;
-                                if px < w as u32 && py < h as u32 {
-                                    mask_img.set_pixel(px, py, WHITE);
-                                }
-                            }
-                        }
-                    }
-
-                    // Save annotation mask
-                    mask_img.export_png(
-                        dataset_annotations_folder
-                            .join(format!("{}.png", frame_counter))
-                            .to_str()
-                            .unwrap(),
-                    );
-               }
+                    starting point:
+                    Look for patterns of 4 adjacent 8x8 blocks --> this constitutes one 16x16 block
+                    Coalesce adjacent 16x16 blocks
+                 */
 
                 let json_entry = JsonEntry {
                     img_name: frame_counter,

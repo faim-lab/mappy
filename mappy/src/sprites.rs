@@ -83,7 +83,7 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
                 if xi >= fbw as u16 {
                     break;
                 }
-                let px: u8 = u8::from(buf[yi as usize * fbw + xi as usize] == PIX_332_EMPTY);
+                let px: u8 = u8::from(buf[yi as usize * fbw + xi as usize] != PIX_332_EMPTY);
                 *mask_row |= px << (w - ox - 1);
             }
         }
