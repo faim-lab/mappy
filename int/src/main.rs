@@ -11,6 +11,7 @@ mod playback;
 mod scroll;
 use clap::Parser;
 use serde::Serialize;
+use mappy::tile::TileGfxId;
 
 const SCALE: f32 = 2.0;
 const OUTPUT_INTERVAL: u64 = 19;
@@ -117,12 +118,17 @@ async fn main() {
         .join(Path::new(&romname))
         .join(Path::new(&date_str))
         .join(Path::new("images/"));
-    let dataset_annotations_folder = Path::new("images/datasets/")
+    let dataset_blob_annotations_folder = Path::new("images/datasets/")
         .join(Path::new(&romname))
         .join(Path::new(&date_str))
-        .join(Path::new("annotations/"));
+        .join(Path::new("annotations/blobs/"));
+    let dataset_tile_annotations_folder = Path::new("images/datasets/")
+        .join(Path::new(&romname))
+        .join(Path::new(&date_str))
+        .join(Path::new("annotations/tiles/"));
     std::fs::create_dir_all(&dataset_images_folder).unwrap();
-    std::fs::create_dir_all(&dataset_annotations_folder).unwrap();
+    std::fs::create_dir_all(&dataset_blob_annotations_folder).unwrap();
+    std::fs::create_dir_all(&dataset_tile_annotations_folder).unwrap();
 
     let mut emu = Emulator::create(Path::new("cores/fceumm_libretro"), Path::new(romfile));
     // Have to run emu for one frame before we can get the framebuffer size
@@ -349,7 +355,6 @@ zxcvbnm,./ for debug displays"
                     .unwrap();
 
                 let fb_out_2 = emu.create_imagebuffer();
-                // save to dataset folder?
                 fb_out_2
                     .unwrap()
                     .save(dataset_images_folder.join(format!("{}.png", frame_counter)))
@@ -393,7 +398,7 @@ zxcvbnm,./ for debug displays"
 
                     // Save blob mask
                     mask_img.export_png(
-                        dataset_annotations_folder
+                        dataset_blob_annotations_folder
                             .join(format!("{}_{}.png", frame_counter, blob.id.into_inner()))
                             .to_str()
                             .unwrap(),
@@ -410,6 +415,104 @@ zxcvbnm,./ for debug displays"
                     Look for patterns of 4 adjacent 8x8 blocks --> this constitutes one 16x16 block
                     Coalesce adjacent 16x16 blocks
                  */
+
+                let mut tile_group_counter = 0;
+                if let Some(room) = &mappy.current_room {
+                    let tiles = mappy.tiles.read().unwrap();
+                    let metatile_width = room.region().w as usize / 2;
+                    let metatile_height = room.region().h as usize / 2;
+
+                    // A 16x16 metatile is made up of four 8x8 tile sprites
+                    type MetatileId = (TileGfxId, TileGfxId, TileGfxId, TileGfxId);
+
+                    let mut metatile_grid: Vec<Vec<Option<MetatileId>>> = vec![vec![None; metatile_width]; metatile_height];
+                    let mut visited = vec![vec![false; metatile_width]; metatile_height];
+
+                    for y in 0..metatile_height {
+                        for x in 0..metatile_width {
+                            let base_x = room.region().x + (x * 2) as i32;
+                            let base_y = room.region().y + (y * 2) as i32;
+
+                            let tile_ids = [
+                                room.get(base_x, base_y),
+                                room.get(base_x + 1, base_y),
+                                room.get(base_x, base_y + 1),
+                                room.get(base_x + 1, base_y + 1),
+                            ];
+
+                            if let [Some(tl_id), Some(tr_id), Some(bl_id), Some(br_id)] = tile_ids {
+                                if let (Some(tl_data), Some(tr_data), Some(bl_data), Some(br_data)) = (
+                                    tiles.get_change_by_id(tl_id),
+                                    tiles.get_change_by_id(tr_id),
+                                    tiles.get_change_by_id(bl_id),
+                                    tiles.get_change_by_id(br_id),
+                                ) {
+                                    metatile_grid[y][x] = Some((
+                                        tl_data.to,
+                                        tr_data.to,
+                                        bl_data.to,
+                                        br_data.to,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    for y in 0..metatile_height {
+                        for x in 0..metatile_width {
+                            if !visited[y][x] {
+                                if let Some(metatile_id) = metatile_grid[y][x] {
+                                    let mut group = Vec::new();
+                                    let mut queue = std::collections::VecDeque::new();
+                                    queue.push_back((x, y));
+                                    visited[y][x] = true;
+
+                                    while let Some((cx, cy)) = queue.pop_front() {
+                                        group.push((cx, cy));
+
+                                        for (dx, dy) in &[(0, 1), (1, 0), (0, -1), (-1, 0)] {
+                                            let nx = cx as i32 + dx;
+                                            let ny = cy as i32 + dy;
+                                            if nx >= 0 && nx < metatile_height as i32 && 
+                                                ny >= 0 && ny < metatile_height as i32 {
+                                                    let nx = nx as usize;
+                                                    let ny = ny as usize;
+                                                    if !visited[ny][nx] && metatile_grid[ny][nx] == Some(metatile_id) {
+                                                        visited[ny][nx] = true;
+                                                        queue.push_back((nx, ny));
+                                                    }
+                                                }
+                                        }
+                                    }
+
+                                    let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
+                                    for (cx, cy) in &group {
+                                        let screen_x = (room.region().x + (*cx * 2) as i32) * TILE_SIZE as i32;
+                                        let screen_y = (room.region().y + (*cy * 2) as i32) * TILE_SIZE as i32;
+
+                                        for py in 0..16 {
+                                            for px in 0..16 {
+                                                let pixel_x = screen_x as u32 + px;
+                                                let pixel_y = screen_y as u32 + py;
+                                                if pixel_x < w as u32 && pixel_y < h as u32 {
+                                                    mask_img.set_pixel(pixel_x, h as u32 - pixel_y, WHITE);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    mask_img.export_png(
+                                    dataset_tile_annotations_folder
+                                            .join(format!("tile_{}_{}.png", frame_counter, tile_group_counter))
+                                            .to_str()
+                                            .unwrap(),
+                                    );
+                                    tile_group_counter += 1;
+                                }
+                            }
+                        }
+                    }  
+                }
 
                 let json_entry = JsonEntry {
                     img_name: frame_counter,
