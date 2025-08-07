@@ -12,8 +12,8 @@ pub struct SpriteData {
     pub table: u8,
     pub attrs: u8,
     pub mask: [u8; 16], // will be half-empty for 8px high sprites
-    // pub pattern: [u16; 16], // will be half-empty for 8px high sprites
-    // pub colors: [[u8; 8]; 16], // will be half-empty for 8px high sprites
+                        // pub pattern: [u16; 16], // will be half-empty for 8px high sprites
+                        // pub colors: [[u8; 8]; 16], // will be half-empty for 8px high sprites
 }
 #[allow(dead_code)]
 impl SpriteData {
@@ -152,8 +152,8 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
     };
     let (fbw, fbh) = emu.framebuffer_size();
     let table_bit = (ppuctrl & 0b0000_1000) >> 3;
-    
-    let [bg_sp, _, fg_sp] = unsafe { super::MappyState::get_layers(emu)};
+
+    let [bg_sp, _, fg_sp] = unsafe { super::MappyState::get_layers(emu) };
     for (i, bs) in buf.chunks_exact(SPRITE_SIZE).enumerate() {
         let [y, pattern_id, attrs, x] = *bs else {
             unreachable!()
@@ -195,12 +195,12 @@ pub fn get_sprites(emu: &Emulator, sprites: &mut [SpriteData]) {
         }
     }
     // deduplicate sprites that are identical except for index
-    for s_i in 0..(sprites.len()-1) {
+    for s_i in 0..(sprites.len() - 1) {
         let mut sprite_i = sprites[s_i]; // a copy
         if sprite_i == SpriteData::default() {
             continue;
         }
-        for sprite_j in sprites.iter_mut().skip(s_i+1) {
+        for sprite_j in sprites.iter_mut().skip(s_i + 1) {
             sprite_i.index = sprite_j.index;
             if sprite_i == *sprite_j {
                 *sprite_j = SpriteData::default();
@@ -465,9 +465,9 @@ impl<Iter, Item> IterStats for Iter where Iter: Iterator<Item = Item> {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlobID(usize);
-impl BlobID { // getter method for BlobID
-    pub fn into_inner(self) -> usize {
-        self.0
+impl std::convert::From<BlobID> for usize {
+    fn from(value: BlobID) -> Self {
+        value.0
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]

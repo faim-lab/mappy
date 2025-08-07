@@ -553,7 +553,11 @@ impl MappyState {
         sprites::get_sprites(emu, &mut sprites_dlb);
         // Load state S.
         if !emu.load(&self.state_buffer) {
-            println!("failed to load state, ss {} vs state size {}", emu.save_size(), self.state_buffer.len());
+            println!(
+                "failed to load state, ss {} vs state size {}",
+                emu.save_size(),
+                self.state_buffer.len()
+            );
             return;
         }
         // Apply up-right and a input for K frames

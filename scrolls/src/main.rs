@@ -4,10 +4,10 @@ use mappy::TILE_SIZE;
 use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 use serde::Serialize;
 
+use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::vec;
-use std::fs;
 // use std::time::Instant;
 
 const SCALE: f32 = 3.;
@@ -300,9 +300,9 @@ async fn main() {
                     let curr_bbox = blob_bbox.1;
 
                     detected_objects.push(DetectedObject {
-                        id: blob.id.into_inner(),
+                        id: blob.id.into(),
                         position: curr_position,
-                        bounding_box: (curr_bbox.x, curr_bbox.y, curr_bbox.w, curr_bbox.h)
+                        bounding_box: (curr_bbox.x, curr_bbox.y, curr_bbox.w, curr_bbox.h),
                     });
                 }
 

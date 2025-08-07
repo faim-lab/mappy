@@ -2,7 +2,6 @@ use macroquad::prelude::*;
 use mappy::{MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -18,14 +17,9 @@ const SCALE: f32 = 2.0;
 const OUTPUT_INTERVAL: u64 = 19;
 
 // nested structure of JSON file
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 struct Json {
     list: Vec<JsonEntry>,
-}
-impl Json {
-    pub fn new() -> Self {
-        Self { list: vec![] }
-    }
 }
 #[derive(Serialize)]
 struct JsonEntry {
@@ -152,7 +146,7 @@ async fn main() {
     let json_path = Path::new("images/")
         .join(Path::new(&romname))
         .join(Path::new(&(date_str.clone() + ".json")));
-    let mut json = Json::new();
+    let mut json = Json::default();
 
     // specify directory structure for DAVIS-style dataset exportation
     let dataset_images_folder = Path::new("images/datasets/")
@@ -351,14 +345,12 @@ zxcvbnm,./ for debug displays"
 
             // let timestamp = chrono::prelude::Utc::now().to_rfc3339();
 
-            let timestamp = format!("{}", chrono::Local::now().format("%Y-%m-%d-%H-%M-%S"));
-
             let rom: String = romfile
                 .strip_prefix("roms")
                 .unwrap_or(Path::new("unknownrom"))
                 .display()
                 .to_string();
-            let filename = format!("{rom}-{timestamp}.json");
+            let filename = format!("{rom}-{date_str}.json");
             let aff_path = Path::new("affordances").join(filename);
             //let file : std::fs::File = std::fs::File::create(aff_path).unwrap();
 
@@ -389,16 +381,12 @@ zxcvbnm,./ for debug displays"
 
             frame_counter += 1;
             if frame_counter % OUTPUT_INTERVAL == 0 {
-                let fb_out = emu.create_imagebuffer();
+                let fb_out = emu.create_imagebuffer().unwrap();
                 fb_out
-                    .unwrap()
                     .save(format!("{}/{}.png", image_folder.display(), frame_counter))
                     .unwrap();
-
-                let fb_out_2 = emu.create_imagebuffer();
-                fb_out_2
-                    .unwrap()
-                    .save(dataset_images_folder.join(format!("{}.png", frame_counter)))
+                fb_out
+                    .save(dataset_images_folder.join(format!("{frame_counter}.png")))
                     .unwrap();
 
                 let mut detected_objects: Vec<DetectedObject> = vec![];
@@ -410,7 +398,7 @@ zxcvbnm,./ for debug displays"
                     let curr_bbox = blob_bbox.1;
 
                     detected_objects.push(DetectedObject {
-                        id: blob.id.into_inner(),
+                        id: blob.id.into(),
                         position: curr_position,
                         bounding_box: (curr_bbox.x, curr_bbox.y, curr_bbox.w, curr_bbox.h),
                     });
@@ -425,7 +413,6 @@ zxcvbnm,./ for debug displays"
                         {
                             for (y, row) in sd.mask.iter().enumerate() {
                                 for x in 0..8 {
-                                    if sd.hflip() {}
                                     if ((row >> (7 - x)) & 0b1) == 1 {
                                         let px = u32::from(sd.x) + x;
                                         let py = u32::from(sd.y) + y as u32;
@@ -441,7 +428,7 @@ zxcvbnm,./ for debug displays"
                     // Save blob mask
                     mask_img.export_png(
                         dataset_blob_annotations_folder
-                            .join(format!("{}_{}.png", frame_counter, blob.id.into_inner()))
+                            .join(format!("{}_{}.png", frame_counter, usize::from(blob.id)))
                             .to_str()
                             .unwrap(),
                     );
@@ -458,6 +445,8 @@ zxcvbnm,./ for debug displays"
                    Coalesce adjacent 16x16 blocks
                 */
 
+                // account for scrolling. check scrolling remainder by 16. if between 0 and 8, skip the first metatile or start search past that
+                // alternative: check room region even or odd
                 let mut tile_group_counter = 0;
                 if let Some(room) = &mappy.current_room {
                     let tiles_db = mappy.tiles.read().unwrap();
@@ -469,6 +458,8 @@ zxcvbnm,./ for debug displays"
                     let mut metatile_patterns = vec![None; total_metatiles];
                     let mut pattern_cache = HashMap::new();
 
+                    // instead of 0 to height, go from region y to region top (stay within bounds)
+                    // passthrough of 16x16 and 8x8. 8x8 catches things not segmented by 16x16
                     for y in 0..metatile_height {
                         for x in 0..metatile_width {
                             let idx = y * metatile_width + x;
@@ -482,6 +473,7 @@ zxcvbnm,./ for debug displays"
                                 room.get(base_x + 1, base_y + 1),
                             ];
 
+                            // substitute with else continues
                             if let [Some(tl_id), Some(tr_id), Some(bl_id), Some(br_id)] = tile_ids {
                                 if let (
                                     Some(tl_data),
@@ -534,7 +526,6 @@ zxcvbnm,./ for debug displays"
                         }
                     }
 
-                    // 3. Group connected components
                     let mut groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
                     for y in 0..metatile_height {
                         for x in 0..metatile_width {
@@ -547,54 +538,56 @@ zxcvbnm,./ for debug displays"
                     }
 
                     for (_, positions) in groups {
-                        // Skip small groups to reduce output
                         if positions.len() < 2 {
                             continue;
                         }
 
                         let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
+                        let mut has_visible = false;
 
-                        // Calculate bounding box for the group
-                        let min_x = positions.iter().map(|(x, _)| *x).min().unwrap();
-                        let max_x = positions.iter().map(|(x, _)| *x).max().unwrap();
-                        let min_y = positions.iter().map(|(_, y)| *y).min().unwrap();
-                        let max_y = positions.iter().map(|(_, y)| *y).max().unwrap();
+                        for &(x, y) in &positions {
+                            let world_x = (room.region().x + (x * 2) as i32) * TILE_SIZE as i32;
+                            let world_y = (room.region().y + (y * 2) as i32) * TILE_SIZE as i32;
 
-                        // Precompute positions set for fast lookup
-                        let positions_set: HashSet<_> = positions.iter().cloned().collect();
+                            let screen_x = world_x - mappy.scroll.0;
+                            let screen_y = world_y - mappy.scroll.1;
 
-                        // Fill entire bounding box
-                        for y in min_y..=max_y {
-                            for x in min_x..=max_x {
-                                // Only fill if this position is in the group
-                                if positions_set.contains(&(x, y)) {
-                                    let screen_x =
-                                        (room.region().x + (x * 2) as i32) * TILE_SIZE as i32;
-                                    let screen_y =
-                                        (room.region().y + (y * 2) as i32) * TILE_SIZE as i32;
+                            if screen_x < w as i32
+                                && screen_y < h as i32
+                                && screen_x + 16 >= 0
+                                && screen_y + 16 >= 0
+                            {
+                                for py in 0..16 {
+                                    for px in 0..16 {
+                                        let pixel_x = screen_x + px;
+                                        let pixel_y = screen_y + py;
 
-                                    // Draw 16x16 block
-                                    for py in 0..16 {
-                                        for px in 0..16 {
-                                            let pixel_x = screen_x as u32 + px;
-                                            let pixel_y = screen_y as u32 + py;
-                                            if pixel_x < w as u32 && pixel_y < h as u32 {
-                                                mask_img.set_pixel(pixel_x, h  as u32 - pixel_y, WHITE);
-                                            }
+                                        if pixel_x >= 0
+                                            && pixel_x < w as i32
+                                            && pixel_y >= 0
+                                            && pixel_y < h as i32
+                                        {
+                                            mask_img.set_pixel(
+                                                pixel_x as u32,
+                                                h as u32 - pixel_y as u32,
+                                                WHITE,
+                                            );
+                                            has_visible = true;
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // Save tile group mask
-                        mask_img.export_png(
-                            dataset_tile_annotations_folder
-                                .join(format!("tile_{}_{}.png", frame_counter, tile_group_counter))
-                                .to_str()
-                                .unwrap(),
-                        );
-                        tile_group_counter += 1;
+                        if has_visible {
+                            mask_img.export_png(
+                                dataset_tile_annotations_folder
+                                    .join(format!("tile_{frame_counter}_{tile_group_counter}.png"))
+                                    .to_str()
+                                    .unwrap(),
+                            );
+                            tile_group_counter += 1;
+                        }
                     }
                 }
 
