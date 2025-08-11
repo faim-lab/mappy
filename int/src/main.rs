@@ -504,6 +504,11 @@ zxcvbnm,./ for debug displays"
                    Coalesce adjacent 16x16 blocks
                 */
 
+                /*
+                    Look for hflip, vflip in 8x8
+                    Also look for diagonals
+                 */
+
                 // account for scrolling. check scrolling remainder by 16. if between 0 and 8, skip the first metatile or start search past that
                 // alternative: check room region even or odd
                 if let Some(room) = &mappy.current_room {
