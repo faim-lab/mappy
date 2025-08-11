@@ -524,8 +524,6 @@ zxcvbnm,./ for debug displays"
                     let mut processed_8x8 = vec![false; width * height];
                     let mut metatile_processed = vec![false; metatile_width * metatile_height];
 
-                    // instead of 0 to height, go from region y to region top (stay within bounds)
-                    // passthrough of 16x16 and 8x8. 8x8 catches things not segmented by 16x16
 
                     let mut uf_meta = UnionFind::new(total_metatiles);
                     let mut metatile_patterns = vec![None; total_metatiles];
