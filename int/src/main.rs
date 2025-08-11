@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use mappy::{MappyState, TILE_SIZE};
+use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 use std::collections::HashMap;
 use std::fs;
@@ -73,6 +73,65 @@ impl UnionFind {
         }
     }
 }
+
+fn is_uniform_metatile(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> bool {
+    // Check if we can form a 2x2 metatile
+    let neighbors = [
+        room.get(x, y),
+        room.get(x + 1, y),
+        room.get(x, y + 1),
+        room.get(x + 1, y + 1),
+    ];
+
+    // All positions must have tiles
+    let [Some(a), Some(b), Some(c), Some(d)] = neighbors else {
+        return false;
+    };
+
+    // All tiles must have data
+    let Some(a_data) = tiles_db.get_change_by_id(a) else {
+        return false;
+    };
+    let Some(b_data) = tiles_db.get_change_by_id(b) else {
+        return false;
+    };
+    let Some(c_data) = tiles_db.get_change_by_id(c) else {
+        return false;
+    };
+    let Some(d_data) = tiles_db.get_change_by_id(d) else {
+        return false;
+    };
+
+    // All tiles must be the same type
+    a_data.to.index() == b_data.to.index()
+        && a_data.to.index() == c_data.to.index()
+        && a_data.to.index() == d_data.to.index()
+}
+
+// fn is_isolated_tile(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> bool {
+//     let Some(tile_id) = room.get(x, y) else {
+//         return false;
+//     };
+//     let Some(tile_data) = tiles_db.get_change_by_id(tile_id) else {
+//         return false;
+//     };
+//     let pattern = tile_data.to.index();
+
+//     // Check neighbors (up, down, left, right)
+//     let neighbors = [
+//         room.get(x - 1, y),
+//         room.get(x + 1, y),
+//         room.get(x, y - 1),
+//         room.get(x, y + 1),
+//     ];
+
+//     // If any neighbor has the same pattern, it's not isolated
+//     !neighbors.iter().any(|n| {
+//         n.and_then(|id| tiles_db.get_change_by_id(id))
+//             .map(|data| data.to.index() == pattern)
+//             .unwrap_or(false)
+//     })
+// }
 
 #[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
@@ -447,62 +506,48 @@ zxcvbnm,./ for debug displays"
 
                 // account for scrolling. check scrolling remainder by 16. if between 0 and 8, skip the first metatile or start search past that
                 // alternative: check room region even or odd
-                let mut tile_group_counter = 0;
                 if let Some(room) = &mappy.current_room {
                     let tiles_db = mappy.tiles.read().unwrap();
-                    let metatile_width = room.region().w as usize / 2;
-                    let metatile_height = room.region().h as usize / 2;
+                    let mut tile_counter = 0;
+
+                    let width = room.region().w as usize;
+                    let height = room.region().h as usize;
+                    let metatile_width = width / 2;
+                    let metatile_height = height / 2;
                     let total_metatiles = metatile_width * metatile_height;
 
-                    let mut uf = UnionFind::new(total_metatiles);
-                    let mut metatile_patterns = vec![None; total_metatiles];
-                    let mut pattern_cache = HashMap::new();
+                    let mut processed_8x8 = vec![false; width * height];
+                    let mut metatile_processed = vec![false; metatile_width * metatile_height];
 
                     // instead of 0 to height, go from region y to region top (stay within bounds)
                     // passthrough of 16x16 and 8x8. 8x8 catches things not segmented by 16x16
+
+                    let mut uf_meta = UnionFind::new(total_metatiles);
+                    let mut metatile_patterns = vec![None; total_metatiles];
+
+                    // First pass: Process 16x16 metatiles where possible
                     for y in 0..metatile_height {
                         for x in 0..metatile_width {
                             let idx = y * metatile_width + x;
                             let base_x = room.region().x + (x * 2) as i32;
                             let base_y = room.region().y + (y * 2) as i32;
 
-                            let tile_ids = [
-                                room.get(base_x, base_y),
-                                room.get(base_x + 1, base_y),
-                                room.get(base_x, base_y + 1),
-                                room.get(base_x + 1, base_y + 1),
-                            ];
+                            if is_uniform_metatile(room, &tiles_db, base_x, base_y) {
+                                let tile_ids = [
+                                    room.get(base_x, base_y).unwrap(),
+                                    room.get(base_x + 1, base_y).unwrap(),
+                                    room.get(base_x, base_y + 1).unwrap(),
+                                    room.get(base_x + 1, base_y + 1).unwrap(),
+                                ];
 
-                            // substitute with else continues
-                            if let [Some(tl_id), Some(tr_id), Some(bl_id), Some(br_id)] = tile_ids {
-                                if let (
-                                    Some(tl_data),
-                                    Some(tr_data),
-                                    Some(bl_data),
-                                    Some(br_data),
-                                ) = (
-                                    tiles_db.get_change_by_id(tl_id),
-                                    tiles_db.get_change_by_id(tr_id),
-                                    tiles_db.get_change_by_id(bl_id),
-                                    tiles_db.get_change_by_id(br_id),
-                                ) {
-                                    let pattern_key = (
-                                        tl_data.to.index(),
-                                        tr_data.to.index(),
-                                        bl_data.to.index(),
-                                        br_data.to.index(),
-                                    );
-
-                                    metatile_patterns[idx] = Some(pattern_key);
-                                    pattern_cache
-                                        .entry(pattern_key)
-                                        .or_insert_with(Vec::new)
-                                        .push(idx);
-                                }
+                                let pattern =
+                                    tiles_db.get_change_by_id(tile_ids[0]).unwrap().to.index();
+                                metatile_patterns[idx] = Some(pattern);
                             }
                         }
                     }
 
+                    // Group adjacent metatiles with the same pattern
                     for y in 0..metatile_height {
                         for x in 0..metatile_width {
                             let idx = y * metatile_width + x;
@@ -511,7 +556,7 @@ zxcvbnm,./ for debug displays"
                                 if x < metatile_width - 1 {
                                     let right_idx = idx + 1;
                                     if metatile_patterns[right_idx] == Some(pattern) {
-                                        uf.union(idx, right_idx);
+                                        uf_meta.union(idx, right_idx);
                                     }
                                 }
 
@@ -519,26 +564,29 @@ zxcvbnm,./ for debug displays"
                                 if y < metatile_height - 1 {
                                     let bottom_idx = idx + metatile_width;
                                     if metatile_patterns[bottom_idx] == Some(pattern) {
-                                        uf.union(idx, bottom_idx);
+                                        uf_meta.union(idx, bottom_idx);
                                     }
                                 }
                             }
                         }
                     }
 
-                    let mut groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
+                    // Collect groups
+                    let mut meta_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
                     for y in 0..metatile_height {
                         for x in 0..metatile_width {
                             let idx = y * metatile_width + x;
                             if metatile_patterns[idx].is_some() {
-                                let root = uf.find(idx);
-                                groups.entry(root).or_default().push((x, y));
+                                let root = uf_meta.find(idx);
+                                meta_groups.entry(root).or_default().push((x, y));
                             }
                         }
                     }
 
-                    for (_, positions) in groups {
+                    // Process metatile groups
+                    for (_, positions) in meta_groups {
                         if positions.len() < 2 {
+                            // Skip small groups (we'll process singles later)
                             continue;
                         }
 
@@ -546,12 +594,16 @@ zxcvbnm,./ for debug displays"
                         let mut has_visible = false;
 
                         for &(x, y) in &positions {
-                            let world_x = (room.region().x + (x * 2) as i32) * TILE_SIZE as i32;
-                            let world_y = (room.region().y + (y * 2) as i32) * TILE_SIZE as i32;
+                            let base_x = room.region().x + (x * 2) as i32;
+                            let base_y = room.region().y + (y * 2) as i32;
+
+                            let world_x = base_x * TILE_SIZE as i32;
+                            let world_y = base_y * TILE_SIZE as i32;
 
                             let screen_x = world_x - mappy.scroll.0;
                             let screen_y = world_y - mappy.scroll.1;
 
+                            // Only draw if at least partially visible
                             if screen_x < w as i32
                                 && screen_y < h as i32
                                 && screen_x + 16 >= 0
@@ -576,17 +628,291 @@ zxcvbnm,./ for debug displays"
                                         }
                                     }
                                 }
+
+                                // Mark 8x8 tiles as processed
+                                for dy in 0..2 {
+                                    for dx in 0..2 {
+                                        let tx = x * 2 + dx;
+                                        let ty = y * 2 + dy;
+                                        if tx < width && ty < height {
+                                            processed_8x8[ty * width + tx] = true;
+                                        }
+                                    }
+                                }
+                                metatile_processed[y * metatile_width + x] = true;
                             }
                         }
 
                         if has_visible {
                             mask_img.export_png(
                                 dataset_tile_annotations_folder
-                                    .join(format!("tile_{frame_counter}_{tile_group_counter}.png"))
+                                    .join(format!("tile_{frame_counter}_{tile_counter}.png"))
                                     .to_str()
                                     .unwrap(),
                             );
-                            tile_group_counter += 1;
+                            tile_counter += 1;
+                        }
+                    }
+                    // Second pass: Process remaining tiles at 8x8 resolution
+                    // 2. Process remaining uniform metatiles (singles)
+                    for y in 0..metatile_height {
+                        for x in 0..metatile_width {
+                            let idx = y * metatile_width + x;
+                            if metatile_processed[idx] {
+                                continue;
+                            }
+
+                            if metatile_patterns[idx].is_some() {
+                                let base_x = room.region().x + (x * 2) as i32;
+                                let base_y = room.region().y + (y * 2) as i32;
+
+                                let world_x = base_x * TILE_SIZE as i32;
+                                let world_y = base_y * TILE_SIZE as i32;
+
+                                let screen_x = world_x - mappy.scroll.0;
+                                let screen_y = world_y - mappy.scroll.1;
+
+                                // Only process if at least partially visible
+                                if screen_x < w as i32
+                                    && screen_y < h as i32
+                                    && screen_x + 16 >= 0
+                                    && screen_y + 16 >= 0
+                                {
+                                    let mut mask_img =
+                                        Image::gen_image_color(w as u16, h as u16, BLACK);
+                                    let mut has_visible = false;
+
+                                    for py in 0..16 {
+                                        for px in 0..16 {
+                                            let pixel_x = screen_x + px;
+                                            let pixel_y = screen_y + py;
+
+                                            if pixel_x >= 0
+                                                && pixel_x < w as i32
+                                                && pixel_y >= 0
+                                                && pixel_y < h as i32
+                                            {
+                                                mask_img.set_pixel(
+                                                    pixel_x as u32,
+                                                    h as u32 - pixel_y as u32,
+                                                    WHITE,
+                                                );
+                                                has_visible = true;
+                                            }
+                                        }
+                                    }
+
+                                    if has_visible {
+                                        mask_img.export_png(
+                                            dataset_tile_annotations_folder
+                                                .join(format!(
+                                                    "tile_{frame_counter}_{tile_counter}.png"
+                                                ))
+                                                .to_str()
+                                                .unwrap(),
+                                        );
+                                        tile_counter += 1;
+                                    }
+
+                                    // Mark 8x8 tiles as processed
+                                    for dy in 0..2 {
+                                        for dx in 0..2 {
+                                            let tx = x * 2 + dx;
+                                            let ty = y * 2 + dy;
+                                            if tx < width && ty < height {
+                                                processed_8x8[ty * width + tx] = true;
+                                            }
+                                        }
+                                    }
+                                    metatile_processed[idx] = true;
+                                }
+                            }
+                        }
+                    }
+
+                    let mut uf_tile = UnionFind::new(width * height);
+                    let mut tile_patterns = vec![None; width * height];
+
+                    // Identify patterns for unprocessed tiles
+                    for y in 0..height {
+                        for x in 0..width {
+                            let idx = y * width + x;
+                            if processed_8x8[idx] {
+                                continue;
+                            }
+
+                            let tile_x = room.region().x + x as i32;
+                            let tile_y = room.region().y + y as i32;
+
+                            if let Some(tile_id) = room.get(tile_x, tile_y) {
+                                if let Some(tile_data) = tiles_db.get_change_by_id(tile_id) {
+                                    tile_patterns[idx] = Some(tile_data.to.index());
+                                }
+                            }
+                        }
+                    }
+
+                    // Group adjacent tiles with the same pattern
+                    for y in 0..height {
+                        for x in 0..width {
+                            let idx = y * width + x;
+                            if tile_patterns[idx].is_none() {
+                                continue;
+                            }
+
+                            let pattern = tile_patterns[idx].unwrap();
+
+                            // Check right neighbor
+                            if x < width - 1 {
+                                let right_idx = idx + 1;
+                                if tile_patterns[right_idx] == Some(pattern) {
+                                    uf_tile.union(idx, right_idx);
+                                }
+                            }
+
+                            // Check bottom neighbor
+                            if y < height - 1 {
+                                let bottom_idx = idx + width;
+                                if tile_patterns[bottom_idx] == Some(pattern) {
+                                    uf_tile.union(idx, bottom_idx);
+                                }
+                            }
+                        }
+                    }
+
+                    // Collect tile groups
+                    let mut tile_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
+                    for y in 0..height {
+                        for x in 0..width {
+                            let idx = y * width + x;
+                            if tile_patterns[idx].is_some() {
+                                let root = uf_tile.find(idx);
+                                tile_groups.entry(root).or_default().push((x, y));
+                            }
+                        }
+                    }
+
+                    // Process tile groups
+                    for (_, positions) in tile_groups {
+                        let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
+                        let mut has_visible = false;
+
+                        for &(x, y) in &positions {
+                            let tile_x = room.region().x + x as i32;
+                            let tile_y = room.region().y + y as i32;
+
+                            let world_x = tile_x * TILE_SIZE as i32;
+                            let world_y = tile_y * TILE_SIZE as i32;
+
+                            let screen_x = world_x - mappy.scroll.0;
+                            let screen_y = world_y - mappy.scroll.1;
+
+                            // Only process if at least partially visible
+                            if screen_x < w as i32
+                                && screen_y < h as i32
+                                && screen_x + 8 >= 0
+                                && screen_y + 8 >= 0
+                            {
+                                for py in 0..8 {
+                                    for px in 0..8 {
+                                        let pixel_x = screen_x + px;
+                                        let pixel_y = screen_y + py;
+
+                                        if pixel_x >= 0
+                                            && pixel_x < w as i32
+                                            && pixel_y >= 0
+                                            && pixel_y < h as i32
+                                        {
+                                            mask_img.set_pixel(
+                                                pixel_x as u32,
+                                                h as u32 - pixel_y as u32,
+                                                WHITE,
+                                            );
+                                            has_visible = true;
+                                        }
+                                    }
+                                }
+
+                                // Mark tile as processed
+                                processed_8x8[y * width + x] = true;
+                            }
+                        }
+
+                        if has_visible {
+                            mask_img.export_png(
+                                dataset_tile_annotations_folder
+                                    .join(format!("tile_{frame_counter}_{tile_counter}.png"))
+                                    .to_str()
+                                    .unwrap(),
+                            );
+                            tile_counter += 1;
+                        }
+                    }
+
+                    // 3. Process remaining 8x8 tiles
+                    for y in 0..height {
+                        for x in 0..width {
+                            if processed_8x8[y * width + x] {
+                                continue;
+                            }
+
+                            let tile_x = room.region().x + x as i32;
+                            let tile_y = room.region().y + y as i32;
+
+                            if let Some(tile_id) = room.get(tile_x, tile_y) {
+                                if tiles_db.get_change_by_id(tile_id).is_some() {
+                                    let world_x = tile_x * TILE_SIZE as i32;
+                                    let world_y = tile_y * TILE_SIZE as i32;
+
+                                    let screen_x = world_x - mappy.scroll.0;
+                                    let screen_y = world_y - mappy.scroll.1;
+
+                                    // Only process if at least partially visible
+                                    if screen_x < w as i32
+                                        && screen_y < h as i32
+                                        && screen_x + 8 >= 0
+                                        && screen_y + 8 >= 0
+                                    {
+                                        let mut mask_img =
+                                            Image::gen_image_color(w as u16, h as u16, BLACK);
+                                        let mut has_visible = false;
+
+                                        for py in 0..8 {
+                                            for px in 0..8 {
+                                                let pixel_x = screen_x + px;
+                                                let pixel_y = screen_y + py;
+
+                                                if pixel_x >= 0
+                                                    && pixel_x < w as i32
+                                                    && pixel_y >= 0
+                                                    && pixel_y < h as i32
+                                                {
+                                                    mask_img.set_pixel(
+                                                        pixel_x as u32,
+                                                        h as u32 - pixel_y as u32,
+                                                        WHITE,
+                                                    );
+                                                    has_visible = true;
+                                                }
+                                            }
+                                        }
+
+                                        if has_visible {
+                                            mask_img.export_png(
+                                                dataset_tile_annotations_folder
+                                                    .join(format!(
+                                                        "tile_{frame_counter}_{tile_counter}.png"
+                                                    ))
+                                                    .to_str()
+                                                    .unwrap(),
+                                            );
+                                            tile_counter += 1;
+                                        }
+
+                                        processed_8x8[y * width + x] = true;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
