@@ -85,6 +85,31 @@ impl TileGfx {
     pub fn new() -> Self {
         Self([0; TILE_NUM_PX])
     }
+    pub fn hflip(&self) -> Self {
+        let mut data = [0; TILE_NUM_PX];
+        for y in 0..8 {
+            for x in 0..8 {
+                let src_idx = y * 8 + x;
+                let dst_idx = y * 8 + (7 - x);
+                data[dst_idx] = self.0[src_idx];
+            }
+        }
+        Self(data)
+    }
+    pub fn vflip(&self) -> Self {
+        let mut data = [0; TILE_NUM_PX];
+        for y in 0..8 {
+            for x in 0..8 {
+                let src_idx = y * 8 + x;
+                let dst_idx = (7 - y) * 8 + x;
+                data[dst_idx] = self.0[src_idx];
+            }
+        }
+        Self(data)
+    }
+    pub fn hvflip(&self) -> Self {
+        self.hflip().vflip()
+    }
 }
 impl PartialEq for TileGfx {
     fn eq(&self, other: &Self) -> bool {
@@ -239,7 +264,8 @@ pub struct TileDB {
 
     // TODO consider trie based on pixel runs?
     gfx: HashMap<TileGfx, TileGfxId>,
-
+    // add flips to DB when new tile is addeds
+    flips: Vec<[TileGfxId;3]>,
     changes: HashMap<(TileGfxId, TileGfxId), TileChange>,
     // change_closure: Chain<TileChange>,
 }
@@ -270,6 +296,7 @@ impl TileDB {
             initial,
             initial_change,
             gfx,
+            flips: Vec::new(),
             changes,
             // change_closure,
         }

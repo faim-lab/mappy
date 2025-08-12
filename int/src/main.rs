@@ -505,9 +505,9 @@ zxcvbnm,./ for debug displays"
                 */
 
                 /*
-                    Look for hflip, vflip in 8x8
-                    Also look for diagonals
-                 */
+                   Look for hflip, vflip in 8x8
+                   Also look for diagonals
+                */
 
                 // account for scrolling. check scrolling remainder by 16. if between 0 and 8, skip the first metatile or start search past that
                 // alternative: check room region even or odd
@@ -523,7 +523,6 @@ zxcvbnm,./ for debug displays"
 
                     let mut processed_8x8 = vec![false; width * height];
                     let mut metatile_processed = vec![false; metatile_width * metatile_height];
-
 
                     let mut uf_meta = UnionFind::new(total_metatiles);
                     let mut metatile_patterns = vec![None; total_metatiles];
