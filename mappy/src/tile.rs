@@ -265,7 +265,7 @@ pub struct TileDB {
     // TODO consider trie based on pixel runs?
     gfx: HashMap<TileGfx, TileGfxId>,
     // add flips to DB when new tile is addeds
-    flips: Vec<[TileGfxId;3]>,
+    flips: Vec<[Option<TileGfxId>; 3]>,
     changes: HashMap<(TileGfxId, TileGfxId), TileChange>,
     // change_closure: Chain<TileChange>,
 }
@@ -311,8 +311,41 @@ impl TileDB {
     }
     #[must_use]
     pub fn get_tile(&mut self, tg: TileGfx) -> TileGfxId {
+        if let Some(id) = self.gfx.get(&tg) {
+            return *id;
+        }
+
+        // New tile - allocate and store
+        let new_id = self.gfx_arena.alloc(tg);
+        self.gfx.insert(tg, new_id);
+
+        // Compute flipped versions
+        let hflip = self.get_tile_no_flips(tg.hflip());
+        let vflip = self.get_tile_no_flips(tg.vflip());
+        let hvflip = self.get_tile_no_flips(tg.hvflip());
+
+        // Store flip relationships
+        let idx = new_id.index() as usize;
+        if idx >= self.flips.len() {
+            self.flips.resize(idx + 1, [None, None, None]);
+        }
+        self.flips[idx] = [Some(hflip), Some(vflip), Some(hvflip)];
+
+        new_id
+    }
+    // Helper for flipped tiles (prevents recursion)
+    fn get_tile_no_flips(&mut self, tg: TileGfx) -> TileGfxId {
         let arena = &mut self.gfx_arena;
-        let id = *self.gfx.entry(tg).or_insert_with(|| arena.alloc(tg));
+        *self.gfx.entry(tg).or_insert_with(|| arena.alloc(tg))
+    }
+    pub fn get_base_tile(&self, id: TileGfxId) -> TileGfxId {
+        // Search all tiles to see if this is a flipped version
+        for (base_idx, [h, v, hv]) in self.flips.iter().enumerate() {
+            if [h, v, hv].contains(&&Some(id)) {
+                return TileGfxId(base_idx as u16);
+            }
+        }
+        // If not found, it's a base tile
         id
     }
     #[must_use]
