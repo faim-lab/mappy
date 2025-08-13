@@ -265,7 +265,7 @@ pub struct TileDB {
     // TODO consider trie based on pixel runs?
     gfx: HashMap<TileGfx, TileGfxId>,
     // add flips to DB when new tile is addeds
-    flips: Vec<[Option<TileGfxId>; 3]>,
+    flips: Vec<[TileGfxId; 4]>,
     changes: HashMap<(TileGfxId, TileGfxId), TileChange>,
     // change_closure: Chain<TileChange>,
 }
@@ -311,6 +311,7 @@ impl TileDB {
     }
     #[must_use]
     pub fn get_tile(&mut self, tg: TileGfx) -> TileGfxId {
+        // If tile already exists, return ID
         if let Some(id) = self.gfx.get(&tg) {
             return *id;
         }
@@ -324,12 +325,16 @@ impl TileDB {
         let vflip = self.get_tile_no_flips(tg.vflip());
         let hvflip = self.get_tile_no_flips(tg.hvflip());
 
-        // Store flip relationships
+        // Calculate indexes to store flip relationships
         let idx = new_id.index() as usize;
-        if idx >= self.flips.len() {
-            self.flips.resize(idx + 1, [None, None, None]);
-        }
-        self.flips[idx] = [Some(hflip), Some(vflip), Some(hvflip)];
+        let hflip_idx = hflip.index() as usize;
+        let vflip_idx = vflip.index() as usize;
+        let hvflip_idx = hvflip.index() as usize;
+        let max_idx = idx.max(hflip_idx).max(vflip_idx).max(hvflip_idx);
+
+        let idxs = [new_id, hflip, vflip, hvflip];
+
+        self.flips.resize(max_idx, idxs);
 
         new_id
     }
@@ -338,15 +343,28 @@ impl TileDB {
         let arena = &mut self.gfx_arena;
         *self.gfx.entry(tg).or_insert_with(|| arena.alloc(tg))
     }
-    pub fn get_base_tile(&self, id: TileGfxId) -> TileGfxId {
-        // Search all tiles to see if this is a flipped version
-        for (base_idx, [h, v, hv]) in self.flips.iter().enumerate() {
-            if [h, v, hv].contains(&&Some(id)) {
-                return TileGfxId(base_idx as u16);
-            }
+    #[must_use]
+    pub fn are_flip_related(&self, id1: TileGfxId, id2: TileGfxId) -> bool {
+        // Same tiles are always related
+        if id1 == id2 {
+            return true;
         }
-        // If not found, it's a base tile
-        id
+
+        // Check if id2 is in id1's flip relationships
+        if let Some(flips) = self.get_flips(id1) {
+            flips.contains(&id2)
+        } else {
+            false
+        }
+    }
+    #[must_use]
+    pub fn get_flips(&self, id: TileGfxId) -> Option<[TileGfxId; 4]> {
+        let idx = id.index() as usize;
+        if idx < self.flips.len() {
+            Some(self.flips[idx])
+        } else {
+            None
+        }
     }
     #[must_use]
     pub fn contains(&self, tg: &TileGfx) -> bool {

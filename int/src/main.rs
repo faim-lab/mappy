@@ -1,5 +1,5 @@
 use macroquad::prelude::*;
-use mappy::{room::Room, tile::TileDB, MappyState, TILE_SIZE};
+use mappy::{room::Room, tile::TileDB, tile::TileGfxId, MappyState, TILE_SIZE};
 use retro_rs::{Buttons, Emulator, FramebufferToImageBuffer};
 use std::collections::HashMap;
 use std::fs;
@@ -74,8 +74,7 @@ impl UnionFind {
     }
 }
 
-fn is_uniform_metatile(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> bool {
-    // Check if we can form a 2x2 metatile
+fn metatile_signature(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> Option<u64> {
     let neighbors = [
         room.get(x, y),
         room.get(x + 1, y),
@@ -83,55 +82,18 @@ fn is_uniform_metatile(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> bool {
         room.get(x + 1, y + 1),
     ];
 
-    // All positions must have tiles
     let [Some(a), Some(b), Some(c), Some(d)] = neighbors else {
-        return false;
+        return None;
     };
 
-    // All tiles must have data
-    let Some(a_data) = tiles_db.get_change_by_id(a) else {
-        return false;
-    };
-    let Some(b_data) = tiles_db.get_change_by_id(b) else {
-        return false;
-    };
-    let Some(c_data) = tiles_db.get_change_by_id(c) else {
-        return false;
-    };
-    let Some(d_data) = tiles_db.get_change_by_id(d) else {
-        return false;
-    };
+    let a_idx = tiles_db.get_change_by_id(a)?.to.index() as u64;
+    let b_idx = tiles_db.get_change_by_id(b)?.to.index() as u64;
+    let c_idx = tiles_db.get_change_by_id(c)?.to.index() as u64;
+    let d_idx = tiles_db.get_change_by_id(d)?.to.index() as u64;
 
-    // All tiles must be the same type
-    a_data.to.index() == b_data.to.index()
-        && a_data.to.index() == c_data.to.index()
-        && a_data.to.index() == d_data.to.index()
+    // Create unique signature from tile combination
+    Some(a_idx << 48 | b_idx << 32 | c_idx << 16 | d_idx)
 }
-
-// fn is_isolated_tile(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> bool {
-//     let Some(tile_id) = room.get(x, y) else {
-//         return false;
-//     };
-//     let Some(tile_data) = tiles_db.get_change_by_id(tile_id) else {
-//         return false;
-//     };
-//     let pattern = tile_data.to.index();
-
-//     // Check neighbors (up, down, left, right)
-//     let neighbors = [
-//         room.get(x - 1, y),
-//         room.get(x + 1, y),
-//         room.get(x, y - 1),
-//         room.get(x, y + 1),
-//     ];
-
-//     // If any neighbor has the same pattern, it's not isolated
-//     !neighbors.iter().any(|n| {
-//         n.and_then(|id| tiles_db.get_change_by_id(id))
-//             .map(|data| data.to.index() == pattern)
-//             .unwrap_or(false)
-//     })
-// }
 
 #[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
@@ -527,46 +489,34 @@ zxcvbnm,./ for debug displays"
                     let mut uf_meta = UnionFind::new(total_metatiles);
                     let mut metatile_patterns = vec![None; total_metatiles];
 
-                    // First pass: Process 16x16 metatiles where possible
                     for y in 0..metatile_height {
                         for x in 0..metatile_width {
                             let idx = y * metatile_width + x;
                             let base_x = room.region().x + (x * 2) as i32;
                             let base_y = room.region().y + (y * 2) as i32;
-
-                            if is_uniform_metatile(room, &tiles_db, base_x, base_y) {
-                                let tile_ids = [
-                                    room.get(base_x, base_y).unwrap(),
-                                    room.get(base_x + 1, base_y).unwrap(),
-                                    room.get(base_x, base_y + 1).unwrap(),
-                                    room.get(base_x + 1, base_y + 1).unwrap(),
-                                ];
-
-                                let pattern =
-                                    tiles_db.get_change_by_id(tile_ids[0]).unwrap().to.index();
-                                metatile_patterns[idx] = Some(pattern);
-                            }
+                            metatile_patterns[idx] =
+                                metatile_signature(room, &tiles_db, base_x, base_y);
                         }
                     }
 
-                    // Group adjacent metatiles with the same pattern
+                    // Group adjacent metatiles with same signature
                     for y in 0..metatile_height {
                         for x in 0..metatile_width {
                             let idx = y * metatile_width + x;
-                            if let Some(pattern) = metatile_patterns[idx] {
-                                // Check right neighbor
-                                if x < metatile_width - 1 {
-                                    let right_idx = idx + 1;
-                                    if metatile_patterns[right_idx] == Some(pattern) {
-                                        uf_meta.union(idx, right_idx);
-                                    }
-                                }
+                            if metatile_patterns[idx].is_none() {
+                                continue;
+                            }
+                            let pattern = metatile_patterns[idx].unwrap();
 
-                                // Check bottom neighbor
-                                if y < metatile_height - 1 {
-                                    let bottom_idx = idx + metatile_width;
-                                    if metatile_patterns[bottom_idx] == Some(pattern) {
-                                        uf_meta.union(idx, bottom_idx);
+                            // Check neighbors
+                            for (dx, dy) in &[(1, 0), (0, 1)] {
+                                // Only right and down to avoid duplicates
+                                let nx = x as i32 + dx;
+                                let ny = y as i32 + dy;
+                                if nx < metatile_width as i32 && ny < metatile_height as i32 {
+                                    let nidx = ny as usize * metatile_width + nx as usize;
+                                    if metatile_patterns[nidx] == Some(pattern) {
+                                        uf_meta.union(idx, nidx);
                                     }
                                 }
                             }
@@ -587,10 +537,10 @@ zxcvbnm,./ for debug displays"
 
                     // Process metatile groups
                     for (_, positions) in meta_groups {
-                        if positions.len() < 2 {
-                            // Skip small groups (we'll process singles later)
-                            continue;
-                        }
+                        // if positions.len() < 2 {
+                        //     // Skip small groups (we'll process singles later)
+                        //     continue;
+                        // }
 
                         let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
                         let mut has_visible = false;
@@ -733,7 +683,7 @@ zxcvbnm,./ for debug displays"
                     // }
 
                     let mut uf_tile = UnionFind::new(width * height);
-                    let mut tile_patterns = vec![None; width * height];
+                    let mut tile_ids: Vec<Option<TileGfxId>> = vec![None; width * height];
 
                     // Identify patterns for unprocessed tiles
                     for y in 0..height {
@@ -748,22 +698,23 @@ zxcvbnm,./ for debug displays"
 
                             if let Some(tile_id) = room.get(tile_x, tile_y) {
                                 if let Some(tile_data) = tiles_db.get_change_by_id(tile_id) {
-                                    tile_patterns[idx] =
-                                        Some(tiles_db.get_base_tile(tile_data.to).index() as usize);
+                                    // Get the tile ID
+                                    let tile_id = tile_data.to;
+                                    tile_ids[idx] = Some(tile_id);
                                 }
                             }
                         }
                     }
 
-                    // Group adjacent tiles with the same pattern
+                    // Group adjacent tiles with the similar patterns (flips included)
                     for y in 0..height {
                         for x in 0..width {
                             let idx = y * width + x;
-                            if tile_patterns[idx].is_none() {
+                            if tile_ids[idx].is_none() {
                                 continue;
                             }
 
-                            let base_pattern = tile_patterns[idx].unwrap();
+                            let tile_id = tile_ids[idx].unwrap();
 
                             for dy in -1..=1 {
                                 for dx in -1..=1 {
@@ -780,8 +731,9 @@ zxcvbnm,./ for debug displays"
                                     {
                                         let nidx = ny as usize * width + nx as usize;
 
-                                        if let Some(neighbor_pattern) = tile_patterns[nidx] {
-                                            if neighbor_pattern == base_pattern {
+                                        if let Some(neighbor_id) = tile_ids[nidx] {
+                                            // Use TileDB's method to check flip relationship
+                                            if tiles_db.are_flip_related(tile_id, neighbor_id) {
                                                 uf_tile.union(idx, nidx);
                                             }
                                         }
@@ -796,7 +748,7 @@ zxcvbnm,./ for debug displays"
                     for y in 0..height {
                         for x in 0..width {
                             let idx = y * width + x;
-                            if tile_patterns[idx].is_some() {
+                            if tile_ids[idx].is_some() {
                                 let root = uf_tile.find(idx);
                                 tile_groups.entry(root).or_default().push((x, y));
                             }
