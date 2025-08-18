@@ -472,20 +472,15 @@ zxcvbnm,./ for debug displays"
                     let total_metatiles = metatile_width * metatile_height;
 
                     let screen_region = mappy.current_screen.region;
-                    let screen_region_end = (
-                        screen_region.x + screen_region.w as i32,
-                        screen_region.y + screen_region.h as i32,
-                    );
-                    let meta_region = mappy::Rect {
-                        x: screen_region.x / 2,
-                        y: screen_region.y / 2,
-                        w: (screen_region.w + 1) / 2,
-                        h: (screen_region.h + 1) / 2,
-                    };
-                    let meta_region_end = (
-                        meta_region.x + meta_region.w as i32,
-                        meta_region.y + meta_region.h as i32,
-                    );
+                    let (start_x, end_x) =
+                        (screen_region.x, screen_region.x + screen_region.w as i32);
+                    let (start_y, end_y) =
+                        (screen_region.y, screen_region.y + screen_region.h as i32);
+
+                    let meta_start_x = start_x / 2;
+                    let meta_end_x = (end_x + 1) / 2;
+                    let meta_start_y = (start_y - 3) / 2; // Make sure it catches the top of the screen
+                    let meta_end_y = (end_y + 1) / 2;
 
                     let room_x = room.region().x;
                     let room_y = room.region().y;
@@ -497,8 +492,8 @@ zxcvbnm,./ for debug displays"
                     let mut uf_meta = UnionFind::new(total_metatiles);
                     let mut metatile_patterns = vec![None; total_metatiles];
 
-                    for y in meta_region.y..meta_region_end.1 {
-                        for x in meta_region.x..meta_region_end.0 {
+                    for y in meta_start_y..meta_end_y {
+                        for x in meta_start_x..meta_end_x {
                             let base_x = room_x + (x * 2);
                             let base_y = room_y + (y * 2);
 
@@ -521,8 +516,8 @@ zxcvbnm,./ for debug displays"
                     }
 
                     // Group adjacent metatiles with same signature
-                    for y in meta_region.y..meta_region_end.1 {
-                        for x in meta_region.x..meta_region_end.0 {
+                    for y in meta_start_y..meta_end_y {
+                        for x in meta_start_x..meta_end_x {
                             let base_x = room_x + (x * 2);
                             let base_y = room_y + (y * 2);
 
@@ -573,8 +568,8 @@ zxcvbnm,./ for debug displays"
 
                     // Collect groups
                     let mut meta_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
-                    for y in meta_region.y..meta_region_end.1 {
-                        for x in meta_region.x..meta_region_end.0 {
+                    for y in meta_start_y..meta_end_y {
+                        for x in meta_start_x..meta_end_x {
                             let base_x = room_x + (x * 2);
                             let base_y = room_y + (y * 2);
                             let room_meta_x = (base_x - room_x) / 2;
@@ -673,8 +668,8 @@ zxcvbnm,./ for debug displays"
                     let mut tile_ids: Vec<Option<TileGfxId>> = vec![None; width * height];
 
                     // Identify patterns for unprocessed tiles
-                    for y in screen_region.y..screen_region_end.1 {
-                        for x in screen_region.x..screen_region_end.0 {
+                    for y in start_y..end_y {
+                        for x in start_x..end_x {
                             let rx = x - room_x;
                             let ry = y - room_y;
 
@@ -693,8 +688,8 @@ zxcvbnm,./ for debug displays"
                     }
 
                     // Group adjacent tiles with the similar patterns (flips included)
-                    for y in screen_region.y..screen_region_end.1 {
-                        for x in screen_region.x..screen_region_end.0 {
+                    for y in start_y..end_y {
+                        for x in start_x..end_x {
                             let rx = x - room_x;
                             let ry = y - room_y;
 
@@ -724,10 +719,10 @@ zxcvbnm,./ for debug displays"
                                     let nry = ny - room_y;
 
                                     // Check bounds
-                                    if nx >= screen_region.x
-                                        && ny >= screen_region.y
-                                        && nx < screen_region_end.0
-                                        && ny < screen_region_end.1
+                                    if nx >= start_x
+                                        && ny >= start_y
+                                        && nx < end_x
+                                        && ny < end_y
                                         && nrx >= 0
                                         && nry >= 0
                                         && nrx < width as i32
@@ -749,8 +744,8 @@ zxcvbnm,./ for debug displays"
 
                     // Collect tile groups
                     let mut tile_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
-                    for y in screen_region.y..screen_region_end.1 {
-                        for x in screen_region.x..screen_region_end.0 {
+                    for y in start_y..end_y {
+                        for x in start_x..end_x {
                             let rx = x - room_x;
                             let ry = y - room_y;
 
