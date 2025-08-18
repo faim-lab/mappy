@@ -95,47 +95,6 @@ fn metatile_signature(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> Option<
     Some(a_idx << 48 | b_idx << 32 | c_idx << 16 | d_idx)
 }
 
-struct ProcessingRegion {
-    start_x: i32,
-    start_y: i32,
-    end_x: i32,
-    end_y: i32,
-}
-
-impl ProcessingRegion {
-    fn from_mappy(mappy: &MappyState, room: &Room, width: i32, height: i32) -> Self {
-        let tile_size = TILE_SIZE as i32;
-        let scroll = mappy.scroll;
-        
-        let room_x = room.region().x;
-        let room_y = room.region().y;
-        let room_w = room.region().w as i32;
-        let room_h = room.region().h as i32;
-
-        // Calculate visible tile range in room-relative coordinates
-        let start_x = (scroll.0 / tile_size) - room_x;
-        let start_y = (scroll.1 / tile_size) - room_y;
-        let end_x = ((scroll.0 + width) / tile_size + 1) - room_x;
-        let end_y = ((scroll.1 + height) / tile_size + 1) - room_y;
-
-        ProcessingRegion {
-            start_x: start_x.max(0),
-            start_y: start_y.max(0),
-            end_x: end_x.min(room_w),
-            end_y: end_y.min(room_h),
-        }
-    }
-
-    fn for_metatiles(&self, room: &Room) -> Self {
-        ProcessingRegion {
-            start_x: (self.start_x / 2).max(0),
-            start_y: (self.start_y / 2).max(0),
-            end_x: (self.end_x / 2 + 1).min(room.region().w as i32 / 2), // Round up
-            end_y: (self.end_y / 2 + 1).min(room.region().h as i32 / 2),
-        }
-    }
-}
-
 #[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
     Conf {
@@ -512,10 +471,21 @@ zxcvbnm,./ for debug displays"
                     let metatile_height = height / 2;
                     let total_metatiles = metatile_width * metatile_height;
 
-                    // Get processing regions
-                    let tile_region =
-                        ProcessingRegion::from_mappy(&mappy, room, w as i32, h as i32);
-                    let meta_region = tile_region.for_metatiles(room);
+                    let screen_region = mappy.current_screen.region;
+                    let screen_region_end = (
+                        screen_region.x + screen_region.w as i32,
+                        screen_region.y + screen_region.h as i32,
+                    );
+                    let meta_region = mappy::Rect {
+                        x: screen_region.x / 2,
+                        y: screen_region.y / 2,
+                        w: (screen_region.w + 1) / 2,
+                        h: (screen_region.h + 1) / 2,
+                    };
+                    let meta_region_end = (
+                        meta_region.x + meta_region.w as i32,
+                        meta_region.y + meta_region.h as i32,
+                    );
 
                     let room_x = room.region().x;
                     let room_y = room.region().y;
@@ -527,17 +497,23 @@ zxcvbnm,./ for debug displays"
                     let mut uf_meta = UnionFind::new(total_metatiles);
                     let mut metatile_patterns = vec![None; total_metatiles];
 
-                    for y in meta_region.start_y..meta_region.end_y {
-                        for x in meta_region.start_x..meta_region.end_x {
-                            // Convert to usize once
-                            let x_idx = x as usize;
-                            let y_idx = y as usize;
+                    for y in meta_region.y..meta_region_end.1 {
+                        for x in meta_region.x..meta_region_end.0 {
+                            let base_x = room_x + (x * 2);
+                            let base_y = room_y + (y * 2);
 
-                            // Ensure we don't exceed boundaries
-                            if x_idx < metatile_width && y_idx < metatile_height {
-                                let idx = y_idx * metatile_width + x_idx;
-                                let base_x = room_x + (x * 2);
-                                let base_y = room_y + (y * 2);
+                            // Calculate room-relative metatile coordinates
+                            let room_meta_x = (base_x - room_x) / 2;
+                            let room_meta_y = (base_y - room_y) / 2;
+
+                            // Only proceed if within room bounds
+                            if room_meta_x >= 0
+                                && room_meta_y >= 0
+                                && room_meta_x < metatile_width as i32
+                                && room_meta_y < metatile_height as i32
+                            {
+                                let idx = (room_meta_y as usize) * metatile_width
+                                    + (room_meta_x as usize);
                                 metatile_patterns[idx] =
                                     metatile_signature(room, &tiles_db, base_x, base_y);
                             }
@@ -545,9 +521,26 @@ zxcvbnm,./ for debug displays"
                     }
 
                     // Group adjacent metatiles with same signature
-                    for y in meta_region.start_y..meta_region.end_y {
-                        for x in meta_region.start_x..meta_region.end_x {
-                            let idx = y as usize * metatile_width + x as usize;
+                    for y in meta_region.y..meta_region_end.1 {
+                        for x in meta_region.x..meta_region_end.0 {
+                            let base_x = room_x + (x * 2);
+                            let base_y = room_y + (y * 2);
+
+                            // Calculate room-relative metatile coordinates
+                            let room_meta_x = (base_x - room.region().x) / 2;
+                            let room_meta_y = (base_y - room.region().y) / 2;
+
+                            if room_meta_x < 0
+                                || room_meta_y < 0
+                                || room_meta_x >= metatile_width as i32
+                                || room_meta_y >= metatile_height as i32
+                            {
+                                continue;
+                            }
+
+                            let idx =
+                                (room_meta_y as usize) * metatile_width + (room_meta_x as usize);
+
                             if metatile_patterns[idx].is_none() {
                                 continue;
                             }
@@ -558,8 +551,18 @@ zxcvbnm,./ for debug displays"
                                 // Only right and down to avoid duplicates
                                 let nx = x + dx;
                                 let ny = y + dy;
-                                if nx < meta_region.end_x && ny < meta_region.end_y {
-                                    let nidx = ny as usize * metatile_width + nx as usize;
+                                let n_base_x = room_x + (nx * 2);
+                                let n_base_y = room_y + (ny * 2);
+                                let n_room_meta_x = (n_base_x - room_x) / 2;
+                                let n_room_meta_y = (n_base_y - room_y) / 2;
+
+                                if n_room_meta_x >= 0
+                                    && n_room_meta_y >= 0
+                                    && n_room_meta_x < metatile_width as i32
+                                    && n_room_meta_y < metatile_height as i32
+                                {
+                                    let nidx = (n_room_meta_y as usize) * metatile_width
+                                        + (n_room_meta_x as usize);
                                     if metatile_patterns[nidx] == Some(pattern) {
                                         uf_meta.union(idx, nidx);
                                     }
@@ -570,15 +573,28 @@ zxcvbnm,./ for debug displays"
 
                     // Collect groups
                     let mut meta_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
-                    for y in meta_region.start_y..meta_region.end_y {
-                        for x in meta_region.start_x..meta_region.end_x {
-                            let idx = y as usize * metatile_width + x as usize;
-                            if metatile_patterns[idx].is_some() {
-                                let root = uf_meta.find(idx);
-                                meta_groups
-                                    .entry(root)
-                                    .or_default()
-                                    .push((x as usize, y as usize));
+                    for y in meta_region.y..meta_region_end.1 {
+                        for x in meta_region.x..meta_region_end.0 {
+                            let base_x = room_x + (x * 2);
+                            let base_y = room_y + (y * 2);
+                            let room_meta_x = (base_x - room_x) / 2;
+                            let room_meta_y = (base_y - room_y) / 2;
+
+                            if room_meta_x >= 0
+                                && room_meta_y >= 0
+                                && room_meta_x < metatile_width as i32
+                                && room_meta_y < metatile_height as i32
+                            {
+                                let idx = (room_meta_y as usize) * metatile_width
+                                    + (room_meta_x as usize);
+
+                                if metatile_patterns[idx].is_some() {
+                                    let root = uf_meta.find(idx);
+                                    meta_groups
+                                        .entry(root)
+                                        .or_default()
+                                        .push((x as usize, y as usize));
+                                }
                             }
                         }
                     }
@@ -652,42 +668,41 @@ zxcvbnm,./ for debug displays"
                         }
                     }
 
-                    // Process 8x8 tiles for background elemets and isolated blocks
+                    // Process 8x8 tiles for background elements and isolated blocks
                     let mut uf_tile = UnionFind::new(width * height);
                     let mut tile_ids: Vec<Option<TileGfxId>> = vec![None; width * height];
 
                     // Identify patterns for unprocessed tiles
-                    for y in tile_region.start_y..tile_region.end_y {
-                        for x in tile_region.start_x..tile_region.end_x {
-                            // Convert to usize once
-                            let x_idx = x as usize;
-                            let y_idx = y as usize;
+                    for y in screen_region.y..screen_region_end.1 {
+                        for x in screen_region.x..screen_region_end.0 {
+                            let rx = x - room_x;
+                            let ry = y - room_y;
 
-                            // Ensure we don't exceed boundaries
-                            if x_idx < width && y_idx < height {
-                                let idx = y_idx * width + x_idx;
+                            // Only proceed if within room bounds
+                            if rx >= 0 && ry >= 0 && rx < width as i32 && ry < height as i32 {
+                                let idx = (ry as usize) * width + (rx as usize);
                                 if processed_8x8[idx] {
                                     continue;
                                 }
 
-                                let tile_x = room_x + x;
-                                let tile_y = room_y + y;
-
-                                if let Some(tile_id) = room.get(tile_x, tile_y) {
-                                    if let Some(tile_data) = tiles_db.get_change_by_id(tile_id) {
-                                        // Get the tile ID
-                                        let tile_id = tile_data.to;
-                                        tile_ids[idx] = Some(tile_id);
-                                    }
+                                if let Some(tile_id) = mappy.current_screen.get(x, y) {
+                                    tile_ids[idx] = Some(tile_id);
                                 }
                             }
                         }
                     }
 
                     // Group adjacent tiles with the similar patterns (flips included)
-                    for y in tile_region.start_y..tile_region.end_y {
-                        for x in tile_region.start_x..tile_region.end_x {
-                            let idx = y as usize * width + x as usize;
+                    for y in screen_region.y..screen_region_end.1 {
+                        for x in screen_region.x..screen_region_end.0 {
+                            let rx = x - room_x;
+                            let ry = y - room_y;
+
+                            if rx < 0 || ry < 0 || rx >= width as i32 || ry >= height as i32 {
+                                continue;
+                            }
+
+                            let idx = (ry as usize) * width + (rx as usize);
                             if tile_ids[idx].is_none() {
                                 continue;
                             }
@@ -704,13 +719,21 @@ zxcvbnm,./ for debug displays"
                                     let nx = x + dx;
                                     let ny = y + dy;
 
+                                    // Convert neighbor to room-relative
+                                    let nrx = nx - room_x;
+                                    let nry = ny - room_y;
+
                                     // Check bounds
-                                    if nx >= tile_region.start_x
-                                        && ny >= tile_region.start_y
-                                        && nx < tile_region.end_x
-                                        && ny < tile_region.end_y
+                                    if nx >= screen_region.x
+                                        && ny >= screen_region.y
+                                        && nx < screen_region_end.0
+                                        && ny < screen_region_end.1
+                                        && nrx >= 0
+                                        && nry >= 0
+                                        && nrx < width as i32
+                                        && nry < height as i32
                                     {
-                                        let nidx = ny as usize * width + nx as usize;
+                                        let nidx = (nry as usize) * width + (nrx as usize);
 
                                         if let Some(neighbor_id) = tile_ids[nidx] {
                                             // Use TileDB's method to check flip relationship
@@ -726,15 +749,22 @@ zxcvbnm,./ for debug displays"
 
                     // Collect tile groups
                     let mut tile_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
-                    for y in tile_region.start_y..tile_region.end_y {
-                        for x in tile_region.start_x..tile_region.end_x {
-                            let idx = y as usize * width + x as usize;
+                    for y in screen_region.y..screen_region_end.1 {
+                        for x in screen_region.x..screen_region_end.0 {
+                            let rx = x - room_x;
+                            let ry = y - room_y;
+
+                            if rx < 0 || ry < 0 || rx >= width as i32 || ry >= height as i32 {
+                                continue;
+                            }
+
+                            let idx = (ry as usize) * width + (rx as usize);
                             if tile_ids[idx].is_some() {
                                 let root = uf_tile.find(idx);
                                 tile_groups
                                     .entry(root)
                                     .or_default()
-                                    .push((x as usize, y as usize));
+                                    .push((rx as usize, ry as usize)); // Store room-relative coords
                             }
                         }
                     }
@@ -750,8 +780,8 @@ zxcvbnm,./ for debug displays"
                         let mut has_visible = false;
 
                         for &(x, y) in &positions {
-                            let tile_x = room.region().x + x as i32;
-                            let tile_y = room.region().y + y as i32;
+                            let tile_x = room_x + x as i32;
+                            let tile_y = room_y + y as i32;
 
                             let world_x = tile_x * TILE_SIZE as i32;
                             let world_y = tile_y * TILE_SIZE as i32;
