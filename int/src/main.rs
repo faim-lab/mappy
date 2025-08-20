@@ -433,10 +433,15 @@ zxcvbnm,./ for debug displays"
                             .and_then(|track| track.data_at(track.last_observation_time() - 2))
                         {
                             for (y, row) in sd.mask.iter().enumerate() {
+                                let py = u32::from(sd.y) + y as u32;
+                                // Add boundary check
+                                if py >= h as u32 {
+                                    continue;
+                                }
+
                                 for x in 0..8 {
                                     if ((row >> (7 - x)) & 0b1) == 1 {
                                         let px = u32::from(sd.x) + x;
-                                        let py = u32::from(sd.y) + y as u32;
                                         if px < w as u32 && py < h as u32 {
                                             mask_img.set_pixel(px, h as u32 - py, WHITE);
                                         }
@@ -455,24 +460,7 @@ zxcvbnm,./ for debug displays"
                     );
                 }
 
-                /*
-                   for tiles:
-                   screen is 2d array of tiles, can access via (x, y)
-                   debug with filled white boxes
-                   use info of scroll offset to know which 8x8 tile is left or right in 16x16 block
-
-                   starting point:
-                   Look for patterns of 4 adjacent 8x8 blocks --> this constitutes one 16x16 block
-                   Coalesce adjacent 16x16 blocks
-                */
-
-                /*
-                   Look for hflip, vflip in 8x8
-                   Also look for diagonals
-                */
-
-                // account for scrolling. check scrolling remainder by 16. if between 0 and 8, skip the first metatile or start search past that
-                // alternative: check room region even or odd
+                // Tile annotations
                 if let Some(room) = &mappy.current_room {
                     let tiles_db = mappy.tiles.read().unwrap();
                     let mut tile_counter = 0;
@@ -483,26 +471,76 @@ zxcvbnm,./ for debug displays"
                     let metatile_height = height / 2;
                     let total_metatiles = metatile_width * metatile_height;
 
+                    let screen_region = mappy.current_screen.region;
+                    let screen_region_end = (
+                        screen_region.x + screen_region.w as i32,
+                        screen_region.y + screen_region.h as i32,
+                    );
+                    let meta_region = mappy::Rect {
+                        x: screen_region.x / 2,
+                        y: screen_region.y / 2,
+                        w: (screen_region.w + 1) / 2,
+                        h: (screen_region.h + 1) / 2,
+                    };
+                    let meta_region_end = (
+                        meta_region.x + meta_region.w as i32,
+                        meta_region.y + meta_region.h as i32,
+                    );
+
+                    let room_x = room.region().x;
+                    let room_y = room.region().y;
+
                     let mut processed_8x8 = vec![false; width * height];
                     let mut metatile_processed = vec![false; metatile_width * metatile_height];
 
+                    // Process 16x16 metatiles in larger groups
                     let mut uf_meta = UnionFind::new(total_metatiles);
                     let mut metatile_patterns = vec![None; total_metatiles];
 
-                    for y in 0..metatile_height {
-                        for x in 0..metatile_width {
-                            let idx = y * metatile_width + x;
-                            let base_x = room.region().x + (x * 2) as i32;
-                            let base_y = room.region().y + (y * 2) as i32;
-                            metatile_patterns[idx] =
-                                metatile_signature(room, &tiles_db, base_x, base_y);
+                    for y in meta_region.y..meta_region_end.1 {
+                        for x in meta_region.x..meta_region_end.0 {
+                            let base_x = room_x + (x * 2);
+                            let base_y = room_y + (y * 2);
+
+                            // Calculate room-relative metatile coordinates
+                            let room_meta_x = (base_x - room_x) / 2;
+                            let room_meta_y = (base_y - room_y) / 2;
+
+                            // Only proceed if within room bounds
+                            if room_meta_x >= 0
+                                && room_meta_y >= 0
+                                && room_meta_x < metatile_width as i32
+                                && room_meta_y < metatile_height as i32
+                            {
+                                let idx = (room_meta_y as usize) * metatile_width
+                                    + (room_meta_x as usize);
+                                metatile_patterns[idx] =
+                                    metatile_signature(room, &tiles_db, base_x, base_y);
+                            }
                         }
                     }
 
                     // Group adjacent metatiles with same signature
-                    for y in 0..metatile_height {
-                        for x in 0..metatile_width {
-                            let idx = y * metatile_width + x;
+                    for y in meta_region.y..meta_region_end.1 {
+                        for x in meta_region.x..meta_region_end.0 {
+                            let base_x = room_x + (x * 2);
+                            let base_y = room_y + (y * 2);
+
+                            // Calculate room-relative metatile coordinates
+                            let room_meta_x = (base_x - room.region().x) / 2;
+                            let room_meta_y = (base_y - room.region().y) / 2;
+
+                            if room_meta_x < 0
+                                || room_meta_y < 0
+                                || room_meta_x >= metatile_width as i32
+                                || room_meta_y >= metatile_height as i32
+                            {
+                                continue;
+                            }
+
+                            let idx =
+                                (room_meta_y as usize) * metatile_width + (room_meta_x as usize);
+
                             if metatile_patterns[idx].is_none() {
                                 continue;
                             }
@@ -511,10 +549,20 @@ zxcvbnm,./ for debug displays"
                             // Check neighbors
                             for (dx, dy) in &[(1, 0), (0, 1)] {
                                 // Only right and down to avoid duplicates
-                                let nx = x as i32 + dx;
-                                let ny = y as i32 + dy;
-                                if nx < metatile_width as i32 && ny < metatile_height as i32 {
-                                    let nidx = ny as usize * metatile_width + nx as usize;
+                                let nx = x + dx;
+                                let ny = y + dy;
+                                let n_base_x = room_x + (nx * 2);
+                                let n_base_y = room_y + (ny * 2);
+                                let n_room_meta_x = (n_base_x - room_x) / 2;
+                                let n_room_meta_y = (n_base_y - room_y) / 2;
+
+                                if n_room_meta_x >= 0
+                                    && n_room_meta_y >= 0
+                                    && n_room_meta_x < metatile_width as i32
+                                    && n_room_meta_y < metatile_height as i32
+                                {
+                                    let nidx = (n_room_meta_y as usize) * metatile_width
+                                        + (n_room_meta_x as usize);
                                     if metatile_patterns[nidx] == Some(pattern) {
                                         uf_meta.union(idx, nidx);
                                     }
@@ -525,29 +573,40 @@ zxcvbnm,./ for debug displays"
 
                     // Collect groups
                     let mut meta_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
-                    for y in 0..metatile_height {
-                        for x in 0..metatile_width {
-                            let idx = y * metatile_width + x;
-                            if metatile_patterns[idx].is_some() {
-                                let root = uf_meta.find(idx);
-                                meta_groups.entry(root).or_default().push((x, y));
+                    for y in meta_region.y..meta_region_end.1 {
+                        for x in meta_region.x..meta_region_end.0 {
+                            let base_x = room_x + (x * 2);
+                            let base_y = room_y + (y * 2);
+                            let room_meta_x = (base_x - room_x) / 2;
+                            let room_meta_y = (base_y - room_y) / 2;
+
+                            if room_meta_x >= 0
+                                && room_meta_y >= 0
+                                && room_meta_x < metatile_width as i32
+                                && room_meta_y < metatile_height as i32
+                            {
+                                let idx = (room_meta_y as usize) * metatile_width
+                                    + (room_meta_x as usize);
+
+                                if metatile_patterns[idx].is_some() {
+                                    let root = uf_meta.find(idx);
+                                    meta_groups
+                                        .entry(root)
+                                        .or_default()
+                                        .push((x as usize, y as usize));
+                                }
                             }
                         }
                     }
 
                     // Process metatile groups
                     for (_, positions) in meta_groups {
-                        // if positions.len() < 2 {
-                        //     // Skip small groups (we'll process singles later)
-                        //     continue;
-                        // }
-
                         let mut mask_img = Image::gen_image_color(w as u16, h as u16, BLACK);
                         let mut has_visible = false;
 
                         for &(x, y) in &positions {
-                            let base_x = room.region().x + (x * 2) as i32;
-                            let base_y = room.region().y + (y * 2) as i32;
+                            let base_x = room_x + (x * 2) as i32;
+                            let base_y = room_y + (y * 2) as i32;
 
                             let world_x = base_x * TILE_SIZE as i32;
                             let world_y = base_y * TILE_SIZE as i32;
@@ -581,16 +640,19 @@ zxcvbnm,./ for debug displays"
                                     }
                                 }
 
-                                // Mark 8x8 tiles as processed
-                                for dy in 0..2 {
-                                    for dx in 0..2 {
-                                        let tx = x * 2 + dx;
-                                        let ty = y * 2 + dy;
-                                        if tx < width && ty < height {
-                                            processed_8x8[ty * width + tx] = true;
+                                // Mark 8x8 tiles as processed only if part of a group
+                                if positions.len() > 1 {
+                                    for dy in 0..2 {
+                                        for dx in 0..2 {
+                                            let tx = x * 2 + dx;
+                                            let ty = y * 2 + dy;
+                                            if tx < width && ty < height {
+                                                processed_8x8[ty * width + tx] = true;
+                                            }
                                         }
                                     }
                                 }
+
                                 metatile_processed[y * metatile_width + x] = true;
                             }
                         }
@@ -605,101 +667,25 @@ zxcvbnm,./ for debug displays"
                             tile_counter += 1;
                         }
                     }
-                    // // Second pass: Process remaining tiles at 8x8 resolution
-                    // // 2. Process remaining uniform metatiles (singles)
-                    // for y in 0..metatile_height {
-                    //     for x in 0..metatile_width {
-                    //         let idx = y * metatile_width + x;
-                    //         if metatile_processed[idx] {
-                    //             continue;
-                    //         }
 
-                    //         if metatile_patterns[idx].is_some() {
-                    //             let base_x = room.region().x + (x * 2) as i32;
-                    //             let base_y = room.region().y + (y * 2) as i32;
-
-                    //             let world_x = base_x * TILE_SIZE as i32;
-                    //             let world_y = base_y * TILE_SIZE as i32;
-
-                    //             let screen_x = world_x - mappy.scroll.0;
-                    //             let screen_y = world_y - mappy.scroll.1;
-
-                    //             // Only process if at least partially visible
-                    //             if screen_x < w as i32
-                    //                 && screen_y < h as i32
-                    //                 && screen_x + 16 >= 0
-                    //                 && screen_y + 16 >= 0
-                    //             {
-                    //                 let mut mask_img =
-                    //                     Image::gen_image_color(w as u16, h as u16, BLACK);
-                    //                 let mut has_visible = false;
-
-                    //                 for py in 0..16 {
-                    //                     for px in 0..16 {
-                    //                         let pixel_x = screen_x + px;
-                    //                         let pixel_y = screen_y + py;
-
-                    //                         if pixel_x >= 0
-                    //                             && pixel_x < w as i32
-                    //                             && pixel_y >= 0
-                    //                             && pixel_y < h as i32
-                    //                         {
-                    //                             mask_img.set_pixel(
-                    //                                 pixel_x as u32,
-                    //                                 h as u32 - pixel_y as u32,
-                    //                                 WHITE,
-                    //                             );
-                    //                             has_visible = true;
-                    //                         }
-                    //                     }
-                    //                 }
-
-                    //                 if has_visible {
-                    //                     mask_img.export_png(
-                    //                         dataset_tile_annotations_folder
-                    //                             .join(format!(
-                    //                                 "tile_{frame_counter}_{tile_counter}.png"
-                    //                             ))
-                    //                             .to_str()
-                    //                             .unwrap(),
-                    //                     );
-                    //                     tile_counter += 1;
-                    //                 }
-
-                    //                 // Mark 8x8 tiles as processed
-                    //                 for dy in 0..2 {
-                    //                     for dx in 0..2 {
-                    //                         let tx = x * 2 + dx;
-                    //                         let ty = y * 2 + dy;
-                    //                         if tx < width && ty < height {
-                    //                             processed_8x8[ty * width + tx] = true;
-                    //                         }
-                    //                     }
-                    //                 }
-                    //                 metatile_processed[idx] = true;
-                    //             }
-                    //         }
-                    //     }
-                    // }
-
+                    // Process 8x8 tiles for background elements and isolated blocks
                     let mut uf_tile = UnionFind::new(width * height);
                     let mut tile_ids: Vec<Option<TileGfxId>> = vec![None; width * height];
 
                     // Identify patterns for unprocessed tiles
-                    for y in 0..height {
-                        for x in 0..width {
-                            let idx = y * width + x;
-                            if processed_8x8[idx] {
-                                continue;
-                            }
+                    for y in screen_region.y..screen_region_end.1 {
+                        for x in screen_region.x..screen_region_end.0 {
+                            let rx = x - room_x;
+                            let ry = y - room_y;
 
-                            let tile_x = room.region().x + x as i32;
-                            let tile_y = room.region().y + y as i32;
+                            // Only proceed if within room bounds
+                            if rx >= 0 && ry >= 0 && rx < width as i32 && ry < height as i32 {
+                                let idx = (ry as usize) * width + (rx as usize);
+                                if processed_8x8[idx] {
+                                    continue;
+                                }
 
-                            if let Some(tile_id) = room.get(tile_x, tile_y) {
-                                if let Some(tile_data) = tiles_db.get_change_by_id(tile_id) {
-                                    // Get the tile ID
-                                    let tile_id = tile_data.to;
+                                if let Some(tile_id) = mappy.current_screen.get(x, y) {
                                     tile_ids[idx] = Some(tile_id);
                                 }
                             }
@@ -707,9 +693,16 @@ zxcvbnm,./ for debug displays"
                     }
 
                     // Group adjacent tiles with the similar patterns (flips included)
-                    for y in 0..height {
-                        for x in 0..width {
-                            let idx = y * width + x;
+                    for y in screen_region.y..screen_region_end.1 {
+                        for x in screen_region.x..screen_region_end.0 {
+                            let rx = x - room_x;
+                            let ry = y - room_y;
+
+                            if rx < 0 || ry < 0 || rx >= width as i32 || ry >= height as i32 {
+                                continue;
+                            }
+
+                            let idx = (ry as usize) * width + (rx as usize);
                             if tile_ids[idx].is_none() {
                                 continue;
                             }
@@ -723,13 +716,24 @@ zxcvbnm,./ for debug displays"
                                         continue;
                                     }
 
-                                    let nx = x as i32 + dx;
-                                    let ny = y as i32 + dy;
+                                    let nx = x + dx;
+                                    let ny = y + dy;
+
+                                    // Convert neighbor to room-relative
+                                    let nrx = nx - room_x;
+                                    let nry = ny - room_y;
 
                                     // Check bounds
-                                    if nx >= 0 && ny >= 0 && nx < width as i32 && ny < height as i32
+                                    if nx >= screen_region.x
+                                        && ny >= screen_region.y
+                                        && nx < screen_region_end.0
+                                        && ny < screen_region_end.1
+                                        && nrx >= 0
+                                        && nry >= 0
+                                        && nrx < width as i32
+                                        && nry < height as i32
                                     {
-                                        let nidx = ny as usize * width + nx as usize;
+                                        let nidx = (nry as usize) * width + (nrx as usize);
 
                                         if let Some(neighbor_id) = tile_ids[nidx] {
                                             // Use TileDB's method to check flip relationship
@@ -745,12 +749,22 @@ zxcvbnm,./ for debug displays"
 
                     // Collect tile groups
                     let mut tile_groups: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
-                    for y in 0..height {
-                        for x in 0..width {
-                            let idx = y * width + x;
+                    for y in screen_region.y..screen_region_end.1 {
+                        for x in screen_region.x..screen_region_end.0 {
+                            let rx = x - room_x;
+                            let ry = y - room_y;
+
+                            if rx < 0 || ry < 0 || rx >= width as i32 || ry >= height as i32 {
+                                continue;
+                            }
+
+                            let idx = (ry as usize) * width + (rx as usize);
                             if tile_ids[idx].is_some() {
                                 let root = uf_tile.find(idx);
-                                tile_groups.entry(root).or_default().push((x, y));
+                                tile_groups
+                                    .entry(root)
+                                    .or_default()
+                                    .push((rx as usize, ry as usize)); // Store room-relative coords
                             }
                         }
                     }
@@ -766,8 +780,8 @@ zxcvbnm,./ for debug displays"
                         let mut has_visible = false;
 
                         for &(x, y) in &positions {
-                            let tile_x = room.region().x + x as i32;
-                            let tile_y = room.region().y + y as i32;
+                            let tile_x = room_x + x as i32;
+                            let tile_y = room_y + y as i32;
 
                             let world_x = tile_x * TILE_SIZE as i32;
                             let world_y = tile_y * TILE_SIZE as i32;
@@ -816,73 +830,6 @@ zxcvbnm,./ for debug displays"
                             tile_counter += 1;
                         }
                     }
-
-                    // // 3. Process remaining 8x8 tiles
-                    // for y in 0..height {
-                    //     for x in 0..width {
-                    //         if processed_8x8[y * width + x] {
-                    //             continue;
-                    //         }
-
-                    //         let tile_x = room.region().x + x as i32;
-                    //         let tile_y = room.region().y + y as i32;
-
-                    //         if let Some(tile_id) = room.get(tile_x, tile_y) {
-                    //             if tiles_db.get_change_by_id(tile_id).is_some() {
-                    //                 let world_x = tile_x * TILE_SIZE as i32;
-                    //                 let world_y = tile_y * TILE_SIZE as i32;
-
-                    //                 let screen_x = world_x - mappy.scroll.0;
-                    //                 let screen_y = world_y - mappy.scroll.1;
-
-                    //                 // Only process if at least partially visible
-                    //                 if screen_x < w as i32
-                    //                     && screen_y < h as i32
-                    //                     && screen_x + 8 >= 0
-                    //                     && screen_y + 8 >= 0
-                    //                 {
-                    //                     let mut mask_img =
-                    //                         Image::gen_image_color(w as u16, h as u16, BLACK);
-                    //                     let mut has_visible = false;
-
-                    //                     for py in 0..8 {
-                    //                         for px in 0..8 {
-                    //                             let pixel_x = screen_x + px;
-                    //                             let pixel_y = screen_y + py;
-
-                    //                             if pixel_x >= 0
-                    //                                 && pixel_x < w as i32
-                    //                                 && pixel_y >= 0
-                    //                                 && pixel_y < h as i32
-                    //                             {
-                    //                                 mask_img.set_pixel(
-                    //                                     pixel_x as u32,
-                    //                                     h as u32 - pixel_y as u32,
-                    //                                     WHITE,
-                    //                                 );
-                    //                                 has_visible = true;
-                    //                             }
-                    //                         }
-                    //                     }
-
-                    //                     if has_visible {
-                    //                         mask_img.export_png(
-                    //                             dataset_tile_annotations_folder
-                    //                                 .join(format!(
-                    //                                     "tile_{frame_counter}_{tile_counter}.png"
-                    //                                 ))
-                    //                                 .to_str()
-                    //                                 .unwrap(),
-                    //                         );
-                    //                         tile_counter += 1;
-                    //                     }
-
-                    //                     processed_8x8[y * width + x] = true;
-                    //                 }
-                    //             }
-                    //         }
-                    //     }
-                    // }
                 }
 
                 let json_entry = JsonEntry {
