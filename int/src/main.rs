@@ -95,6 +95,134 @@ fn metatile_signature(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> Option<
     Some(a_idx << 48 | b_idx << 32 | c_idx << 16 | d_idx)
 }
 
+fn metatile_signature_32(room: &Room, tiles_db: &TileDB, x: i32, y: i32) -> Option<u64> {
+    let neighbors = [
+        room.get(x, y),
+        room.get(x + 1, y),
+        room.get(x, y + 1),
+        room.get(x + 1, y + 1),
+    ];
+
+    let [Some(a), Some(b), Some(c), Some(d)] = neighbors else {
+        return None;
+    };
+
+    let a_idx = tiles_db.get_change_by_id(a)?.to.index() as u64;
+    let b_idx = tiles_db.get_change_by_id(b)?.to.index() as u64;
+    let c_idx = tiles_db.get_change_by_id(c)?.to.index() as u64;
+    let d_idx = tiles_db.get_change_by_id(d)?.to.index() as u64;
+
+    // Create unique signature from tile combination
+    Some(a_idx << 48 | b_idx << 32 | c_idx << 16 | d_idx)
+}
+
+enum Neighbors {
+    N4,
+    N8,
+}
+
+// k is a param distinguishing 8x8, 16x16, and 32x32 metatile processing for values 1, 2, and 4 respectively
+fn process_tiles(mappy: MappyState, k: u8) {
+    if let Some(room) = &mappy.current_room {
+        let tiles_db = mappy.tiles.read().unwrap();
+        let mut tile_counter = 0;
+
+        let width = room.region().w as usize / k as usize;
+        let height = room.region().h as usize / k as usize;
+        let total_metatiles = width * height;
+
+        let screen_region = mappy.current_screen.region;
+        let meta_region = mappy::Rect {
+            x: screen_region.x / k as i32,
+            y: screen_region.y / k as i32,
+            w: screen_region.w / k as u32,
+            h: screen_region.h / k as u32,
+        };
+        let meta_region_end_x = meta_region.x + meta_region.w as i32;
+        let meta_region_end_y = meta_region.y + meta_region.h as i32;
+
+        let room_x = room.region().x;
+        let room_y = room.region().y;
+
+        let mut processed = vec![false; width * height];
+
+        let mut uf = UnionFind::new(total_metatiles);
+        let mut patterns = vec![None; total_metatiles];
+
+        // Process tiles
+        for y in meta_region.y..meta_region_end_y {
+            for x in meta_region.x..meta_region_end_x {
+                let base_x = room_x + (x * k as i32);
+                let base_y = room_y + (y * k as i32);
+
+                let room_meta_x = (base_x - room_x) / k as i32;
+                let room_meta_y = (base_y - room_y) / k as i32;
+
+                if room_meta_x >= 0
+                    && room_meta_y >= 0
+                    && room_meta_x < width as i32
+                    && room_meta_y < height as i32
+                {
+                    // TODO: Needs to be able to handle differenct functions for each k. 
+                    let idx = room_meta_y as usize * width + room_meta_x as usize;
+                    patterns[idx] = metatile_signature(room, &tiles_db, base_x, base_y);
+                }
+            }
+        }
+
+        // Group adjacent tiles with same signature
+        for y in meta_region.y..meta_region_end_y {
+            for x in meta_region.x..meta_region_end_x {
+                let base_x = room_x + (x * k as i32);
+                let base_y = room_y + (y * k as i32);
+
+                let room_meta_x = (base_x - room_x) / k as i32;
+                let room_meta_y = (base_y - room_y) / k as i32;
+
+                if room_meta_x >= 0
+                    && room_meta_y >= 0
+                    && room_meta_x < width as i32
+                    && room_meta_y < height as i32
+                {
+                    let idx = room_meta_y as usize * width + room_meta_x as usize;
+
+                    if patterns[idx].is_none() {
+                        continue;
+                    }
+
+                    let pattern = patterns[idx].unwrap();
+
+                    for dy in -1..=1 {
+                        for dx in -1..=1 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+
+                            let nx = x + dx;
+                            let ny = y + dy;
+
+                            let nrx = nx - room_x;
+                            let nry = ny - room_y;
+
+                            if nx >= meta_region.x
+                                && ny >= meta_region.y
+                                && nx < meta_region_end_x
+                                && ny < meta_region_end_y
+                                && nrx >= 0
+                                && nry >= 0
+                                && nrx < width as i32
+                                && nry < height as i32
+                            {
+                                let nidx = nry as usize * width + nrx as usize;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[allow(clippy::cast_possible_truncation)]
 fn window_conf() -> Conf {
     Conf {
@@ -471,6 +599,11 @@ zxcvbnm,./ for debug displays"
                     let metatile_height = height / 2;
                     let total_metatiles = metatile_width * metatile_height;
 
+                    // 32x32
+                    let metatile_width_32 = width / 4;
+                    let metatile_height_32 = height / 4;
+                    let total_metatiles_32 = metatile_width_32 * metatile_height_32;
+
                     let screen_region = mappy.current_screen.region;
                     let (start_x, end_x) =
                         (screen_region.x, screen_region.x + screen_region.w as i32);
@@ -486,7 +619,11 @@ zxcvbnm,./ for debug displays"
                     let room_y = room.region().y;
 
                     let mut processed_8x8 = vec![false; width * height];
-                    let mut metatile_processed = vec![false; metatile_width * metatile_height];
+                    let mut metatile_processed = vec![false; total_metatiles];
+                    let mut processed_32x32 = vec![false; total_metatiles_32];
+
+                    let uf_32 = UnionFind::new(total_metatiles_32);
+                    let mut patterns_32 = vec![None; total_metatiles_32];
 
                     // Process 16x16 metatiles in larger groups
                     let mut uf_meta = UnionFind::new(total_metatiles);
