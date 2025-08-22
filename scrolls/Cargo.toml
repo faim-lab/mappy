@@ -10,3 +10,5 @@ macroquad = "0.4" #  { git = "https://github.com/not-fl3/macroquad", rev="31cff5
 chrono = "0.4.41"
 mappy = {path="../mappy"}
 retro-rs = { git = "https://github.com/JoeOsborn/retro-rs", branch="master" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

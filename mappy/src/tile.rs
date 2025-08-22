@@ -85,6 +85,31 @@ impl TileGfx {
     pub fn new() -> Self {
         Self([0; TILE_NUM_PX])
     }
+    pub fn hflip(&self) -> Self {
+        let mut data = [0; TILE_NUM_PX];
+        for y in 0..8 {
+            for x in 0..8 {
+                let src_idx = y * 8 + x;
+                let dst_idx = y * 8 + (7 - x);
+                data[dst_idx] = self.0[src_idx];
+            }
+        }
+        Self(data)
+    }
+    pub fn vflip(&self) -> Self {
+        let mut data = [0; TILE_NUM_PX];
+        for y in 0..8 {
+            for x in 0..8 {
+                let src_idx = y * 8 + x;
+                let dst_idx = (7 - y) * 8 + x;
+                data[dst_idx] = self.0[src_idx];
+            }
+        }
+        Self(data)
+    }
+    pub fn hvflip(&self) -> Self {
+        self.hflip().vflip()
+    }
 }
 impl PartialEq for TileGfx {
     fn eq(&self, other: &Self) -> bool {
@@ -239,7 +264,8 @@ pub struct TileDB {
 
     // TODO consider trie based on pixel runs?
     gfx: HashMap<TileGfx, TileGfxId>,
-
+    // add flips to DB when new tile is addeds
+    flips: Vec<[TileGfxId; 4]>,
     changes: HashMap<(TileGfxId, TileGfxId), TileChange>,
     // change_closure: Chain<TileChange>,
 }
@@ -270,6 +296,7 @@ impl TileDB {
             initial,
             initial_change,
             gfx,
+            flips: Vec::new(),
             changes,
             // change_closure,
         }
@@ -284,9 +311,60 @@ impl TileDB {
     }
     #[must_use]
     pub fn get_tile(&mut self, tg: TileGfx) -> TileGfxId {
+        // If tile already exists, return ID
+        if let Some(id) = self.gfx.get(&tg) {
+            return *id;
+        }
+
+        // New tile - allocate and store
+        let new_id = self.gfx_arena.alloc(tg);
+        self.gfx.insert(tg, new_id);
+
+        // Compute flipped versions
+        let hflip = self.get_tile_no_flips(tg.hflip());
+        let vflip = self.get_tile_no_flips(tg.vflip());
+        let hvflip = self.get_tile_no_flips(tg.hvflip());
+
+        // Calculate indexes to store flip relationships
+        let idx = new_id.index() as usize;
+        let hflip_idx = hflip.index() as usize;
+        let vflip_idx = vflip.index() as usize;
+        let hvflip_idx = hvflip.index() as usize;
+        let max_idx = idx.max(hflip_idx).max(vflip_idx).max(hvflip_idx);
+
+        let idxs = [new_id, hflip, vflip, hvflip];
+
+        self.flips.resize(max_idx, idxs);
+
+        new_id
+    }
+    // Helper for flipped tiles (prevents recursion)
+    fn get_tile_no_flips(&mut self, tg: TileGfx) -> TileGfxId {
         let arena = &mut self.gfx_arena;
-        let id = *self.gfx.entry(tg).or_insert_with(|| arena.alloc(tg));
-        id
+        *self.gfx.entry(tg).or_insert_with(|| arena.alloc(tg))
+    }
+    #[must_use]
+    pub fn are_flip_related(&self, id1: TileGfxId, id2: TileGfxId) -> bool {
+        // Same tiles are always related
+        if id1 == id2 {
+            return true;
+        }
+
+        // Check if id2 is in id1's flip relationships
+        if let Some(flips) = self.get_flips(id1) {
+            flips.contains(&id2)
+        } else {
+            false
+        }
+    }
+    #[must_use]
+    pub fn get_flips(&self, id: TileGfxId) -> Option<[TileGfxId; 4]> {
+        let idx = id.index() as usize;
+        if idx < self.flips.len() {
+            Some(self.flips[idx])
+        } else {
+            None
+        }
     }
     #[must_use]
     pub fn contains(&self, tg: &TileGfx) -> bool {

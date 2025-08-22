@@ -1,6 +1,7 @@
 **/target
 **/*.rs.bk
 /out/
+/images/
 /roms/
 /cores/
 .DS_Store

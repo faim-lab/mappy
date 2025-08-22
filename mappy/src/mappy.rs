@@ -103,8 +103,9 @@ impl MappyState {
     const DISTANCE_MAX: u32 = 12;
     const DESTROY_COAST: usize = 5;
 
-    const BLOB_THRESHOLD: f32 = 5.0;
-    const BLOB_LOOKBACK: usize = 30;
+    // tweak?
+    const BLOB_THRESHOLD: f32 = 3.0;
+    const BLOB_LOOKBACK: usize = 15;
 
     const BUTTON_HISTORY: usize = 60;
 
@@ -552,7 +553,11 @@ impl MappyState {
         sprites::get_sprites(emu, &mut sprites_dlb);
         // Load state S.
         if !emu.load(&self.state_buffer) {
-            println!("failed to load state, ss {} vs state size {}", emu.save_size(), self.state_buffer.len());
+            println!(
+                "failed to load state, ss {} vs state size {}",
+                emu.save_size(),
+                self.state_buffer.len()
+            );
             return;
         }
         // Apply up-right and a input for K frames

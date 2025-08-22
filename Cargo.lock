@@ -2070,6 +2070,8 @@ dependencies = [
  "macroquad",
  "mappy",
  "retro-rs",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
